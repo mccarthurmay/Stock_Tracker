@@ -2,39 +2,44 @@
 #volume always peaks at lowest point - look at this data
 #   -huge volume increase when dropping significantly or rising significantly
 #   -levels out while decreasing until it hits rock bottom where there's another spike
-import sqlite3 as sql
-#create new database
-con = sql.connect("tutorial.db")
-#add cursor to navigate db
-cur = con.cursor()
-#create database cursor w CREATE TAble statement
-#cur.execute("CREATE TABLE movie(title,year,score)")
-#query the sqlite_master table which now contains an entry for movie table definition
-res = cur.execute("SELECT name FROM sqlite_master")
-cur.execute("""
-    INSERT INTO movie VALUES
-        ('Monty Python and the Holy Grail', 1975, 8.2),
-        ('And Now for Something Completely Different', 1971, 7.5)
-""")
-con.commit()
-
-res = cur.execute("SELECT score FROM movie")
-res.fetchall()
-print(res)
-
-
-
-
-
-
-
-
+import pickle
 #STORAGE
 
 #use a lot of pandas
 #find the best way to store information
-
 #make a huge database of smp500 + bluechip
+
+def storeData():
+    #initialize data to be stored into db
+    Tracker = {'tracker' : 'gm', 'percent' : 100}
+    Tracker2 = {'tracker' : 'f', 'percent' : 100}
+    #database
+    db = {}
+    db['Tracker'] = Tracker
+
+    #binary mode
+    dbfile = open('data.pickle', 'ab')
+
+    #source, destination
+    pickle.dump(db, dbfile)
+    dbfile.close()
+
+def loadData():
+    #reading binary
+    dbfile = open('data.pickle', 'rb')
+    db = pickle.load(dbfile)
+    for tracker in db:
+        print(tracker, '=>', db[tracker])
+    dbfile.close()
+
+if __name__ == '__main__':
+    storeData()
+    loadData()
+
+
+
+
+
 
 #yfinance,
     #i think i would only need to store % lower than 95% confidence
