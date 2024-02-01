@@ -3,41 +3,14 @@
 #   -huge volume increase when dropping significantly or rising significantly
 #   -levels out while decreasing until it hits rock bottom where there's another spike
 import pickle
+import yfinance as yf
+import statistics
+import pandas as pd
 #STORAGE
 
 #use a lot of pandas
 #find the best way to store information
 #make a huge database of smp500 + bluechip
-
-def storeData():
-    #initialize data to be stored into db
-    Tracker = {'tracker' : 'gm', 'percent' : 100}
-    Tracker2 = {'tracker' : 'f', 'percent' : 100}
-    #database
-    db = {}
-    db['Tracker'] = Tracker
-
-    #binary mode
-    dbfile = open('data.pickle', 'ab')
-
-    #source, destination
-    pickle.dump(db, dbfile)
-    dbfile.close()
-
-def loadData():
-    #reading binary
-    dbfile = open('data.pickle', 'rb')
-    db = pickle.load(dbfile)
-    for tracker in db:
-        print(tracker, '=>', db[tracker])
-    dbfile.close()
-
-if __name__ == '__main__':
-    storeData()
-    loadData()
-
-
-
 
 
 
@@ -59,10 +32,55 @@ if __name__ == '__main__':
 #write onto database with columns for each thing
 
 #FUNCTIONS
-#def confidence(stock)
-    #1 ci = std (of 2 months) * 2
-    #2 lower_bound = avg(of 2 months) - ci
-    #3 percent = 1 - (current price) / lower_bound
+
+def storeData(tracker, percent_over):
+
+    try:
+        dbfile = open('data.pickle', 'rb')
+        db = pickle.load(dbfile)
+    #initialize data to be stored into db
+    except FileNotFoundError:
+        db = {}
+
+    db[tracker] = {'tracker' : tracker, 'percent' : percent_over}
+
+    #source, destination
+    with open('data.pickle', 'wb') as dbfile:
+        pickle.dump(db, dbfile)
+
+
+def loadData():
+    #reading binary
+    dbfile = open('data.pickle', 'rb')
+    db = pickle.load(dbfile)
+    for tracker in db:
+        print(tracker, '=>', db[tracker])
+    dbfile.close()
+
+def confidence(stock):
+    #closing price of input stock
+    stock_data = yf.Ticker(stock).history(period="2mo").reset_index(drop=True)
+    stock_close = pd.DataFrame(stock_data['Close'])
+    #confidence interval of 95% = standard deviation of data * 2
+    ci = stock_close.std() * 2
+    #lower bound of 95%
+    lower_bound = stock_close.mean() - ci
+    #grab current price
+    current_close = yf.Ticker(stock).history(period = '1m').reset_index(drop=True)
+    current_price = pd.DataFrame(current_close['Close'])
+    #percent over the lower bound of 2 std devations (95% confidence interval)
+    percent_over = 1 - current_price / lower_bound
+    print(percent_under)
+
+#input list of stocks, handmade
+stock_list = ['AMD', 'AAPL', 'F']
+
+for tracker in stock_list:
+    storeData(tracker, 0)
+loadData()
+
+
+
 #def current_movemement(stock) #for increase
     #store the open data at market open
     #compare to current data, if % change is greater than 2%
