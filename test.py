@@ -55,13 +55,13 @@ def resetData(dbname):
     os.remove(dbname+'.pickle')
 
 
-
 def loadData(dbname):
     #reading binary
     dbfile = open(dbname+'.pickle', 'rb')
     db = pickle.load(dbfile)
-    for tracker in db:
-        print(tracker, '=>', db[tracker])
+    sorted_data = sorted(db.values(), key=lambda x: x['percent'])
+    for tracker in sorted_data:
+        print(tracker)
     dbfile.close()
 
 def updateData(dbname):
@@ -69,8 +69,10 @@ def updateData(dbname):
     db = pickle.load(dbfile)
 
     for tracker in db:
-        percent_under = confidence(tracker)
-
+        try:
+            percent_under = confidence(tracker).iloc[0]
+        except:
+            pass
         db[tracker] = {'tracker' : tracker, 'percent' : percent_under}
 
     with open(dbname + '.pickle', 'wb') as dbfile:
@@ -90,7 +92,7 @@ def confidence(tracker):
     if not current_close.empty:
         current_price = current_close['Close'].iloc[-1]
         # percent over the lower bound of 2 std deviations (95% confidence interval)
-        percent_under = 1 - current_price / lower_bound
+        percent_under = (1 - current_price / lower_bound ) * 100
         return percent_under
     else:
         print(f"No price data available for {tracker}.")
@@ -102,7 +104,7 @@ def command(action):
         print("\t'store': store trackers into database")
         print("\t'load': load trackers from database   ")
         print("\t'show ci': show data from confidence interval    ")
-        print("\t'':    ")
+        print("\t'update': update stock  ")
         print("\t'':    ")
         print("\t'':    ")
         print("\t'':    ")
