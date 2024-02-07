@@ -38,6 +38,8 @@ import os
 
 #FUNCTIONS
 
+
+######FOR OTHER CODE FROM PROJECT#######
 def storeData(dbname, stock_list, percent_under):
     try:
         with open(dbname+'.pickle', 'rb') as dbfile:
@@ -145,7 +147,9 @@ while action != 'quit':
     action = input("Do something (help for more): ")
     command(action)
 
-
+####FOR STOCKS WITH PATTERNS#####
+#def gm_low(stock)
+    #email me
 #def current_movemement(stock) #for increase
     #store the open data at market open
     #compare to current data, if % change is greater than 2%
