@@ -11,31 +11,6 @@ import yfinance as yf
 import statistics
 import pandas as pd
 import os
-#STORAGE
-
-#use a lot of pandas
-#find the best way to store information
-#make a huge database of smp500 + bluechip
-
-
-
-#yfinance,
-    #i think i would only need to store % lower than 95% confidence
-        #grab stock history - 2 months??
-        #grab stock information
-            #avg close of 2 months
-            #std dev of 2 months
-            #confidence interval =  (std dev * 2)
-            #avg - confidence interval = lower 95% ******
-            #=1-(current price)/(lower 95% price)
-        #grab volume of each day
-
-
-#DATABASE CREATION
-
-#input list of stock trackers
-#write onto database with columns for each thing
-
 #FUNCTIONS
 
 
@@ -100,52 +75,69 @@ def confidence(tracker):
         print(f"No price data available for {tracker}.")
         return None
 
+
+
+
+def main():
+
+
 #actions
-def command(action):
-    if action == "help":
-        print("\t'store': store trackers into database")
-        print("\t'load': load trackers from database   ")
-        print("\t'show ci': show data from confidence interval    ")
-        print("\t'update': update stock  ")
-        print("\t'':    ")
-        print("\t'':    ")
-        print("\t'':    ")
-        print("\t'':    ")
-        print("\t'quit': quit   ")
+    def command(action):
+        if action == "help":
+            print("\t'store': store trackers into database")
+            print("\t'load': load trackers from database   ")
+            print("\t'show ci': show data from confidence interval    ")
+            print("\t'update': update stock  ")
+            print("\t'pattern stocks': stocks for pattern    ")
+            print("\t'':    ")
+            print("\t'':    ")
+            print("\t'':    ")
+            print("\t'quit': quit   ")
 
-    if action == "store":
-        input_file = input("what file you wnat: ")
-        with open(input_file+'.txt', 'r') as txt:
-            data_txt = txt.read()
-            data_txt = data_txt.split('\n')
-        dbname = input("name of database: ")
-        stock_list = list(data_txt)
-        percent_under = 0
-        storeData(dbname, stock_list, percent_under)
+        if action == "store":
+            input_file = input("what file you wnat: ")
+            with open(input_file+'.txt', 'r') as txt:
+                data_txt = txt.read()
+                data_txt = data_txt.split('\n')
+            dbname = input("name of database: ")
+            stock_list = list(data_txt)
+            percent_under = 0
+            storeData(dbname, stock_list, percent_under)
 
-    if action == "load":
-        dbname = input("what db:")
-        loadData(dbname)
+        if action == "load":
+            dbname = input("what db:")
+            loadData(dbname)
 
-    if action == "reset":
-        dbname = input("what db to delete: ")
-        resetData(dbname)
+        if action == "reset":
+            dbname = input("what db to delete: ")
+            resetData(dbname)
 
-    if action == "update":
-        dbname = input("what db:")
-        updateData(dbname)
+        if action == "update":
+            dbname = input("what db:")
+            updateData(dbname)
 
-    if action == "con": #for testing
-        confidence("GM")
+        if action == "con": #for testing
+            confidence("GM")
 
-    #if action == "":
+        #if action == "":
 
-action = ""
+    action = ""
 
-while action != 'quit':
+    while action != 'quit':
 
-    action = input("Do something (help for more): ")
-    command(action)
+        action = input("Do something (help for more): ")
+        command(action)
+main()
+
+##########IDEAS FOR UPDATE#################
+
+#update at once to speed up process
+
+#only keep recommendations or equity score that are also below 95%
+
+#have different functions ----- different choices. One for pattern stocks, one for guessing a little dip
+
+
 
 ####FOR STOCKS WITH PATTERNS#####
 #def gm_low(stock)
