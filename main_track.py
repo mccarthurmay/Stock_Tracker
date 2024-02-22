@@ -11,7 +11,6 @@ import yfinance as yf
 import statistics
 import pandas as pd
 import os
-import concurrent.futures
 #FUNCTIONS
 
 
@@ -37,27 +36,21 @@ def loadData(dbname):
     #reading binary
     dbfile = open(dbname+'.pickle', 'rb')
     db = pickle.load(dbfile)
-    sorted_data = sorted(db.values(), key=lambda x: x['percent'] if x['percent'] is not None else float('inf'))
+    sorted_data = sorted(db.values(), key=lambda x: x['percent'])
     for tracker in sorted_data:
         print(tracker)
     dbfile.close()
 
 def updateData(dbname):
-    try:
-        with open(dbname + '.pickle', 'rb') as dbfile:
-            db = pickle.load(dbfile)
-    except FileNotFoundError:
-        return
+    dbfile = open(dbname+'.pickle', 'rb')
+    db = pickle.load(dbfile)
 
-    def process_tracker(tracker):
+    for tracker in db:
         try:
             percent_under = confidence(tracker).iloc[0]
-            db[tracker] = {'tracker': tracker, 'percent': percent_under}
-        except Exception as e:
-            print(f"Error processing {tracker}: {e}")
-
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(process_tracker, db.keys())
+        except:
+            pass
+        db[tracker] = {'tracker' : tracker, 'percent' : percent_under}
 
     with open(dbname + '.pickle', 'wb') as dbfile:
         pickle.dump(db, dbfile)
@@ -74,7 +67,7 @@ def confidence(tracker):
     # grab current price
     current_close = yf.Ticker(tracker).history(period='1d', interval='1m').reset_index(drop=True)
     if not current_close.empty:
-        current_price = yf.Ticker(tracker).info['currentPrice']
+        current_price = current_close['Close'].iloc[-1]
         # percent over the lower bound of 2 std deviations (95% confidence interval)
         percent_under = (1 - current_price / lower_bound ) * 100
         return percent_under
@@ -83,23 +76,7 @@ def confidence(tracker):
         return None
 
 
-def day_movement(stock):
-    stock_data = yf.Ticker(stock).history(period="3mo").reset_index(drop=True)
-    stock_close = pd.DataFrame(stock_data['Close'])
-    stock_close = stock_close.iloc[-1]
-    stock_curr = yf.Ticker(stock).info['currentPrice']
-    stock_perc = (stock_close - stock_curr) / stock_close
-    print(f"{float(stock_perc.values):.15f}")
 
-
-def showinfo(stock):
-    stock_data = yf.Ticker(stock)
-    stock_history = stock_data.history(period = '3mo')
-    print(stock_data.info['longBusinessSummary'])
-    stock_close = pd.DataFrame(stock_history['Close']).iloc[-2]
-    stock_curr = yf.Ticker(stock).info['currentPrice']
-    print('Stock Close:',stock_close,'Current Price:', stock_curr)
-#prints stock prices from 3 months, figure out if first is yesterday
 
 def main():
 
@@ -112,12 +89,10 @@ def main():
             print("\t'show ci': show data from confidence interval    ")
             print("\t'update': update stock  ")
             print("\t'pattern stocks': stocks for pattern    ")
-            print("\t'dmove': daily movement   ")
-            print("\t'info':  info  ")
+            print("\t'':    ")
+            print("\t'':    ")
             print("\t'':    ")
             print("\t'quit': quit   ")
-
-#rename functions so I could combine names and have action_tly()
 
         if action == "store":
             input_file = input("what file you wnat: ")
@@ -137,19 +112,12 @@ def main():
             dbname = input("what db to delete: ")
             resetData(dbname)
 
-        if action == "info":
-            stock = input("What ticker you want: ")
-            showinfo(stock)
-
         if action == "update":
             dbname = input("what db:")
             updateData(dbname)
 
         if action == "con": #for testing
-            confidence("SPY")
-
-        if action == "dmove":
-            day_movement("GM")
+            confidence("GM")
 
         #if action == "":
 
@@ -161,8 +129,6 @@ def main():
         command(action)
 main()
 
-
-    #ticker.info['longBusinessSummary']
 ##########IDEAS FOR UPDATE#################
 
 #update at once to speed up process
