@@ -16,14 +16,14 @@ import concurrent.futures
 
 
 ######FOR OTHER CODE FROM PROJECT#######
-def storeData(dbname, stock_list, percent_under):
+def storeData(dbname, stock_list, percent_under, recommendation):
     try:
         with open(dbname+'.pickle', 'rb') as dbfile:
             db = pickle.load(dbfile)
     except FileNotFoundError:
         db = {}
-    for tracker in stock_list:
-        db[tracker] = {'tracker' : tracker, 'percent' : percent_under}
+    for ticker in stock_list:
+        db[ticker] = {'ticker' : ticker, 'percent' : percent_under, 'recommendation': recommendation}
 
     #source, destination
     with open(dbname + '.pickle', 'wb') as dbfile:
@@ -38,8 +38,8 @@ def loadData(dbname):
     dbfile = open(dbname+'.pickle', 'rb')
     db = pickle.load(dbfile)
     sorted_data = sorted(db.values(), key=lambda x: x['percent'] if x['percent'] is not None else float('inf'))
-    for tracker in sorted_data:
-        print(tracker)
+    for ticker in sorted_data:
+        print(ticker)
     dbfile.close()
 
 def updateData(dbname):
@@ -49,57 +49,68 @@ def updateData(dbname):
     except FileNotFoundError:
         return
 
-    def process_tracker(tracker):
+    def process_ticker(ticker):
         try:
-            percent_under = confidence(tracker).iloc[0]
-            db[tracker] = {'tracker': tracker, 'percent': percent_under}
+            percent_under = confidence(ticker).iloc[0]
+            recommendation = recommendation_analysis(ticker)
+            db[ticker] = {'ticker': ticker, 'percent': percent_under, 'recommendation': recommendation}
         except Exception as e:
-            print(f"Error processing {tracker}: {e}")
+            print(f"Error processing {ticker}: {e}")
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(process_tracker, db.keys())
+        executor.map(process_ticker, db.keys())
 
     with open(dbname + '.pickle', 'wb') as dbfile:
         pickle.dump(db, dbfile)
 
-def confidence(tracker):
+def recommendation_analysis(ticker):
+    recommendation = yf.Ticker(ticker).recommendations
+    SB = recommendation['strongBuy'].iloc[0]
+    B = recommendation['buy'].iloc[0]
+    H = recommendation['hold'].iloc[0]
+    S = recommendation['sell'].iloc[0]
+    SS = recommendation['strongSell'].iloc[0]
+    return str('Strong buy:',SB,'buy:', B,'hold', H,'sell', S, 'strong sell:', SS)
+def confidence(ticker):
 
     # closing price of input stock
-    stock_data = yf.Ticker(tracker).history(period="3mo").reset_index(drop=True)
+    stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
     stock_close = pd.DataFrame(stock_data['Close'])
     # confidence interval of 95% = standard deviation of data * 2
     ci = stock_close.std() * 2
     # lower bound of 95%
     lower_bound = stock_close.mean() - ci
     # grab current price
-    current_close = yf.Ticker(tracker).history(period='1d', interval='1m').reset_index(drop=True)
+    current_close = yf.Ticker(ticker).history(period='1d', interval='1m').reset_index(drop=True)
     if not current_close.empty:
-        current_price = yf.Ticker(tracker).info['currentPrice']
+        current_price = yf.Ticker(ticker).info['currentPrice']
         # percent over the lower bound of 2 std deviations (95% confidence interval)
         percent_under = (1 - current_price / lower_bound ) * 100
         return percent_under
     else:
-        print(f"No price data available for {tracker}.")
+        print(f"No price data available for {ticker}.")
         return None
 
-
-def day_movement(stock):
-    stock_data = yf.Ticker(stock).history(period="3mo").reset_index(drop=True)
+#test this
+def day_movement(ticker):
+    stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
     stock_close = pd.DataFrame(stock_data['Close'])
     stock_close = stock_close.iloc[-1]
-    stock_curr = yf.Ticker(stock).info['currentPrice']
+    stock_curr = yf.Ticker(ticker).info['currentPrice']
     stock_perc = (stock_close - stock_curr) / stock_close
     print(f"{float(stock_perc.values):.15f}")
 
 
-def showinfo(stock):
-    stock_data = yf.Ticker(stock)
+def showinfo(ticker):
+    stock_data = yf.Ticker(ticker)
     stock_history = stock_data.history(period = '3mo')
     print(stock_data.info['longBusinessSummary'])
     stock_close = pd.DataFrame(stock_history['Close']).iloc[-2]
-    stock_curr = yf.Ticker(stock).info['currentPrice']
+    stock_curr = yf.Ticker(ticker).info['currentPrice']
     print('Stock Close:',stock_close,'Current Price:', stock_curr)
-#prints stock prices from 3 months, figure out if first is yesterday
+
+    print(confidence(ticker))
+
 
 def main():
 
@@ -107,8 +118,8 @@ def main():
 #actions
     def command(action):
         if action == "help":
-            print("\t'store': store trackers into database")
-            print("\t'load': load trackers from database   ")
+            print("\t'store': store tickers into database")
+            print("\t'load': load tickers from database   ")
             print("\t'show ci': show data from confidence interval    ")
             print("\t'update': update stock  ")
             print("\t'pattern stocks': stocks for pattern    ")
@@ -127,7 +138,8 @@ def main():
             dbname = input("name of database: ")
             stock_list = list(data_txt)
             percent_under = 0
-            storeData(dbname, stock_list, percent_under)
+            recommendation = 0
+            storeData(dbname, stock_list, percent_under, recommendation)
 
         if action == "load":
             dbname = input("what db:")
@@ -138,8 +150,9 @@ def main():
             resetData(dbname)
 
         if action == "info":
-            stock = input("What ticker you want: ")
-            showinfo(stock)
+            ticker = input("What ticker you want: ")
+            showinfo(ticker)
+            recommendation_analysis(ticker)
 
         if action == "update":
             dbname = input("what db:")
@@ -174,6 +187,8 @@ main()
 
 
 ####FOR STOCKS WITH PATTERNS#####
+#def sell_stocks(portfolio)
+    #email sell
 #def gm_low(stock)
     #email me
 #def current_movemement(stock) #for increase
