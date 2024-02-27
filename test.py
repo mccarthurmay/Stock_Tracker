@@ -70,7 +70,8 @@ def recommendation_analysis(ticker):
     H = recommendation['hold'].iloc[0]
     S = recommendation['sell'].iloc[0]
     SS = recommendation['strongSell'].iloc[0]
-    return str('Strong buy:',SB,'buy:', B,'hold', H,'sell', S, 'strong sell:', SS)
+    result = f'Strong Buy:{SB} \nBuy:{B} \nHold:{H} \nSell:{S} \nStrong Sell:{SS}'
+    return result
 def confidence(ticker):
 
     # closing price of input stock
@@ -104,12 +105,11 @@ def day_movement(ticker):
 def showinfo(ticker):
     stock_data = yf.Ticker(ticker)
     stock_history = stock_data.history(period = '3mo')
-    print(stock_data.info['longBusinessSummary'])
-    stock_close = pd.DataFrame(stock_history['Close']).iloc[-2]
+    print('\n',stock_data.info['longBusinessSummary'])
+    stock_close = pd.DataFrame(stock_history['Close']).iloc[-2].item()
     stock_curr = yf.Ticker(ticker).info['currentPrice']
-    print('Stock Close:',stock_close,'Current Price:', stock_curr)
-
-    print(confidence(ticker))
+    print('\nStock Close:',stock_close,'\nCurrent Price:', stock_curr)
+    print(recommendation_analysis(ticker), '\n')
 
 
 def main():
