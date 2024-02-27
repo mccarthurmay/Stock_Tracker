@@ -70,8 +70,9 @@ def recommendation_analysis(ticker):
     H = recommendation['hold'].iloc[0]
     S = recommendation['sell'].iloc[0]
     SS = recommendation['strongSell'].iloc[0]
-    result = f'Strong Buy:{SB} \nBuy:{B} \nHold:{H} \nSell:{S} \nStrong Sell:{SS}'
+    result = f'Strong Buy:{SB} Buy:{B} Hold:{H} Sell:{S} Strong Sell:{SS}'
     return result
+
 def confidence(ticker):
 
     # closing price of input stock
@@ -177,8 +178,6 @@ main()
 
     #ticker.info['longBusinessSummary']
 ##########IDEAS FOR UPDATE#################
-
-#update at once to speed up process
 
 #only keep recommendations or equity score that are also below 95%
 
