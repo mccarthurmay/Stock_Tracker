@@ -186,6 +186,8 @@ main()
 
 
 ####FOR STOCKS WITH PATTERNS#####
+#def remtick(ticker)
+    #find ticker, remove line associated with ticker in pickle
 #def sell_stocks(portfolio)
     #email sell
 #def gm_low(stock)
