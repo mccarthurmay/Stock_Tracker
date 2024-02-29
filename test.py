@@ -8,6 +8,7 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import pickle
 import yfinance as yf
+from yfinance import shared
 import statistics
 import pandas as pd
 import os
@@ -46,16 +47,19 @@ def updateData(dbname):
     try:
         with open(dbname + '.pickle', 'rb') as dbfile:
             db = pickle.load(dbfile)
+            print("Database loaded.")
     except FileNotFoundError:
+        print("file not found")
         return
 
     def process_ticker(ticker):
         try:
-            percent_under = confidence(ticker).iloc[0]
+            percent_under = confidence(ticker, db).iloc[0]
             recommendation = recommendation_analysis(ticker)
             db[ticker] = {'ticker': ticker, 'percent': percent_under, 'recommendation': recommendation}
         except Exception as e:
-            print(f"Error processing {ticker}: {e}")
+            print(f"Removing {ticker}: {e}")
+            del db[ticker]
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_ticker, db.keys())
@@ -73,26 +77,30 @@ def recommendation_analysis(ticker):
     result = f'Strong Buy:{SB} Buy:{B} Hold:{H} Sell:{S} Strong Sell:{SS}'
     return result
 
-def confidence(ticker):
+def confidence(ticker, db):
 
     # closing price of input stock
     stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
     stock_close = pd.DataFrame(stock_data['Close'])
-    # confidence interval of 95% = standard deviation of data * 2
-    ci = stock_close.std() * 2
-    # lower bound of 95%
-    lower_bound = stock_close.mean() - ci
-    # grab current price
-    current_close = yf.Ticker(ticker).history(period='1d', interval='1m').reset_index(drop=True)
-    if not current_close.empty:
-        current_price = yf.Ticker(ticker).info['currentPrice']
-        # percent over the lower bound of 2 std deviations (95% confidence interval)
-        percent_under = (1 - current_price / lower_bound ) * 100
-        return percent_under
-    else:
-        print(f"No price data available for {ticker}.")
-        return None
 
+    if int(stock_close.iloc[-1]) > 5:
+        # confidence interval of 95% = standard deviation of data * 2
+        ci = stock_close.std() * 2
+        # lower bound of 95%
+        lower_bound = stock_close.mean() - ci
+        # grab current price
+        current_close = yf.Ticker(ticker).history(period='1d', interval='1m').reset_index(drop=True)
+        if not current_close.empty:
+            current_price = yf.Ticker(ticker).info['currentPrice']
+            # percent over the lower bound of 2 std deviations (95% confidence interval)
+            percent_under = (1 - current_price / lower_bound ) * 100
+            return percent_under
+        else:
+            print(f"No price data available for {ticker}.")
+            return None
+    else:
+        print(f"{ticker} is a penny stock. Removing ticker.")
+        del db[ticker]
 #test this
 def day_movement(ticker):
     stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
@@ -160,7 +168,7 @@ def main():
             updateData(dbname)
 
         if action == "con": #for testing
-            confidence("SPY")
+            confidence("GM")
 
         if action == "dmove":
             day_movement("GM")
