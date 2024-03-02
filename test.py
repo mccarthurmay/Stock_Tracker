@@ -13,6 +13,8 @@ import statistics
 import pandas as pd
 import os
 import concurrent.futures
+import matplotlib.pyplot as plt
+from datetime import datetime
 #FUNCTIONS
 
 
@@ -42,6 +44,55 @@ def loadData(dbname):
     for ticker in sorted_data:
         print(ticker)
     dbfile.close()
+
+def rsi_calc(ticker, graph):
+    ticker = yf.Ticker('GM')
+    df = ticker.history(interval="1d", period="1y")
+
+
+    change = df['Close'].diff()
+    change.dropna(inplace=True)
+    #create two copies of closing price
+    change_up = change.copy()
+    change_down = change.copy()
+
+    change_up[change_up<0]= 0
+    change_down[change_down>0]= 0
+    #check if mistakes
+    change.equals(change_up+change_down)
+    #calculate rolling average of average up and average down
+    mean_up = change_up.rolling(14).mean()
+    mean_down = change_down.rolling(14).mean().abs()
+    #calculate rsi
+    rsi = 100 * mean_up / (mean_up + mean_down)
+    rsi.head(20)
+    #Graph
+    if graph == True:
+        plt.style.use('fivethirtyeight')
+        #figure size
+        plt.rcParams['figure.figsize'] = (20,20)
+
+        ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
+        ax2 = plt.subplot2grid((10, 1), (5, 0), rowspan=4, colspan=1)
+
+        ax1.plot(df['Close'], linewidth = 2)
+        ax1.set_title('Close prices')
+
+        ax2.set_title('Relative Strength Index')
+        ax2.plot(rsi, color = 'orange', linewidth = 1)
+
+        #Oversold
+        ax2.axhline(30, linestyle = '--', linewidth = 1.5, color = 'green')
+        ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
+
+        plt.show()
+    else:
+        print(rsi.iloc[-1])
+
+
+
+
+
 
 def updateData(dbname):
     try:
@@ -101,7 +152,11 @@ def confidence(ticker, db):
     else:
         print(f"{ticker} is a penny stock. Removing ticker.")
         del db[ticker]
-#test this
+
+
+#def plot_confidence(ticker):
+    #plot confidence against close prices to see if it is accurately working
+
 def day_movement(ticker):
     stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
     stock_close = pd.DataFrame(stock_data['Close'])
@@ -154,6 +209,17 @@ def main():
             dbname = input("what db:")
             loadData(dbname)
 
+        if action == "rsi":
+            ticker = input("What ticker: ")
+            graph = input("Do you want a graph? (y/n) ").lower()
+
+            if graph == "y":
+                graph = True
+            else:
+                graph = False
+            rsi_calc(ticker, graph)
+
+
         if action == "reset":
             dbname = input("what db to delete: ")
             resetData(dbname)
@@ -168,7 +234,7 @@ def main():
             updateData(dbname)
 
         if action == "con": #for testing
-            confidence("GM")
+            plot_confidence("GM")
 
         if action == "dmove":
             day_movement("GM")
