@@ -15,22 +15,61 @@ import os
 import concurrent.futures
 import matplotlib.pyplot as plt
 from datetime import datetime
-#FUNCTIONS
 
 
-######FOR OTHER CODE FROM PROJECT#######
-def storeData(dbname, stock_list, percent_under, recommendation):
+######STORAGE CODE#############
+def storeData(dbname, stock_list):
     try:
         with open(dbname+'.pickle', 'rb') as dbfile:
             db = pickle.load(dbfile)
     except FileNotFoundError:
         db = {}
     for ticker in stock_list:
-        db[ticker] = {'ticker' : ticker, 'percent' : percent_under, 'recommendation': recommendation}
+        runall(ticker, db)
 
     #source, destination
     with open(dbname + '.pickle', 'wb') as dbfile:
         pickle.dump(db, dbfile)
+
+    dbfile.close()
+
+def addData(ticker, dbname):
+    try:
+        with open(dbname + '.pickle', 'rb') as dbfile:
+            db = pickle.load(dbfile)
+
+        if ticker not in db:
+                    try:
+                        runall(ticker, db)
+                    except Exception as e:
+                        print(f"Removing {ticker}: {e}")
+                        del db[ticker]
+        else:
+            print("Ticker already exists")
+
+        with open(dbname + '.pickle', 'wb') as dbfile:
+            pickle.dump(db, dbfile)
+
+        dbfile.close()
+
+    except FileNotFoundError:
+        print("File not found")
+
+
+
+def remData(ticker, dbname):
+    try:
+        with open(dbname + '.pickle', 'rb') as dbfile:
+            db = pickle.load(dbfile)
+        del db[ticker]
+        with open(dbname + '.pickle', 'wb') as dbfile:
+            pickle.dump(db, dbfile)
+        print(f"Removing {ticker}")
+        dbfile.close()
+    except FileNotFoundError:
+        print("File not found")
+
+
 
 def resetData(dbname):
     os.remove(dbname+'.pickle')
@@ -38,17 +77,126 @@ def resetData(dbname):
 
 def loadData(dbname):
     #reading binary
-    dbfile = open(dbname+'.pickle', 'rb')
-    db = pickle.load(dbfile)
-    sorted_data = sorted(db.values(), key=lambda x: x['percent'] if x['percent'] is not None else float('inf'))
-    for ticker in sorted_data:
-        print(ticker)
+    try:
+        dbfile = open(dbname+'.pickle', 'rb')
+        db = pickle.load(dbfile)
+        sorted_data = sorted(db.values(), key=lambda x: x['percent'] if x['percent'] is not None else float('inf'))
+        for ticker in sorted_data:
+            print(ticker)
+        dbfile.close()
+    except FileNotFoundError:
+        "File not found"
+
+def updateData(dbname):
+    try:
+        with open(dbname + '.pickle', 'rb') as dbfile:
+            db = pickle.load(dbfile)
+            print("Database loading...")
+    except FileNotFoundError:
+        print("file not found")
+
+    def process_ticker(ticker):
+        try:
+            runall(ticker, db)
+        except Exception as e:
+            print(f"Removing {ticker}: {e}")
+            del db[ticker]
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(process_ticker, db.keys())
+
+    with open(dbname + '.pickle', 'wb') as dbfile:
+        pickle.dump(db, dbfile)
+
     dbfile.close()
 
-def rsi_calc(ticker, graph):
-    ticker = yf.Ticker('GM')
-    df = ticker.history(interval="1d", period="1y")
 
+######FUNCTIONAL CODE################
+def runall(ticker, db):
+    percent_under = confidence(ticker, db).iloc[0]
+    recommendation = recommendation_analysis(ticker)
+    rsi = rsi_calc(ticker, graph = False)
+    db[ticker] = {'ticker': ticker, 'percent': percent_under, 'recommendation': recommendation, 'rsi': rsi}
+
+def recommendation_analysis(ticker):
+    recommendation = yf.Ticker(ticker).recommendations
+    SB = recommendation['strongBuy'].iloc[0]
+    B = recommendation['buy'].iloc[0]
+    H = recommendation['hold'].iloc[0]
+    S = recommendation['sell'].iloc[0]
+    SS = recommendation['strongSell'].iloc[0]
+    result = f'Strong Buy:{SB} Buy:{B} Hold:{H} Sell:{S} Strong Sell:{SS}'
+    return result
+
+def confidence(ticker, dbname):
+    # closing price of input stock
+    stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
+    stock_close = pd.DataFrame(stock_data['Close'])
+
+    if int(stock_close.iloc[-1]) > 5:
+        # confidence interval of 95% = standard deviation of data * 2
+        ci = stock_close.std() * 2
+        # lower bound of 95%
+        lower_bound = stock_close.mean() - ci
+        # grab current price
+        current_close = yf.Ticker(ticker).history(period='1d', interval='1m').reset_index(drop=True)
+        if not current_close.empty:
+            current_price = yf.Ticker(ticker).info['currentPrice']
+            # percent over the lower bound of 2 std deviations (95% confidence interval)
+            percent_under = (1 - current_price / lower_bound ) * 100
+            return percent_under
+
+        else:
+            print(f"No price data available for {ticker}.")
+            return None
+    else:
+        print(f"{ticker} is a penny stock. Removing ticker.")
+        del dbname[ticker]
+
+
+def con_plot(ticker):
+    ###test###
+    tick = yf.Ticker(ticker)
+    df_list = tick.history(interval='1d', period='5y')
+    df = pd.DataFrame(df_list['Close'])
+    ci_list = []
+    ci = df.std() * 2
+    upper_bound = df.mean() + ci
+    lower_bound = df.mean() - ci
+    mean = df.mean()
+    current = yf.Ticker(ticker).info['currentPrice']
+    print(ci, upper_bound, lower_bound,mean, current)
+    for close in df_list['Close']:
+        percent_lower = (close - lower_bound) / (upper_bound - lower_bound) * 100
+        ci_list.append(percent_lower)  # Append to list
+
+    print(ci_list)
+    plt.style.use('fivethirtyeight')
+    #figure size
+    plt.rcParams['figure.figsize'] = (20,20)
+
+    ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
+    ax2 = plt.subplot2grid((10, 1), (5, 0), rowspan=4, colspan=1)
+
+    ax1.plot(df['Close'], linewidth = 2)
+    ax1.set_title('Close prices')
+
+    ax2.set_title('Confidence Interval')
+    ax2.plot(ci_list, color = 'orange', linewidth = 1)
+
+    #Oversold
+    ax2.axhline(30, linestyle = '--', linewidth = 1.5, color = 'green')
+    ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
+
+    plt.show()
+    
+    ###test###
+
+
+
+def rsi_calc(ticker, graph):
+    ticker = yf.Ticker(ticker)
+    df = ticker.history(interval="1d", period="2y")
 
     change = df['Close'].diff()
     change.dropna(inplace=True)
@@ -65,7 +213,7 @@ def rsi_calc(ticker, graph):
     mean_down = change_down.rolling(14).mean().abs()
     #calculate rsi
     rsi = 100 * mean_up / (mean_up + mean_down)
-    rsi.head(20)
+
     #Graph
     if graph == True:
         plt.style.use('fivethirtyeight')
@@ -87,76 +235,13 @@ def rsi_calc(ticker, graph):
 
         plt.show()
     else:
-        print(rsi.iloc[-1])
+        #print top 1 rsi
+        return(round(rsi[-1]))
 
 
+#possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
 
-
-
-
-def updateData(dbname):
-    try:
-        with open(dbname + '.pickle', 'rb') as dbfile:
-            db = pickle.load(dbfile)
-            print("Database loaded.")
-    except FileNotFoundError:
-        print("file not found")
-        return
-
-    def process_ticker(ticker):
-        try:
-            percent_under = confidence(ticker, db).iloc[0]
-            recommendation = recommendation_analysis(ticker)
-            db[ticker] = {'ticker': ticker, 'percent': percent_under, 'recommendation': recommendation}
-        except Exception as e:
-            print(f"Removing {ticker}: {e}")
-            del db[ticker]
-
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(process_ticker, db.keys())
-
-    with open(dbname + '.pickle', 'wb') as dbfile:
-        pickle.dump(db, dbfile)
-
-def recommendation_analysis(ticker):
-    recommendation = yf.Ticker(ticker).recommendations
-    SB = recommendation['strongBuy'].iloc[0]
-    B = recommendation['buy'].iloc[0]
-    H = recommendation['hold'].iloc[0]
-    S = recommendation['sell'].iloc[0]
-    SS = recommendation['strongSell'].iloc[0]
-    result = f'Strong Buy:{SB} Buy:{B} Hold:{H} Sell:{S} Strong Sell:{SS}'
-    return result
-
-def confidence(ticker, db):
-
-    # closing price of input stock
-    stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
-    stock_close = pd.DataFrame(stock_data['Close'])
-
-    if int(stock_close.iloc[-1]) > 5:
-        # confidence interval of 95% = standard deviation of data * 2
-        ci = stock_close.std() * 2
-        # lower bound of 95%
-        lower_bound = stock_close.mean() - ci
-        # grab current price
-        current_close = yf.Ticker(ticker).history(period='1d', interval='1m').reset_index(drop=True)
-        if not current_close.empty:
-            current_price = yf.Ticker(ticker).info['currentPrice']
-            # percent over the lower bound of 2 std deviations (95% confidence interval)
-            percent_under = (1 - current_price / lower_bound ) * 100
-            return percent_under
-        else:
-            print(f"No price data available for {ticker}.")
-            return None
-    else:
-        print(f"{ticker} is a penny stock. Removing ticker.")
-        del db[ticker]
-
-
-#def plot_confidence(ticker):
-    #plot confidence against close prices to see if it is accurately working
-
+#not done
 def day_movement(ticker):
     stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
     stock_close = pd.DataFrame(stock_data['Close'])
@@ -164,7 +249,11 @@ def day_movement(ticker):
     stock_curr = yf.Ticker(ticker).info['currentPrice']
     stock_perc = (stock_close - stock_curr) / stock_close
     print(f"{float(stock_perc.values):.15f}")
-
+        #def day_movement(stock)
+            #get last close
+            #compare to now
+            #if 5%+ drop, email
+            #if 5%+ increase, email
 
 def showinfo(ticker):
     stock_data = yf.Ticker(ticker)
@@ -183,30 +272,44 @@ def main():
     def command(action):
         if action == "help":
             print("\t'store': store tickers into database")
-            print("\t'load': load tickers from database   ")
-            print("\t'show ci': show data from confidence interval    ")
-            print("\t'update': update stock  ")
-            print("\t'pattern stocks': stocks for pattern    ")
-            print("\t'dmove': daily movement   ")
-            print("\t'info':  info  ")
-            print("\t'':    ")
-            print("\t'quit': quit   ")
+            print("\t'update': update database")
+            print("\t'load': load tickers from database")
+            print("\t'add': adds specific stocks to database ")
+            print("\t'remove': remove specific stocks from database")
+            print("\t'reset': resets requested database")
+            print("\t'rsi': shows and graphs RSI of stock")
+            print("\t'quit': quit")
+            print("\t'debug': debug options")
+            print("\t'':  ")
+            print("\t'':  ")
 
+        if action == "debug":
+            print("\t'pattern stocks': stocks for pattern") #no purpose yet
+            print("\t'dmove': daily movement of ticker")
+            print("\t'info': displays information on ticker")
+            print("\t'show ci': show data from confidence interval    ")
 #rename functions so I could combine names and have action_tly()
 
+        if action == "add":
+            dbname = input("Name of database: ")
+            ticker = input("Ticker: ").upper()
+            addData(ticker, dbname)
+        if action == "remove":
+            dbname = input("Name of database: ")
+            ticker = input("Ticker: ").upper()
+            remData(ticker, dbname)
+
         if action == "store":
-            input_file = input("what file you wnat: ")
+            input_file = input("File containing tickers: ")
             with open(input_file+'.txt', 'r') as txt:
                 data_txt = txt.read()
                 data_txt = data_txt.split('\n')
-            dbname = input("name of database: ")
+            dbname = input("Name of database: ")
             stock_list = list(data_txt)
-            percent_under = 0
-            recommendation = 0
-            storeData(dbname, stock_list, percent_under, recommendation)
+            storeData(dbname, stock_list)
 
         if action == "load":
-            dbname = input("what db:")
+            dbname = input("Name of database: ")
             loadData(dbname)
 
         if action == "rsi":
@@ -221,7 +324,7 @@ def main():
 
 
         if action == "reset":
-            dbname = input("what db to delete: ")
+            dbname = input("Name of database: ")
             resetData(dbname)
 
         if action == "info":
@@ -230,11 +333,11 @@ def main():
             recommendation_analysis(ticker)
 
         if action == "update":
-            dbname = input("what db:")
+            dbname = input("Name of database: ")
             updateData(dbname)
 
         if action == "con": #for testing
-            plot_confidence("GM")
+            con_plot("GM")
 
         if action == "dmove":
             day_movement("GM")
@@ -258,6 +361,16 @@ main()
 #have different functions ----- different choices. One for pattern stocks, one for guessing a little dip
 
 
+#def plot_confidence(ticker):
+    #plot confidence against close prices to see if it is accurately working
+
+
+#machine learning?? how often does confidence relate to a certain stock
+    #compare against plot_confidence
+    #compare rsi scores
+    #put them together
+
+#def add_stock(ticker)
 
 ####FOR STOCKS WITH PATTERNS#####
 #def remtick(ticker)
@@ -270,10 +383,5 @@ main()
     #store the open data at market open
     #compare to current data, if % change is greater than 2%
     #send email to me
-#def day_movement(stock)
-    #get last close
-    #compare to now
-    #if 5%+ drop, email
-    #if 5%+ increase, email
 #def minimum_price(stock)
     #get close
