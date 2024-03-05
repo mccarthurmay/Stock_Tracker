@@ -21,24 +21,20 @@ import numpy as np
 ######STORAGE CODE#############
 def storeData(dbname, stock_list):
     try:
-        with open(dbname+'.pickle', 'rb') as dbfile:
-            db = pickle.load(dbfile)
+        db, dbfile = open_file(dbname)
     except FileNotFoundError:
         db = {}
 
     for ticker in stock_list:
         db[ticker] = {'Ticker': None, 'Buy': None, '{Percent above 95% confidence': None,  'RSI': None, 'Slope': None}
     #source, destination
-    with open(dbname + '.pickle', 'wb') as dbfile:
-        pickle.dump(db, dbfile)
+    close_file(db, dbname)
+    updateData(dbname)
 
-    dbfile.close()
 
 def mainPortfolio(dbname):
     try:
-        with open(dbname+'.pickle', 'rb') as dbfile:
-            db = pickle.load(dbfile)
-
+        db, dbfile = open_file(dbname)
     except FileNotFoundError:
         db = {}
 
@@ -57,16 +53,12 @@ def mainPortfolio(dbname):
         else:
             print("Ticker already exists")
 
-    with open(dbname + '.pickle', 'wb') as dbfile:
-        pickle.dump(db, dbfile)
-
-
+    close_file(db, dbname)
 
 
 def addData(ticker, dbname):
     try:
-        with open(dbname + '.pickle', 'rb') as dbfile:
-            db = pickle.load(dbfile)
+        db, dbfile = open_file(dbname)
 
         if ticker not in db:
             try:
@@ -77,10 +69,7 @@ def addData(ticker, dbname):
         else:
             print("Ticker already exists")
 
-        with open(dbname + '.pickle', 'wb') as dbfile:
-            pickle.dump(db, dbfile)
-
-        dbfile.close()
+        close_file(db, dbname)
 
     except FileNotFoundError:
         print("File not found")
@@ -88,26 +77,22 @@ def addData(ticker, dbname):
 
 def remData(ticker, dbname):
     try:
-        with open(dbname + '.pickle', 'rb') as dbfile:
-            db = pickle.load(dbfile)
+        db, dbfile = open_file(dbname)
         del db[ticker]
-        with open(dbname + '.pickle', 'wb') as dbfile:
-            pickle.dump(db, dbfile)
+        close_file(db, dbname)
         print(f"Removing {ticker}")
-        dbfile.close()
     except FileNotFoundError:
         print("File not found")
 
 
 def resetData(dbname):
-    os.remove(dbname+'.pickle')
+    os.remove(f'./storage/{dbname}.pickle')
 
 
 def loadData(dbname):
     #reading binary
     try:
-        dbfile = open(dbname+'.pickle', 'rb')
-        db = pickle.load(dbfile)
+        db, dbfile = open_file(dbname)
         sorted_data = sorted(db.values(), key=lambda x: x['Percent under 95% confidence'] if x['Percent under 95% confidence'] is not None else float('inf'))
         for ticker in sorted_data:
             print(ticker)
@@ -117,9 +102,8 @@ def loadData(dbname):
 
 def updateMain(dbname):
     try:
-        with open(dbname + '.pickle', 'rb') as dbfile:
-            db = pickle.load(dbfile)
-            print("Database loading...")
+        db, dbfile = open_file(dbname)
+        print("Database loading...")
     except FileNotFoundError:
         print("file not found")
 
@@ -133,15 +117,12 @@ def updateMain(dbname):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_ticker, db.keys())
 
-    with open(dbname + '.pickle', 'wb') as dbfile:
-        pickle.dump(db, dbfile)
-    dbfile.close()
+    close_file(db, dbname)
 
 def updateData(dbname):
     try:
-        with open(dbname + '.pickle', 'rb') as dbfile:
-            db = pickle.load(dbfile)
-            print("Database loading...")
+        db, dbfile = open_file(dbname)
+        print("Database loading...")
     except FileNotFoundError:
         print("file not found")
 
@@ -155,16 +136,15 @@ def updateData(dbname):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_ticker, db.keys())
 
-    with open(dbname + '.pickle', 'wb') as dbfile:
-        pickle.dump(db, dbfile)
-    dbfile.close()
+    close_file(db, dbname)
 
 def open_file(dbname):
-    with open(dbname + '.pickle', 'rb') as dbfile:
+    with open(f'./storage/{dbname}.pickle', 'rb') as dbfile:
         db = pickle.load(dbfile)
+    return db, dbfile
 
-def close_file(dbname):
-    with open(dbname + '.pickle', 'wb') as dbfile:
+def close_file(db, dbname):
+    with open(f'./storage/{dbname}.pickle', 'wb') as dbfile:
         pickle.dump(db, dbfile)
     dbfile.close()
 
@@ -173,8 +153,8 @@ def runall(ticker, db):
     percent_under = round(confidence(ticker, db).iloc[0])
     rsi = rsi_calc(ticker, graph = False)
     slope_value = slope(ticker)
-    buy_bool = buy(rsi, percent_under)
-    db[ticker] = {'Ticker': ticker, 'Buy': buy_bool, 'Percent under 95% confidence': percent_under,  'RSI': rsi, 'Slope': slope_value}
+    buy_bool = buy(rsi, percent_under, slope_value)
+    db[ticker] = {'Ticker': ticker, 'Buy': buy_bool, 'Percent under 95% confidence': percent_under, 'RSI': rsi, 'Slope': slope_value}
 
 def portfolio_runall(ticker, db):
     percent_under = round(confidence(ticker, db).iloc[0])
@@ -183,8 +163,8 @@ def portfolio_runall(ticker, db):
     sell_bool = sell(rsi)
     db[ticker] = {'Ticker': ticker, 'Sell': sell_bool, 'Percent under 95% confidence': percent_under, 'RSI': rsi, 'Slope': slope_value}
 
-def buy(rsi, percent_under):
-    if percent_under > 0 and rsi < 30 and slope_value < .05:
+def buy(rsi, percent_under, slope_value):
+    if percent_under > 0 and rsi < 30 and slope_value > -.05:
         return True
     else:
         return False
@@ -382,7 +362,7 @@ def main():
 
         if action == "store":
             input_file = input("File containing tickers: ")
-            with open(input_file+'.txt', 'r') as txt:
+            with open(f'./storage/ticker_lists/{input_file}.txt', 'r') as txt:
                 data_txt = txt.read()
                 data_txt = data_txt.split('\n')
             dbname = input("Name of database: ")
