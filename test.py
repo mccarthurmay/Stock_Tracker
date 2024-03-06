@@ -103,7 +103,7 @@ def loadData(dbname):
 def updateMain(dbname):
     try:
         db, dbfile = open_file(dbname)
-        print("Database loading...")
+        print(f"{dbname} loading...")
     except FileNotFoundError:
         print("file not found")
 
@@ -122,9 +122,10 @@ def updateMain(dbname):
 def updateData(dbname):
     try:
         db, dbfile = open_file(dbname)
-        print("Database loading...")
+        print(f"{dbname} loading...")
     except FileNotFoundError:
         print("file not found")
+        return
 
     def process_ticker(ticker):
         try:
@@ -188,7 +189,7 @@ def slope(ticker):
 
 def confidence(ticker, dbname):
     # closing price of input stock
-    stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
+    stock_data = yf.Ticker(ticker).history(period="2mo").reset_index(drop=True)
 
     stock_close = pd.DataFrame(stock_data['Close'])
 
@@ -290,12 +291,12 @@ def rsi_calc(ticker, graph):
 
         #Oversold
         ax2.axhline(30, linestyle = '--', linewidth = 1.5, color = 'green')
+        #Overbought
         ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
 
         plt.show()
     else:
-        #print top 1 rsi
-        return(round(rsi[-1]))
+        return (round(rsi[-1]))
 
 
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
@@ -323,8 +324,72 @@ def showinfo(ticker):
     print('\nStock Close:',stock_close,'\nCurrent Price:', stock_curr)
     print(recommendation_analysis(ticker), '\n')
 
+def open_settings():
+    with open(f'./storage/settings/settings.pickle', 'rb') as settingsFile:
+        settings = pickle.load(settingsFile)
+        print("Settings loaded.")
+    return settings, settingsFile
+
+
+def close_settings(settings, settingsFile):
+    with open('./storage/settings/settings.pickle', 'wb') as settingsFile:
+        pickle.dump(settings, settingsFile)
+    settingsFile.close()
+
+
+def makeSettings():
+    try:
+        settings, settingsFile = open_settings()
+
+    except FileNotFoundError:
+        settings = {}
+        print("Settings file created.")
+
+    for database in os.listdir('./storage/'):
+        if database.endswith('.pickle'):
+            database = os.path.splitext(database)[0]
+            settings[database] = {'AutoUpdate': False}
+
+    close_settings(settings, settingsFile)
+
+
+def settings():
+
+    settings, settingsFile = open_settings()
+
+    for database, values in settings.items():
+        if values.get('AutoUpdate', True) and database != "main":
+            updateData(database)
+        elif database == "main": # temp fix
+            updateMain(database)
+
+    close_settings(settings, settingsFile)
+
+
+def adjustSettings(database, choice):
+    settings, settingsFile = open_settings()
+
+
+    if database in settings:
+        settings[database]['AutoUpdate'] = choice
+        print(f"Updated 'AutoUpdate' for '{database}' to {choice}")
+    else:
+        print(f"Database '{database}' not found")
+
+    close_settings(settings, settingsFile)
+
+def loadSettings():
+    settings, settingsFile = open_settings()
+    for database, values in settings.items():
+        print(f"{database}: {values}")
+
 
 def main():
+    try:
+        settings()
+    except:
+        makeSettings()
+
 
 
 #actions
@@ -342,13 +407,26 @@ def main():
             print("\t'con':  shows and graphs confidence of stock")
             print("\t'quit': quit")
             print("\t'debug': debug options")
+            print("\t'settings': adjusts settings file")
 
         if action == "debug":
             print("\t'pattern stocks': stocks for pattern") #no purpose yet
             print("\t'dmove': daily movement of ticker")
             print("\t'info': displays information on ticker")
             print("\t'show ci': show data from confidence interval    ")
+            print("\t'makesettings': makes settings file")
 #rename functions so I could combine names and have action_tly()
+
+
+        if action == "settings":
+            loadSettings()
+            database = input("Name of database:").strip()
+            choice = input("Auto update on startup (y, n):" ).lower().strip()
+            if choice == 'y':
+                choice = True
+            elif choice == 'n':
+                choice = False
+            adjustSettings(database, choice)
 
         if action == "add":
             dbname = input("Name of database: ")
