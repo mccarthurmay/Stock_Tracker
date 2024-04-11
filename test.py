@@ -164,18 +164,27 @@ def portfolio_runall(ticker, db):
     sell_bool = sell(rsi)
     db[ticker] = {'Ticker': ticker, 'Sell': sell_bool, 'Percent under 95% confidence': percent_under, 'RSI': rsi, 'Slope': slope_value}
 
+def winrate():
+    db, dbfile = open_file(dbname)
+    print(db['GM'])
+    if ticker in db:
+        if ticker.item[buy] == true:
+            
+
+
+
+
 def buy(rsi, percent_under, slope_value):
-    if percent_under > 0 and rsi < 30 and slope_value > -.05:
+    if percent_under >! 0 and rsi !< 30 and slope_value > -.05:
         return True
     else:
         return False
 
 def sell(rsi):
-    if rsi > 70:
+    if rsi >! 70:
         return True
     else:
         return False
-
 
 def slope(ticker):
     df = yf.Ticker(ticker)
@@ -295,6 +304,8 @@ def rsi_calc(ticker, graph):
         ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
 
         plt.show()
+    elif graph == False:
+        print(rsi)
     else:
         return (round(rsi[-1]))
 
@@ -322,7 +333,7 @@ def showinfo(ticker):
     stock_close = pd.DataFrame(stock_history['Close']).iloc[-2].item()
     stock_curr = yf.Ticker(ticker).info['currentPrice']
     print('\nStock Close:',stock_close,'\nCurrent Price:', stock_curr)
-    print(recommendation_analysis(ticker), '\n')
+
 
 def open_settings():
     with open(f'./storage/settings/settings.pickle', 'rb') as settingsFile:
@@ -410,6 +421,7 @@ def main():
             print("\t'settings': adjusts settings file")
 
         if action == "debug":
+            print("\t'winrate': win rate of stocks, automatic")
             print("\t'pattern stocks': stocks for pattern") #no purpose yet
             print("\t'dmove': daily movement of ticker")
             print("\t'info': displays information on ticker")
@@ -489,8 +501,9 @@ def main():
         if action == "dmove":
             day_movement("GM")
 
+        if action == "winrate":
+            winrate()
         #if action == "":
-
 
 
     while True:
@@ -519,8 +532,8 @@ main()
     #compare rsi scores
     #put them together
 
-#def options()
-    #store options, auto update certain pickle files? auto load certain pickle files?
+#try something
+
 
 
 
