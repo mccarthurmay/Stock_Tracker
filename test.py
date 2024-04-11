@@ -46,7 +46,7 @@ def mainPortfolio(dbname):
 
         if ticker not in db:
             try:
-                portfolio_runall(ticker, db)
+                runall_sell(ticker, db)
             except Exception as e:
                 print(f"Removing {ticker}: {e}")
                 del db[ticker]
@@ -109,10 +109,9 @@ def updateMain(dbname):
 
     def process_ticker(ticker):
         try:
-            portfolio_runall(ticker, db)
+            runall_sell(ticker, db)
         except Exception as e:
-            print(f"Removing {ticker}: {e}")
-            del db[ticker]
+            print(f"There has been an error with {ticker}: {e}")
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_ticker, db.keys())
@@ -157,7 +156,7 @@ def runall(ticker, db):
     buy_bool = buy(rsi, percent_under, slope_value)
     db[ticker] = {'Ticker': ticker, 'Buy': buy_bool, 'Percent under 95% confidence': percent_under, 'RSI': rsi, 'Slope': slope_value}
 
-def portfolio_runall(ticker, db):
+def runall_sell(ticker, db):
     percent_under = round(confidence(ticker, db).iloc[0])
     rsi = rsi_calc(ticker, graph = False)
     slope_value = slope(ticker)
@@ -167,9 +166,9 @@ def portfolio_runall(ticker, db):
 def winrate():
     db, dbfile = open_file(dbname)
     print(db['GM'])
-    if ticker in db:
-        if ticker.item[buy] == true:
-            
+    if ticker in db and ticker.item[Buy] == True:
+
+
 
 
 
