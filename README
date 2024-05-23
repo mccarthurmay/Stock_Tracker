@@ -5,6 +5,11 @@ test.py - Beta without loading settings/winrate
 working.py - Beta, working file
 
 
+Requirements:
+pickle, yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
+
+
+
 
 *must begin all databases containing tickers with "t_", "tickers_", or "ticker_" to be properly updated
 *must begin all portfolios with "p_" or "portfolio_" to be properly updated
