@@ -421,8 +421,9 @@ def winrate():
     for ticker, ticker_data in db.items():
         price = yf.Ticker(ticker).info['currentPrice']
         if ticker_data['Buy'] == True:
-            if ticker not in db_w or db_w[ticker]['Price'] < price:
-                db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")} #add date
+            if ticker not in db_w or db_w[ticker]['Price'] > price:
+                db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
+                print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')}")
     close_file(db_w, 'winrate_storage')
 
 
