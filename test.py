@@ -423,7 +423,7 @@ def winrate():
         if ticker_data['Buy'] == True:
             if ticker not in db_w or db_w[ticker]['Price'] < price:
                 db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")} #add date
-                close_file(db_w, 'winrate_storage')
+    close_file(db_w, 'winrate_storage')
 
 
 def checkwinrate():
@@ -436,8 +436,8 @@ def checkwinrate():
             new_price = yf.Ticker(ticker).info['currentPrice']
             db_w[ticker] = {'New Price': new_price, 'Old Price': price, 'Gain': new_price - price, 'Old Date': date, 'New Date': date.today().strftime("%Y-%m-%d")}
             del db[ticker]
-            close_file(db_w, 'winrate')
-            close_file(db, 'winrate_storage')
+    close_file(db_w, 'winrate')
+    close_file(db, 'winrate_storage')
 
 
 

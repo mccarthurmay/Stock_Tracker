@@ -419,22 +419,33 @@ def winrate():
     db, dbfile = open_file('t_safe') #NEED TO MAKE THIS CHANGEABLE, OR HAVE MULTIPLE FILES
     db_w, dbfile_w = open_file('winrate_storage')
     for ticker, ticker_data in db.items():
-        if ticker not in db_w and ticker_data['Buy'] == True:
-            price = yf.Ticker(ticker).info['currentPrice']
-            db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")} #add date
-            close_file(db_w, 'winrate_storage')
+        price = yf.Ticker(ticker).info['currentPrice']
+        if ticker_data['Buy'] == True:
+            if ticker not in db_w or db_w[ticker]['Price'] < price:
+                db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")} #add date
+    close_file(db_w, 'winrate_storage')
+
 
 def checkwinrate():
     db, dbfile = open_file('winrate_storage')
     db_w, dbfile_w = open_file('winrate')
-    for ticker, price in db.items():
+    for ticker, data in db.items():
+        old_price = data['Price']
+        old_date = data['Date']
         rsi = rsi_calc(ticker, graph = False)
         sell_bool = sell(rsi)
         if sell_bool == True and ticker not in db_w:
             new_price = yf.Ticker(ticker).info['currentPrice']
-            db_w[ticker] = {'New Price': new_price, 'Old Price': price, 'Gain': new_price - price, 'Date': date.today().strftime("%Y-%m-%d")}
-            close_file(db_w, 'winrate')
-
+            db_w[ticker] = {
+                'New Price': new_price,
+                'Old Price': old_price,
+                'Gain': new_price - old_price,
+                'Old Date': date,
+                'New Date': date.today().strftime("%Y-%m-%d")
+            }
+            del db[ticker]
+    close_file(db_w, 'winrate')
+    close_file(db, 'winrate_storage')
 
 
 def main():
