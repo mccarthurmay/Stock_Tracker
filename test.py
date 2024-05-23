@@ -292,6 +292,7 @@ def rsi_calc(ticker, graph):
         ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
 
         plt.show()
+        return (round(rsi[-1]))
     else:
         return (round(rsi[-1]))
 
@@ -382,58 +383,13 @@ def loadSettings():
     for database, values in settings.items():
         print(f"{database}: {values}")
 
-#FIXFIXFIXFIX
-def makeWinrate():
-    try:
-        db, dbfile = open_file('winrate_storage')
-    except:
-        db = {}
-    close_file(db, 'winrate_storage')
-
-    try:
-        db, dbfile = open_file('winrate')
-    except:
-        db = {}
-    close_file(db, 'winrate')
-
-    winrate()
-
-
-#FIXFIXFIXFIX
-def winrate():
-    db, dbfile = open_file('safe_tickers')
-    db_w, dbfile_w = open_file('winrate_storage')
-    for ticker, ticker_data in db.items():
-        if ticker not in db_w:
-            if ticker_data['Buy'] == True:
-                price = yf.Ticker(ticker).info['currentPrice']
-                db_w[ticker] = {'Price': price} #add date
-                close_file(db_w, 'winrate_storage')
-
-
-def checkwinrate():
-    #check all tickers in winrate if they are "sellable", if sellable send to winrate.pickle
-    #rsi = rsi_calc(ticker, graph = False)
-    #sell_bool = sell(rsi)
-    pass
+    #if ticker in db and ticker.item[Buy] == True:
 
 def main():
-    #try:
-    #    settings()
-    #except:
-    #    makeSettings()
     try:
-        winrate()
+        settings()
     except:
-        makeWinrate()
-
-    #temp load file
-    with open(f'./storage/winrate.pickle', 'rb') as dbfile:
-        data = pickle.load(dbfile)
-        print(data)
-    with open(f'./storage/winrate_storage.pickle', 'rb') as dbfile:
-        data = pickle.load(dbfile)
-        print(data)
+        makeSettings()
 
 
 #actions
@@ -505,6 +461,7 @@ def main():
             else:
                 graph = False
             rsi_calc(ticker, graph)
+            print(rsi_calc(ticker, graph = False))
 
         if action == "portfolio":
             dbname = input("Name of database: ")
@@ -546,18 +503,11 @@ def main():
             command(action)
 main()
 
-
-    #ticker.info['longBusinessSummary']
 ##########IDEAS FOR UPDATE#################
 
 #only keep recommendations or equity score that are also below 95%
 
 #have different functions ----- different choices. One for pattern stocks, one for guessing a little dip
-
-
-#def plot_confidence(ticker):
-    #plot confidence against close prices to see if it is accurately working
-
 
 #machine learning?? how often does confidence relate to a certain stock
     #compare against plot_confidence

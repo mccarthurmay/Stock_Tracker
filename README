@@ -1,0 +1,10 @@
+Hello, this is a WIP.
+
+main_track.py - Recommended, newest working version
+test.py - Beta without loading settings/winrate
+working.py - Beta, working file
+
+
+
+*must begin all databases containing tickers with "t_", "tickers_", or "ticker_" to be properly updated
+*must begin all portfolios with "p_" or "portfolio_" to be properly updated
