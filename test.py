@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from scipy.stats import linregress
 import numpy as np
+from datetime import date
 
 ######STORAGE CODE#############
 def storeData(dbname, stock_list):
@@ -32,6 +33,7 @@ def storeData(dbname, stock_list):
     updateData(dbname)
 
 
+#CREATE/EDIT MAIN PORTFOLIO
 def mainPortfolio(dbname):
     try:
         db, dbfile = open_file(dbname)
@@ -52,6 +54,7 @@ def mainPortfolio(dbname):
     close_file(db, dbname)
 
 
+#ADD TICKER
 def addData(ticker, dbname):
     try:
         db, dbfile = open_file(dbname)
@@ -71,6 +74,7 @@ def addData(ticker, dbname):
         print("File not found")
 
 
+#REMOVE TICKER
 def remData(ticker, dbname):
     try:
         db, dbfile = open_file(dbname)
@@ -81,12 +85,13 @@ def remData(ticker, dbname):
         print("File not found")
 
 
+#DELETE DATABASE
 def resetData(dbname):
-    os.remove(f'./storage/{dbname}.pickle')
+    os.remove(f'./storage/databases/{dbname}.pickle')
 
 
+#DISPLAY DATABASE
 def loadData(dbname):
-    #reading binary
     try:
         db, dbfile = open_file(dbname)
         sorted_data = sorted(db.values(), key=lambda x: x['Percent under 95% confidence'] if x['Percent under 95% confidence'] is not None else float('inf'))
@@ -96,12 +101,14 @@ def loadData(dbname):
     except FileNotFoundError:
         print("File not found")
 
+
+#UPDATE PORTFOLIO
 def updateMain(dbname):
     try:
         db, dbfile = open_file(dbname)
         print(f"{dbname} loading...")
     except FileNotFoundError:
-        print("file not found")
+        print("Portfolio not found")
 
     def process_ticker(ticker):
         try:
@@ -114,6 +121,8 @@ def updateMain(dbname):
 
     close_file(db, dbname)
 
+
+#UPDATE DATABASES
 def updateData(dbname):
     try:
         db, dbfile = open_file(dbname)
@@ -134,23 +143,27 @@ def updateData(dbname):
 
     close_file(db, dbname)
 
+
+#OPEN/CLOSE FILE
 def open_file(dbname):
-    with open(f'./storage/{dbname}.pickle', 'rb') as dbfile:
+    with open(f'./storage/databases/{dbname}.pickle', 'rb') as dbfile:
         db = pickle.load(dbfile)
     return db, dbfile
 
+
 def close_file(db, dbname):
-    with open(f'./storage/{dbname}.pickle', 'wb') as dbfile:
+    with open(f'./storage/databases/{dbname}.pickle', 'wb') as dbfile:
         pickle.dump(db, dbfile)
     dbfile.close()
 
-######FUNCTIONAL CODE################
+#################################FUNCTIONAL CODE###############################
 def runall(ticker, db):
     percent_under = round(confidence(ticker, db).iloc[0])
     rsi = rsi_calc(ticker, graph = False)
     slope_value = slope(ticker)
     buy_bool = buy(rsi, percent_under, slope_value)
     db[ticker] = {'Ticker': ticker, 'Buy': buy_bool, 'Percent under 95% confidence': percent_under, 'RSI': rsi, 'Slope': slope_value}
+
 
 def runall_sell(ticker, db):
     percent_under = round(confidence(ticker, db).iloc[0])
@@ -160,13 +173,13 @@ def runall_sell(ticker, db):
     db[ticker] = {'Ticker': ticker, 'Sell': sell_bool, 'Percent under 95% confidence': percent_under, 'RSI': rsi, 'Slope': slope_value}
 
 
-
-
+#BUY/SELL BOOL
 def buy(rsi, percent_under, slope_value):
     if percent_under > 1 and rsi < 31 and slope_value > -.05:
         return True
     else:
         return False
+
 
 def sell(rsi):
     if rsi > 69:
@@ -174,6 +187,8 @@ def sell(rsi):
     else:
         return False
 
+
+#SLOPE CALCULATOR
 def slope(ticker):
     df = yf.Ticker(ticker)
     df = df.history(interval='1d', period='20mo')
@@ -181,9 +196,10 @@ def slope(ticker):
     closing_prices = df['Close'].values
     slope, _, _, _, _ = linregress(dates, closing_prices)
     return slope
-
     #not sure if slope works, maybe do period prior to crash so 3-20 months
 
+
+#CONFIDENCE
 def confidence(ticker, dbname):
     # closing price of input stock
     stock_data = yf.Ticker(ticker).history(period="2mo").reset_index(drop=True)
@@ -211,8 +227,7 @@ def confidence(ticker, dbname):
             print(f"{ticker} is a penny stock. Not adding ticker.")
 
 
-
-
+#VISUALIZE CONFIDENCE INTERVAL
 def con_plot(ticker):
 
     tick = yf.Ticker(ticker)
@@ -247,10 +262,8 @@ def con_plot(ticker):
 
     plt.show()
 
-    ###test###
 
-
-
+#RSI
 def rsi_calc(ticker, graph):
     ticker = yf.Ticker(ticker)
     df = ticker.history(interval="1d", period="2y")
@@ -292,13 +305,11 @@ def rsi_calc(ticker, graph):
         ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
 
         plt.show()
-        return (round(rsi[-1]))
     else:
         return (round(rsi[-1]))
 
 
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
-
 #not done
 def day_movement(ticker):
     stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
@@ -307,12 +318,9 @@ def day_movement(ticker):
     stock_curr = yf.Ticker(ticker).info['currentPrice']
     stock_perc = (stock_close - stock_curr) / stock_close
     print(f"{float(stock_perc.values):.15f}")
-        #def day_movement(stock)
-            #get last close
-            #compare to now
-            #if 5%+ drop, email
-            #if 5%+ increase, email
 
+
+#SHOWINFO
 def showinfo(ticker):
     stock_data = yf.Ticker(ticker)
     stock_history = stock_data.history(period = '3mo')
@@ -322,6 +330,7 @@ def showinfo(ticker):
     print('\nStock Close:',stock_close,'\nCurrent Price:', stock_curr)
 
 
+#SETTINGS
 def open_settings():
     with open(f'./storage/settings/settings.pickle', 'rb') as settingsFile:
         settings = pickle.load(settingsFile)
@@ -338,13 +347,16 @@ def close_settings(settings, settingsFile):
 def makeSettings():
     try:
         settings, settingsFile = open_settings()
-
-    except FileNotFoundError:
+    except:
         settings = {}
         print("Settings file created.")
+        close_settings(settings, 'settings.pickle')
 
-    for database in os.listdir('./storage/'):
-        if database.endswith('.pickle'):
+
+    settings, settingsFile = open_settings()
+
+    for database in os.listdir('./storage/databases'):
+        if database.startswith('t_') or database.startswith('tickers_') or database.startswith('ticker_'):
             database = os.path.splitext(database)[0]
             settings[database] = {'AutoUpdate': False}
 
@@ -356,19 +368,20 @@ def settings():
     settings, settingsFile = open_settings()
 
     for database, values in settings.items():
-        if database == "main":
-            updateMain(database)
-        elif database != "main" and values.get('AutoUpdate', True):
+        if values.get('AutoUpdate', True):
             updateData(database)
 
-
+    for database in os.listdir('./storage/databases'):
+        if database.startswith('p_') or database.startswith('portfolio_'):
+            database = os.path.splitext(database)[0]
+            updateMain(database)
 
     close_settings(settings, settingsFile)
 
 
 def adjustSettings(database, choice):
-    settings, settingsFile = open_settings()
 
+    settings, settingsFile = open_settings()
 
     if database in settings:
         settings[database]['AutoUpdate'] = choice
@@ -378,39 +391,99 @@ def adjustSettings(database, choice):
 
     close_settings(settings, settingsFile)
 
+
 def loadSettings():
     settings, settingsFile = open_settings()
     for database, values in settings.items():
         print(f"{database}: {values}")
 
-    #if ticker in db and ticker.item[Buy] == True:
+
+#WINRATE
+def makeWinrate():
+    try:
+        db, dbfile = open_file('winrate_storage')
+    except:
+        db = {}
+    close_file(db, 'winrate_storage')
+
+    try:
+        db, dbfile = open_file('winrate')
+    except:
+        db = {}
+    close_file(db, 'winrate')
+    winrate()
+    checkwinrate()
+
+
+def winrate():
+    db, dbfile = open_file('t_safe') #NEED TO MAKE THIS CHANGEABLE, OR HAVE MULTIPLE FILES
+    db_w, dbfile_w = open_file('winrate_storage')
+    for ticker, ticker_data in db.items():
+        price = yf.Ticker(ticker).info['currentPrice']
+        if ticker_data['Buy'] == True:
+            if ticker not in db_w or db_w[ticker]['Price'] < price:
+                db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")} #add date
+                close_file(db_w, 'winrate_storage')
+
+
+def checkwinrate():
+    db, dbfile = open_file('winrate_storage')
+    db_w, dbfile_w = open_file('winrate')
+    for ticker, price, date in db.items():
+        rsi = rsi_calc(ticker, graph = False)
+        sell_bool = sell(rsi)
+        if sell_bool == True and ticker not in db_w:
+            new_price = yf.Ticker(ticker).info['currentPrice']
+            db_w[ticker] = {'New Price': new_price, 'Old Price': price, 'Gain': new_price - price, 'Old Date': date, 'New Date': date.today().strftime("%Y-%m-%d")}
+            del db[ticker]
+            close_file(db_w, 'winrate')
+            close_file(db, 'winrate_storage')
+
+
 
 def main():
-    try:
-        settings()
-    except:
-        makeSettings()
+    #try:
+    #    settings()
+    #except:
+    #    makeSettings()
+
+    #try:
+    #    winrate()
+    #    checkwinrate()
+    #except:
+    #    makeWinrate()
+
+    #temporary
+    db, dbfile = open_file('winrate')
+    print("\n\nSold\n")
+    for ticker, price in db.items():
+        print(ticker, price)
+
+    db, dbfile = open_file('winrate_storage')
+    print("\n\nHolding\n")
+    for ticker, price in db.items():
+        print(ticker, price)
 
 
 #actions
     def command(action):
         if action == "help":
             print("\t'store': store tickers into database")
-            print("\t'update': update database")
-            print("\t'update portfolio': update personal portfolio")
             print("\t'load': load tickers from database")
             print("\t'portfolio': create/edit a personal portfolio with sell indicators")
             print("\t'add': adds specific stocks to database ")
             print("\t'remove': remove specific stocks from database")
             print("\t'reset': resets requested database")
             print("\t'rsi': shows and graphs RSI of stock")
-            print("\t'con':  shows and graphs confidence of stock")
-            print("\t'quit': quit")
+            print("\t'con': shows and graphs confidence of stock")
             print("\t'debug': debug options")
             print("\t'settings': adjusts settings file")
+            print("\t'quit': quit")
 
         if action == "debug":
-            print("\t'winrate': win rate of stocks, automatic")
+            print("\t'winrate': show simulated 'Holding' and 'Sold' stocks, automated")
+            print("\t'update': update database")
+            print("\t'update portfolio': update personal portfolio")
             print("\t'pattern stocks': stocks for pattern") #no purpose yet
             print("\t'dmove': daily movement of ticker")
             print("\t'info': displays information on ticker")
@@ -492,6 +565,16 @@ def main():
 
         if action == "winrate":
             winrate()
+            checkwinrate()
+            db, dbfile = open_file('winrate')
+            print("Sold")
+            for ticker, price in db.items():
+                print(ticker, price)
+
+            db, dbfile = open_file('winrate_storage')
+            print("Holding")
+            for ticker, price in db.items():
+                print(ticker, price)
         #if action == "":
 
 
@@ -503,11 +586,18 @@ def main():
             command(action)
 main()
 
+
+    #ticker.info['longBusinessSummary']
 ##########IDEAS FOR UPDATE#################
 
 #only keep recommendations or equity score that are also below 95%
 
 #have different functions ----- different choices. One for pattern stocks, one for guessing a little dip
+
+
+#def plot_confidence(ticker):
+    #plot confidence against close prices to see if it is accurately working
+
 
 #machine learning?? how often does confidence relate to a certain stock
     #compare against plot_confidence
