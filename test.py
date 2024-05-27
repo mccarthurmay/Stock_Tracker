@@ -175,7 +175,7 @@ def runall_sell(ticker, db):
 
 #BUY/SELL BOOL
 def buy(rsi, percent_under, slope_value):
-    if percent_under > 1 and rsi < 31 and slope_value > -.05:
+    if percent_under > -1 and rsi < 31 and slope_value > -.05:
         return True
     else:
         return False
@@ -331,71 +331,76 @@ def showinfo(ticker):
 
 
 #SETTINGS
-def open_settings():
-    with open(f'./storage/settings/settings.pickle', 'rb') as settingsFile:
-        settings = pickle.load(settingsFile)
-        print("Settings loaded.")
-    return settings, settingsFile
+class SettingsManager:
+    def __init__(self, settings_file = './storage/settings/settings.pickle'):
+        self.settings_file = settings_file
+        self.settings = self.open_settings()
 
 
-def close_settings(settings, settingsFile):
-    with open('./storage/settings/settings.pickle', 'wb') as settingsFile:
-        pickle.dump(settings, settingsFile)
-    settingsFile.close()
-
-
-def makeSettings():
-    try:
-        settings, settingsFile = open_settings()
-    except:
-        settings = {}
+    def makeSettings(self):
+        self.settings = {}
         print("Settings file created.")
-        close_settings(settings, 'settings.pickle')
+        self.close_settings()
 
 
-    settings, settingsFile = open_settings()
+        self.settings = self.open_settings()
 
-    for database in os.listdir('./storage/databases'):
-        if database.startswith('t_') or database.startswith('tickers_') or database.startswith('ticker_'):
-            database = os.path.splitext(database)[0]
-            settings[database] = {'AutoUpdate': False}
+        for database in os.listdir('./storage/databases'):
+            if database.startswith('t_') or database.startswith('tickers_') or database.startswith('ticker_'):
+                database = os.path.splitext(database)[0]
+                self.settings[database] = {'AutoUpdate': False}
 
-    close_settings(settings, settingsFile)
-
-
-def settings():
-
-    settings, settingsFile = open_settings()
-
-    for database, values in settings.items():
-        if values.get('AutoUpdate', True):
-            updateData(database)
-
-    for database in os.listdir('./storage/databases'):
-        if database.startswith('p_') or database.startswith('portfolio_'):
-            database = os.path.splitext(database)[0]
-            updateMain(database)
-
-    close_settings(settings, settingsFile)
+        self.close_settings()
 
 
-def adjustSettings(database, choice):
-
-    settings, settingsFile = open_settings()
-
-    if database in settings:
-        settings[database]['AutoUpdate'] = choice
-        print(f"Updated 'AutoUpdate' for '{database}' to {choice}")
-    else:
-        print(f"Database '{database}' not found")
-
-    close_settings(settings, settingsFile)
+    def open_settings(self):
+        try:
+            with open(self.settings_file, 'rb') as settingsFile:
+                settings = pickle.load(settingsFile)
+        except FileNotFoundError:
+            self.makeSettings()
+            self.open_settings()
+        return settings
 
 
-def loadSettings():
-    settings, settingsFile = open_settings()
-    for database, values in settings.items():
-        print(f"{database}: {values}")
+    def close_settings(self):
+        with open(self.settings_file, 'wb') as settingsFile:
+            pickle.dump(self.settings, settingsFile)
+        settingsFile.close()
+
+
+    def checkSettings(self):
+        self.open_settings()
+        print("Settings loaded.")
+        for database, values in self.settings.items():
+            if values.get('AutoUpdate', True):
+                updateData(database)
+
+        for database in os.listdir('./storage/databases'):
+            if database.startswith('p_') or database.startswith('portfolio_'):
+                database = os.path.splitext(database)[0]
+                updateMain(database)
+
+        self.close_settings()
+
+
+    def adjustSettings(self, database, choice):
+
+        self.open_settings()
+
+        if database in self.settings:
+            self.settings[database]['AutoUpdate'] = choice
+            print(f"Updated 'AutoUpdate' for '{database}' to {choice}")
+        else:
+            print(f"Database '{database}' not found")
+
+        self.close_settings()
+
+
+    def loadSettings(self):
+        for database, values in self.settings.items():
+            print(f"{database}: {values}")
+
 
 
 #WINRATE
@@ -423,11 +428,7 @@ def winrate():
             price = yf.Ticker(ticker).info['currentPrice']
             if ticker not in db_w or db_w[ticker]['Price'] > price:
                 db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
-            #if ticker in db_w and db_w[ticker]['Price'] > price:
-            #    db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
-            #if ticker not in db_w:
-            #    db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
-
+                print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')}")
     close_file(db_w, 'winrate_storage')
 
 
@@ -455,11 +456,14 @@ def checkwinrate():
 
 def main():
 
-    try:
-        winrate()
-        checkwinrate()
-    except:
-        makeWinrate()
+    settings_manager = SettingsManager()
+
+    settings_manager.checkSettings()
+    #try:
+    #    winrate()
+    #    checkwinrate()
+    #except:
+    #    makeWinrate()
 
     #temporary
     db, dbfile = open_file('winrate')
@@ -501,14 +505,14 @@ def main():
 
 
         if action == "settings":
-            loadSettings()
+            settings_manager.loadSettings()
             database = input("Name of database:").strip()
             choice = input("Auto update on startup (y, n):" ).lower().strip()
             if choice == 'y':
                 choice = True
             elif choice == 'n':
                 choice = False
-            adjustSettings(database, choice)
+            settings_manager.adjustSettings(database, choice)
 
         if action == "add":
             dbname = input("Name of database: ")
