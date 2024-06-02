@@ -18,6 +18,22 @@ from datetime import datetime
 from scipy.stats import linregress
 import numpy as np
 from datetime import date
+import tkinter as tk
+from tkinter import ttk
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ######STORAGE CODE#############
 def storeData(dbname, stock_list):
@@ -156,6 +172,32 @@ def close_file(db, dbname):
         pickle.dump(db, dbfile)
     dbfile.close()
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #################################FUNCTIONAL CODE###############################
 def runall(ticker, db):
     percent_under = round(confidence(ticker, db).iloc[0])
@@ -175,7 +217,7 @@ def runall_sell(ticker, db):
 
 #BUY/SELL BOOL
 def buy(rsi, percent_under, slope_value):
-    if percent_under > 1 and rsi < 31 and slope_value > -.05:
+    if percent_under > -1 and rsi < 31 and slope_value > -.05:
         return True
     else:
         return False
@@ -419,35 +461,62 @@ def winrate():
     db, dbfile = open_file('t_safe') #NEED TO MAKE THIS CHANGEABLE, OR HAVE MULTIPLE FILES
     db_w, dbfile_w = open_file('winrate_storage')
     for ticker, ticker_data in db.items():
-        if ticker not in db_w and ticker_data['Buy'] == True:
+        if ticker_data['Buy'] == True:
             price = yf.Ticker(ticker).info['currentPrice']
-            db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")} #add date
-            close_file(db_w, 'winrate_storage')
+            if ticker not in db_w or db_w[ticker]['Price'] > price:
+                db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
+                print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')}")
+    close_file(db_w, 'winrate_storage')
+
+
 
 def checkwinrate():
     db, dbfile = open_file('winrate_storage')
     db_w, dbfile_w = open_file('winrate')
-    for ticker, price in db.items():
+    for ticker, data in db.items():
+        old_price = data['Price']
+        old_date = data['Date']
         rsi = rsi_calc(ticker, graph = False)
         sell_bool = sell(rsi)
         if sell_bool == True and ticker not in db_w:
             new_price = yf.Ticker(ticker).info['currentPrice']
-            db_w[ticker] = {'New Price': new_price, 'Old Price': price, 'Gain': new_price - price, 'Date': date.today().strftime("%Y-%m-%d")}
-            close_file(db_w, 'winrate')
+            db_w[ticker] = {
+                'New Price': new_price,
+                'Old Price': old_price,
+                'Gain': new_price - old_price,
+                'Old Date': date,
+                'New Date': date.today().strftime("%Y-%m-%d")
+            }
+            del db[ticker]
+    close_file(db_w, 'winrate')
+    close_file(db, 'winrate_storage')
+
+
+
+
+
+#tkinter
+
+
+
+
+
+
+
 
 
 
 def main():
-    try:
-        settings()
-    except:
-        makeSettings()
+    #try:
+    #    settings()
+    #except:
+    #    makeSettings()
 
-    try:
-        winrate()
-        checkwinrate()
-    except:
-        makeWinrate()
+    #try:
+    #    winrate()
+    #    checkwinrate()
+    #except:
+    #    makeWinrate()
 
     #temporary
     db, dbfile = open_file('winrate')
@@ -459,6 +528,69 @@ def main():
     print("\n\nHolding\n")
     for ticker, price in db.items():
         print(ticker, price)
+
+
+
+
+
+    #tkinter
+    root = tk.Tk()
+    root.title("Stock_Tracker")
+    root.geometry("500x500")
+
+    #title label
+    root_lbl = tk.Label(root, text = "Test")
+    root_lbl.pack(padx=10,pady=20)
+
+
+
+
+    def rsi_btn():
+
+        ticker = ticker_entry.get()
+        graph = graph_entry.get().lower()
+
+        if graph == "y":
+            graph = True
+        else:
+            graph = False
+
+        rsi_calc(ticker, graph)
+        print(rsi_calc(ticker, graph = False))
+
+        label.config(text="button click")
+
+    button = tk.Button(root,text="Click", command = rsi_btn)
+    button.pack(pady=10)
+
+
+    #RSI Frame
+    rsi_frm = tk.Frame(root)
+    rsi_frm.pack(padx=10,pady=20)
+
+    #Entry for ticker
+    ticker_lbl = tk.Label(rsi_frm, text = "Enter ticker:")
+    ticker_lbl.pack(padx=10, pady=5)
+    ticker_entry = tk.Entry(rsi_frm)
+    ticker_entry.pack(padx=10,pady=5)
+
+    #Entry for graph bool **CHANGE TO POPUP OF YES OR NO
+    graph_lbl = tk.Label(rsi_frm, text= "Do you want a graph?")
+    graph_lbl.pack(padx=10, pady = 5)
+    graph_entry = tk.Entry(rsi_frm)
+    graph_entry.pack(padx=10, pady=5)
+
+    #Frame for Button
+    button_frm = tk.Frame(root)
+    button_frm.pack(padx=10,pady=20)
+
+
+
+
+
+
+
+
 
 
 #actions
@@ -530,7 +662,7 @@ def main():
             else:
                 graph = False
             rsi_calc(ticker, graph)
-            print('RSI = ', rsi_calc(ticker, graph = False))
+            print(rsi_calc(ticker, graph = False))
 
         if action == "portfolio":
             dbname = input("Name of database: ")
