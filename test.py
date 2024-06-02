@@ -32,7 +32,7 @@ from data.database import ( #make this into a class
     open_file,
     close_file
 )
-from data.functions import ( #make this into a class
+from data.analysis import ( #make this into a class
     runall,
     runall_sell,
     buy,
@@ -77,6 +77,9 @@ def display_debug_options():
 
 
 def command(action):
+    settings_manager = SettingsManager()
+    winrate_manager = WinrateManager()
+
     if action == "help":
         display_help()
 
@@ -175,9 +178,9 @@ def main():
     settings_manager = SettingsManager()
     winrate_manager = WinrateManager()
 
-    #settings_manager.checkSettings()
-    #winrate_manager.winrate()
-    #winrate_manager.checkwinrate()
+    settings_manager.checkSettings()
+    winrate_manager.winrate()
+    winrate_manager.checkwinrate()
 
     #temporary
     db, dbfile = open_file('winrate')
