@@ -48,5 +48,6 @@ class WinrateManager:
                     'New Date': date.today().strftime("%Y-%m-%d")
                 }
                 del db[ticker]
+                print(f"{ticker} deleted")
         close_file(db_w, 'winrate')
         close_file(db, 'winrate_storage')

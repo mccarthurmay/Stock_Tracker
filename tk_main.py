@@ -57,12 +57,12 @@ class StockTracker:
         tk.Button(root, text="Commands", command=self.commands).pack(pady=20)
         tk.Label(root, text="Run individual tasks.", font=("Arial", 10)).pack(pady=0)
 
-        tk.Button(root, text="Manage Databases", command=self.settings).pack(pady=20)
+        tk.Button(root, text="Manage Databases", command=self.manage_databases).pack(pady=20)
 
         tk.Button(root, text="Portfolio", command=self.portfolio).pack(pady=20) #make this more suitable for tkinter
         tk.Label(root, text="Manage running portfolios.", font=("Arial", 10)).pack(pady=0)
 
-
+        tk.Button(root, text="Settings", command=self.settings).pack(pady=10)
         tk.Button(root, text="Quit", command=self.quit).pack(pady=5)
 
 
@@ -87,7 +87,8 @@ class StockTracker:
         y_pos += 20
 
         db, dbfile = open_file('winrate')
-        for key, value in db.items():
+        db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
+        for key, value in db_sorted.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
             result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
@@ -97,7 +98,8 @@ class StockTracker:
         y_pos += 20
 
         db, dbfile = open_file('winrate_storage')
-        for key, value in db.items():
+        db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
+        for key, value in db_sorted.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
             result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
@@ -107,16 +109,20 @@ class StockTracker:
 
 
     def commands(self):
-        commands_window = Commands(self.root)
+        commands_window = CommandsWindow(self.root)
         commands_window.root.mainloop()
 
-    def settings(self):
+    def manage_databases(self):
         edit_window = EditWindow(self.root)
         edit_window.root.mainloop()
 
     def portfolio(self):
         port_window = PortWindow(self.root)
         port_window.root.mainloop()
+
+    def settings(self):
+        settings_window = SettingsWindow(self.root)
+        settings_window.root.mainloop()
 
     def quit(self):
         self.root.quit()
@@ -129,7 +135,6 @@ class EditWindow:
     def __init__(self, root):
         self.root = tk.Tk()
         self.root.title("Database Manager")
-        self.settings_manager = SettingsManager()
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text="Store", command=self.store).pack(pady=5)
         tk.Button(self.root, text="Load", command=self.load).pack(pady=5)
@@ -173,11 +178,25 @@ class EditWindow:
         self.root.destroy()
 
 
+class SettingsWindow:
+    def __init__(self,root):
+        self.root = tk.Tk()
+        self.root.title("Settings")
+        self.settings_manager = SettingsManager()
+        self.root.geometry("800x600+200+100")
+        tk.Button(self.root, text="Startup", command = self.startup).pack(pady=5)
+
+
+    def startup(self):
+        self.settings_manager.loadSettings()
+        database = simpledialog.askstring("Input", "Name of database:").strip()
+        choice = messagebox.askyesno("Y/N", "Would you like this database to update on startup?")
+        self.settings_manager.adjustSettings(database, choice)
 
 
 
 
-class Commands:
+class CommandsWindow:
     def __init__(self, root):
         self.root = tk.Tk()
         self.root.title = "Commands"
