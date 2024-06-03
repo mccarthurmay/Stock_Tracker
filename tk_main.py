@@ -41,6 +41,9 @@ from data.analysis import (
 from settings.settings_manager import SettingsManager
 from data.winrate import WinrateManager
 
+# Suppress warning
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 class StockTracker:
     def __init__(self, root):
         self.root = root
@@ -49,7 +52,7 @@ class StockTracker:
         self.winrate_manager = WinrateManager()
         tk.Label(root, text="Main Menu", font=("Arial", 20)).pack(pady=0)
 
-
+        tk.Button(root, text="Run", command=self.run).pack(pady=10)
 
         tk.Button(root, text="Commands", command=self.commands).pack(pady=20)
         tk.Label(root, text="Run individual tasks.", font=("Arial", 10)).pack(pady=0)
@@ -61,6 +64,46 @@ class StockTracker:
 
 
         tk.Button(root, text="Quit", command=self.quit).pack(pady=5)
+
+
+    def run(self):
+        self.settings_manager.checkSettings()
+        self.winrate_manager.winrate()
+        self.winrate_manager.checkwinrate()
+
+        result_frame = tk.Frame(root)
+        result_frame.pack(fill = tk.X, expand = True)
+
+
+        result_canvas = tk.Canvas(result_frame, width=600, height=200)
+        result_canvas.pack(side=tk.LEFT)
+
+        y_scrollbar = tk.Scrollbar(result_frame, orient=tk.VERTICAL, command=result_canvas.yview)
+        y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
+
+        y_pos = 10
+
+        result_canvas.create_text(400, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
+        y_pos += 20
+
+        db, dbfile = open_file('winrate')
+        for key, value in db.items():
+            label_text = f"{key}: {value}\n"
+            y_pos +=15
+            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+
+
+        result_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
+        y_pos += 20
+
+        db, dbfile = open_file('winrate_storage')
+        for key, value in db.items():
+            label_text = f"{key}: {value}\n"
+            y_pos +=15
+            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+
+        actual_height= y_pos
+        result_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
 
     def commands(self):
@@ -144,6 +187,8 @@ class Commands:
         tk.Button(self.root, text="RSI", command=self.rsi).pack(pady=5)
         tk.Button(self.root, text="Back", command=self.back).pack(pady=10)
 
+        self.settings_manager = SettingsManager()
+        self.winrate_manager = WinrateManager()
 
     def update(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
