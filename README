@@ -6,7 +6,7 @@ working.py - Beta, working file
 
 
 Requirements:
-pickle, yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
+yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
 
 
 

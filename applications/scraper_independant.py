@@ -52,3 +52,17 @@ def scraper(index, choice, filename):
 
     file.close()
     driver.quit()
+
+
+
+
+
+def main():
+    index = ''
+    while index != 'quit':
+        print("Examples: dowjones, sp500, nasdaq100")
+        index = input("What index would you like to scrape? ")
+        filename = input("file wanted:")
+        choice = input("add or overwrite to file: ")
+        scraper(index, choice, filename)
+main()
