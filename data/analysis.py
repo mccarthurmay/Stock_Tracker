@@ -5,28 +5,49 @@ from scipy.stats import linregress
 import matplotlib.pyplot as plt
 
 def runall(ticker, db):
-    percent_under = round(confidence(ticker, db).iloc[0])
+    percent_under = round(under_confidence(ticker, db).iloc[0])
+    percent_over = round(over_confidence(ticker, db).iloc[0])
     rsi = rsi_calc(ticker, graph = False)
-    slope_value = slope(ticker)
-    buy_bool = buy(rsi, percent_under, slope_value)
-    db[ticker] = {'Ticker': ticker, 'Buy': buy_bool, 'Percent under 95% confidence': percent_under, 'RSI': rsi, 'Slope': slope_value}
+    buy_bool = buy(rsi, percent_under)
+    short_bool = short(rsi, percent_over)
+    db[ticker] = {
+        'Ticker': ticker,
+        'Buy': buy_bool,
+        'Short': short_bool,
+        '% Above 95% Confidence Interval': percent_over,
+        '% Below 95% Confidence Interval': percent_under,
+        'RSI': rsi
+    }
 
 
 def runall_sell(ticker, db):
-    percent_under = round(confidence(ticker, db).iloc[0])
+    percent_under = round(under_confidence(ticker, db).iloc[0])
+    percent_over = round(over_confidence(ticker, db).iloc[0])
     rsi = rsi_calc(ticker, graph = False)
-    slope_value = slope(ticker)
     sell_bool = sell(rsi)
-    db[ticker] = {'Ticker': ticker, 'Sell': sell_bool, 'Percent under 95% confidence': percent_under, 'RSI': rsi, 'Slope': slope_value}
+    short_sell_bool = short_sell(rsi)
+    db[ticker] = {
+        'Ticker': ticker,
+        'Sell': sell_bool,
+        'Short Sell': short_sell_bool,
+        '% Above 95% Confidence Interval': percent_over,
+        '% Below 95% Confidence Interval': percent_under,
+        'RSI': rsi
+    }
 
 
 #BUY/SELL BOOL
-def buy(rsi, percent_under, slope_value):
-    if percent_under > -1 and rsi < 31 and slope_value > -.05:
+def buy(rsi, percent_under):
+    if percent_under > -1 and rsi < 31:
         return True
     else:
         return False
 
+def short(rsi, percent_over):
+    if percent_over > -1 and rsi > 79:
+        return True
+    else:
+        return False
 
 def sell(rsi):
     if rsi > 69:
@@ -34,20 +55,26 @@ def sell(rsi):
     else:
         return False
 
+def short_sell(rsi): #should switch to something else
+    if rsi < 31:
+        return True
+    else:
+        return False
+
 
 #SLOPE CALCULATOR
-def slope(ticker):
-    df = yf.Ticker(ticker)
-    df = df.history(interval='1d', period='20mo')
-    dates = np.arange(len(df))
-    closing_prices = df['Close'].values
-    slope, _, _, _, _ = linregress(dates, closing_prices)
-    return slope
+#def slope(ticker):
+    #df = yf.Ticker(ticker)
+    #df = df.history(interval='1d', period='20mo')
+    #dates = np.arange(len(df))
+    #closing_prices = df['Close'].values
+    #slope, _, _, _, _ = linregress(dates, closing_prices)
+    #return slope
     #not sure if slope works, maybe do period prior to crash so 3-20 months
 
 
-#CONFIDENCE
-def confidence(ticker, dbname):
+#CONFIDENCE - UNDER
+def under_confidence(ticker, dbname):
     # closing price of input stock
     stock_data = yf.Ticker(ticker).history(period="2mo").reset_index(drop=True)
 
@@ -73,6 +100,32 @@ def confidence(ticker, dbname):
         except:
             print(f"{ticker} is a penny stock. Not adding ticker.")
 
+#CONFIDENCE - OVER
+def over_confidence(ticker, dbname):
+    # closing price of input stock
+    stock_data = yf.Ticker(ticker).history(period="2mo").reset_index(drop=True)
+
+    stock_close = pd.DataFrame(stock_data['Close'])
+
+    if int(stock_close.iloc[-1]) > 5:
+        # confidence interval of 95% = standard deviation of data * 2
+        ci = stock_close.std() * 2
+        # upper bound of 95%
+        upper_bound = stock_close.mean() + ci
+        try:
+            current_price = yf.Ticker(ticker).info['currentPrice']
+            # percent over the upper bound of 2 std deviations (95% confidence interval)
+            percent_under = (1 - upper_bound/current_price) * 100
+            return percent_under
+        except:
+            print(f"No current price available for {ticker}.")
+
+    else:
+        try:
+            del dbname[ticker]
+            print(f"{ticker} is a penny stock. Removing ticker.")
+        except:
+            print(f"{ticker} is a penny stock. Not adding ticker.")
 
 #VISUALIZE CONFIDENCE INTERVAL
 def con_plot(ticker):

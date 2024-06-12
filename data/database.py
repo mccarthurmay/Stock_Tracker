@@ -11,7 +11,14 @@ def storeData(dbname, stock_list):
         db = {}
 
     for ticker in stock_list:
-        db[ticker] = {'Ticker': None, 'Buy': None, '{Percent above 95% confidence': None,  'RSI': None, 'Slope': None}
+        db[ticker] = {
+            'Ticker': None,
+            'Buy': None,
+            'Short': None,
+            '% Above 95% Confidence Interval': None,
+            '% Below 95% Convidence Interval': None,
+            'RSI': None
+        }
     #source, destination
     close_file(db, dbname)
     updateData(dbname)
@@ -75,19 +82,21 @@ def resetData(dbname):
 
 
 #DISPLAY DATABASE
-def loadData(dbname):
+def loadData(dbname, sort_choice):
     try:
         db, dbfile = open_file(dbname)
-        sorted_data = sorted(db.values(), key=lambda x: x['Percent under 95% confidence'] if x['Percent under 95% confidence'] is not None else float('inf'))
+        if sort_choice == "normal":
+            sorted_data = sorted(db.values(), key=lambda x: x['% Below 95% Confidence Interval'] if x['% Below 95% Confidence Interval'] is not None else float('inf'))
+        elif sort_choice == "short":
+            sorted_data = sorted(db.values(), key=lambda x: x['% Above 95% Confidence Interval'] if x['% Above 95% Confidence Interval'] is not None else float('inf'))
         for ticker in sorted_data:
             print(ticker)
         dbfile.close()
     except FileNotFoundError:
         print("File not found")
 
-
 #UPDATE PORTFOLIO
-def updateMain(dbname):
+def updatePortfolio(dbname):
     try:
         db, dbfile = open_file(dbname)
         print(f"{dbname} loading...")

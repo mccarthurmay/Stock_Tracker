@@ -1,6 +1,6 @@
 import os
 import pickle
-from data.database import updateData, updateMain 
+from data.database import updateData, updatePortfolio
 
 class SettingsManager:
     def __init__(self, settings_file = './storage/settings/settings.pickle'):
@@ -50,7 +50,7 @@ class SettingsManager:
         for database in os.listdir('./storage/databases'):
             if database.startswith('p_') or database.startswith('portfolio_'):
                 database = os.path.splitext(database)[0]
-                updateMain(database)
+                updatePortfolio(database)
 
         self.close_settings()
 

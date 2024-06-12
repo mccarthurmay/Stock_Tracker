@@ -31,23 +31,26 @@ class WinrateManager:
             self.winrate()
 
     def checkwinrate(self):
-        db, dbfile = open_file('winrate_storage')
-        db_w, dbfile_w = open_file('winrate')
-        for ticker, data in db.items():
-            old_price = data['Price']
-            old_date = data['Date']
-            rsi = rsi_calc(ticker, graph = False)
-            sell_bool = sell(rsi)
-            if sell_bool == True and ticker not in db_w:
-                new_price = yf.Ticker(ticker).info['currentPrice']
-                db_w[ticker] = {
-                    'New Price': new_price,
-                    'Old Price': old_price,
-                    'Gain': new_price - old_price,
-                    'Old Date': date,
-                    'New Date': date.today().strftime("%Y-%m-%d")
-                }
-                del db[ticker]
-                print(f"{ticker} deleted")
-        close_file(db_w, 'winrate')
-        close_file(db, 'winrate_storage')
+        try:
+            db, dbfile = open_file('winrate_storage')
+            db_w, dbfile_w = open_file('winrate')
+            for ticker, data in db.items():
+                old_price = data['Price']
+                old_date = data['Date']
+                rsi = rsi_calc(ticker, graph = False)
+                sell_bool = sell(rsi)
+                if sell_bool == True and ticker not in db_w:
+                    new_price = yf.Ticker(ticker).info['currentPrice']
+                    db_w[ticker] = {
+                        'New Price': new_price,
+                        'Old Price': old_price,
+                        'Gain': new_price - old_price,
+                        'Old Date': date,
+                        'New Date': date.today().strftime("%Y-%m-%d")
+                    }
+                    del db[ticker]
+                    print(f"{ticker} deleted")
+            close_file(db_w, 'winrate')
+            close_file(db, 'winrate_storage')
+        except:
+            print("Did not work (winrate)")

@@ -1,14 +1,8 @@
-#huge drop, 5 days flat, will raise
-#volume always peaks at lowest point - look at this data
-#   -huge volume increase when dropping significantly or rising significantly
-#   -levels out while decreasing until it hits rock bottom where there's another spike
+import tkinter as tk
+from tkinter import messagebox, simpledialog
 import warnings
-
-# Suppress warning
-warnings.simplefilter(action='ignore', category=FutureWarning)
 import pickle
 import yfinance as yf
-from yfinance import shared
 import statistics
 import pandas as pd
 import os
@@ -19,7 +13,7 @@ from scipy.stats import linregress
 import numpy as np
 from datetime import date
 
-from data.database import ( #make this into a class
+from data.database import (
     storeData,
     mainPortfolio,
     close_file,
@@ -32,7 +26,7 @@ from data.database import ( #make this into a class
     open_file,
     close_file
 )
-from data.analysis import ( #make this into a class
+from data.analysis import (
     runall,
     runall_sell,
     buy,
@@ -44,216 +38,258 @@ from data.analysis import ( #make this into a class
     day_movement,
     showinfo
 )
-
 from settings.settings_manager import SettingsManager
 from data.winrate import WinrateManager
+from applications.scraper import scraper
+from applications.converter import convert
+
+# Suppress warning
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
+class StockTracker:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Stock Tracker")
+        self.settings_manager = SettingsManager()
+        self.winrate_manager = WinrateManager()
+        tk.Label(root, text="Main Menu", font=("Arial", 20)).pack(pady=0)
+
+        tk.Button(root, text="Run", command=self.run).pack(pady=10)
+
+        tk.Button(root, text="Commands", command=self.commands).pack(pady=20)
+        tk.Label(root, text="Run individual tasks.", font=("Arial", 10)).pack(pady=0)
+
+        tk.Button(root, text="Manage Databases", command=self.manage_databases).pack(pady=20)
+
+        tk.Button(root, text="Portfolio", command=self.portfolio).pack(pady=20) #make this more suitable for tkinter
+        tk.Label(root, text="Manage running portfolios.", font=("Arial", 10)).pack(pady=0)
+
+        tk.Button(root, text="Applications", command=self.application).pack(pady=20)
+
+        tk.Button(root, text="Settings", command=self.settings).pack(pady=10)
+
+        tk.Button(root, text="Quit", command=self.quit).pack(pady=5)
+
+    def run(self):
+        #Run settings/winrate
+        self.settings_manager.checkSettings()
+        self.winrate_manager.winrate()
+        self.winrate_manager.checkwinrate()
 
 
-def display_help():
-    print("Available commands:")
-    print("\t'store': store tickers into database")
-    print("\t'load': load tickers from database")
-    print("\t'portfolio': create/edit a personal portfolio with sell indicators")
-    print("\t'add': adds specific stocks to database ")
-    print("\t'remove': remove specific stocks from database")
-    print("\t'reset': resets requested database")
-    print("\t'rsi': shows and graphs RSI of stock")
-    print("\t'con': shows and graphs confidence of stock")
-    print("\t'debug': debug options")
-    print("\t'settings': adjusts settings file")
-    print("\t'quit': quit")
+        winrate_window = WinrateWindow(self.root)
+        winrate_window.root.mainloop()
+
+    def commands(self):
+        commands_window = CommandsWindow(self.root)
+        commands_window.root.mainloop()
+
+    def manage_databases(self):
+        edit_window = EditWindow(self.root)
+        edit_window.root.mainloop()
+
+    def portfolio(self):
+        port_window = PortWindow(self.root)
+        port_window.root.mainloop()
+
+    def application(self):
+        app_window = AppWindow(self.root)
+        app_window.root.mainloop()
+
+    def settings(self):
+        settings_window = SettingsWindow(self.root)
+        settings_window.root.mainloop()
+
+    def quit(self):
+        self.root.quit()
 
 
-def display_debug_options():
-    print("Debug options:")
-    print("\t'winrate': show simulated 'Holding' and 'Sold' stocks, automated")
-    print("\t'update': update database")
-    print("\t'update portfolio': update personal portfolio")
-    print("\t'pattern stocks': stocks for pattern")  # No purpose yet
-    print("\t'dmove': daily movement of ticker")
-    print("\t'info': displays information on ticker")
-    print("\t'show ci': show data from confidence interval")
-    print("\t'makesettings': makes settings file")
+class WinrateWindow:
+    def __init__(self, root):
+        self.root = tk.Tk()
+        self.root.title("Winrate Results")
+        self.root.geometry("800x600+200+100")
+
+        result_frame = tk.Frame(root)
+        result_frame.pack(fill = tk.X, expand = True)
+
+        result_canvas = tk.Canvas(result_frame, width=600, height=200)
+        result_canvas.pack(side=tk.LEFT)
+
+        y_scrollbar = tk.Scrollbar(result_frame, orient=tk.VERTICAL, command=result_canvas.yview)
+        y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
+
+        y_pos = 10
+
+        result_canvas.create_text(400, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
+        y_pos += 20
+
+        db, dbfile = open_file('winrate')
+        db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
+        for key, value in db_sorted.items():
+            label_text = f"{key}: {value}\n"
+            y_pos +=15
+            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
 
 
-def command(action):
-    settings_manager = SettingsManager()
-    winrate_manager = WinrateManager()
+        result_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
+        y_pos += 20
 
-    if action == "help":
-        display_help()
+        db, dbfile = open_file('winrate_storage')
+        db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
+        for key, value in db_sorted.items():
+            label_text = f"{key}: {value}\n"
+            y_pos +=15
+            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
 
-    elif action == "debug":
-        display_debug_options()
+        actual_height= y_pos
+        result_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
-    if action == "settings":
-        settings_manager.loadSettings()
-        database = input("Name of database:").strip()
-        choice = input("Auto update on startup (y, n):" ).lower().strip()
-        if choice == 'y':
-            choice = True
-        elif choice == 'n':
-            choice = False
-        settings_manager.adjustSettings(database, choice)
 
-    if action == "add":
-        dbname = input("Name of database: ")
-        ticker = input("Ticker: ").upper()
-        addData(ticker, dbname)
+class EditWindow:
+    def __init__(self, root):
+        self.root = tk.Tk()
+        self.root.title("Database Manager")
+        self.root.geometry("800x600+200+100")
+        tk.Button(self.root, text="Store", command=self.store).pack(pady=5)
+        tk.Button(self.root, text="Load", command=self.load).pack(pady=5)
+        tk.Button(self.root, text="Add Ticker", command=self.add).pack(pady=5)
+        tk.Button(self.root, text="Remove Ticker", command=self.remove).pack(pady=5)
+        tk.Button(self.root, text="Reset Database", command=self.reset).pack(pady=5)
+        tk.Button(self.root, text="Back", command=self.back).pack(pady=50)
 
-    if action == "remove":
-        dbname = input("Name of database: ")
-        ticker = input("Ticker: ").upper()
-        remData(ticker, dbname)
+    def store(self):
+        input_file = simpledialog.askstring("Input", "File containing tickers:")
+        dbname = simpledialog.askstring("Input", "Name of database:")
+        try:
+            with open(f'./storage/ticker_lists/{input_file}.txt', 'r') as txt:
+                data_txt = txt.read()
+                data_txt = data_txt.split('\n')
+            stock_list = list(data_txt)
+            storeData(dbname, stock_list)
+            messagebox.showinfo("Info", "Tickers stored successfully.")
+        except:
+            messagebox.showinfo("Info", "We ran into a problem, please check names of files and resubmit.")
 
-    if action == "store":
-        input_file = input("File containing tickers: ")
-        with open(f'./storage/ticker_lists/{input_file}.txt', 'r') as txt:
-            data_txt = txt.read()
-            data_txt = data_txt.split('\n')
-        dbname = input("Name of database: ")
-        stock_list = list(data_txt)
-        storeData(dbname, stock_list)
-
-    if action == "load":
-        dbname = input("Name of database: ")
+    def load(self):
+        dbname = simpledialog.askstring("Input", "Name of database:")
         loadData(dbname)
 
-    if action == "rsi":
-        ticker = input("What ticker: ")
-        graph = input("Do you want a graph? (y/n) ").lower()
+    def add(self):
+        dbname = simpledialog.askstring("Input", "Name of database:")
+        ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
+        addData(ticker, dbname)
 
-        if graph == "y":
-            graph = True
-        else:
-            graph = False
-        rsi_calc(ticker, graph)
-        print(rsi_calc(ticker, graph = False))
+    def remove(self):
+        dbname = simpledialog.askstring("Input", "Name of database:")
+        ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
+        remData(ticker, dbname)
 
-    if action == "portfolio":
-        dbname = input("Name of database: ")
-        mainPortfolio(dbname)
-
-    if action == "update portfolio":
-        dbname = input("Name of database: ")
-        updateMain(dbname)
-
-    if action == "reset":
-        dbname = input("Name of database: ")
+    def reset(self):
+        dbname = simpledialog.askstring("Input", "Name of database:")
         resetData(dbname)
 
-    if action == "info":
-        ticker = input("What ticker you want: ")
-        showinfo(ticker)
+    def back(self):
+        self.root.destroy()
 
-    if action == "update":
-        dbname = input("Name of database: ")
+
+class SettingsWindow:
+    def __init__(self,root):
+        self.root = tk.Tk()
+        self.root.title("Settings")
+        self.settings_manager = SettingsManager()
+        self.root.geometry("800x600+200+100")
+        tk.Button(self.root, text="Startup", command = self.startup).pack(pady=5)
+
+
+    def startup(self):
+        self.settings_manager.loadSettings()
+        database = simpledialog.askstring("Input", "Name of database:").strip()
+        choice = messagebox.askyesno("Y/N", "Would you like this database to update on startup?")
+        self.settings_manager.adjustSettings(database, choice)
+
+
+
+
+class CommandsWindow:
+    def __init__(self, root):
+        self.root = tk.Tk()
+        self.root.title = "Commands"
+        self.root.geometry("800x600+200+100")
+        tk.Button(self.root, text="Update", command=self.update).pack(pady=5)
+        tk.Button(self.root, text="Winrate", command=self.winrate).pack(pady=5)
+        tk.Button(self.root, text="RSI", command=self.rsi).pack(pady=5)
+        tk.Button(self.root, text="Back", command=self.back).pack(pady=10)
+
+        self.settings_manager = SettingsManager()
+        self.winrate_manager = WinrateManager()
+
+    def update(self):
+        dbname = simpledialog.askstring("Input", "Name of database:")
         updateData(dbname)
 
-    if action == "con": #for testing
-        ticker = input("What ticker you want: ")
-        con_plot(ticker)
-
-    if action == "dmove":
-        day_movement("GM")
-
-    if action == "winrate":
+    def winrate(self):
         winrate_manager.winrate()
         winrate_manager.checkwinrate()
         db, dbfile = open_file('winrate')
-        print("Sold")
-        for ticker, price in db.items():
-            print(ticker, price)
+        #WIP
 
-        db, dbfile = open_file('winrate_storage')
-        print("Holding")
-        for ticker, price in db.items():
-            print(ticker, price)
-    #if action == "":
-
-
-
-def main():
-
-    settings_manager = SettingsManager()
-    winrate_manager = WinrateManager()
-
-    settings_manager.checkSettings()
-    winrate_manager.winrate()
-    winrate_manager.checkwinrate()
-
-    #temporary
-    db, dbfile = open_file('winrate')
-    print("\n\nSold\n")
-    for ticker, price in db.items():
-        print(ticker, price)
-
-    db, dbfile = open_file('winrate_storage')
-    print("\n\nHolding\n")
-    for ticker, price in db.items():
-        print(ticker, price)
-
-
-    while True:
-        action = input("Do something (help for more): ").strip().lower()
-        if action == "quit":
-            break
+    def rsi(self):
+        ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
+        graph = messagebox.askyesno("Y/N","Would you like a graph?")
+        if graph == False:
+            rsi_value = rsi_calc(ticker, graph = False)
+            messagebox.showinfo(title = "RSI", message = f"RSI for {ticker}: {rsi_value}")
         else:
-            command(action)
-main()
+            rsi_calc(ticker, graph)
 
-
-    #ticker.info['longBusinessSummary']
-##########IDEAS FOR UPDATE#################
-
-#only keep recommendations or equity score that are also below 95%
-
-#have different functions ----- different choices. One for pattern stocks, one for guessing a little dip
-
-
-#def plot_confidence(ticker):
-    #plot confidence against close prices to see if it is accurately working
-
-
-#machine learning?? how often does confidence relate to a certain stock
-    #compare against plot_confidence
-    #compare rsi scores
-    #put them together
-
-#try something
+    def back(self):
+        self.root.destroy()
 
 
 
+#WIP
+class PortWindow:
+    def __init__(self, root):
+        self.root = tk.Tk()
+        self.root.title = "Portfolio Manager"
+        self.root.geometry("800x600+200+100")
+        tk.Button(self.root, text = "Portfolio", command = self.portfolio).pack(pady=5)
+        tk.Button(self.root, text = "Portfolio Update", command = self.portfolio).pack(pady=5)
+        tk.Button(self.root, text="Back", command=self.back).pack(pady=50)
 
 
 
-####FOR STOCKS WITH PATTERNS#####
-#def remtick(ticker)
-    #find ticker, remove line associated with ticker in pickle
-#def sell_stocks(portfolio)
-    #email sell
-#def gm_low(stock)
-    #email me
-#def current_movemement(stock) #for increase
-    #store the open data at market open
-    #compare to current data, if % change is greater than 2%
-    #send email to me
-#def minimum_price(stock)
-    #get close
+    def portfolio(self):
+        dbname = simpledialog.askstring("Input", "Name of database:")
+        mainPortfolio(dbname)
+
+    def back(self):
+        self.root.destroy()
 
 
+    def updatePortfolio(self):
+        pass
+
+class AppWindow:
+    def __init__(self, root):
+        self.root = tk.Tk()
+        self.root.title = "Application Manager"
+        self.root.geometry("800x600+200+100")
+        tk.Button(self.root, text = "Converter", command = self.converter).pack(pady=5)
+        tk.Button(self.root, text = "Scraper", command = self.scraper).pack(pady=5)
+
+    def scraper(self):
+        index = simpledialog.askstring("Input", "Name of index (eg. dowjones, sp500, nasdaq100):")
+        filename = simpledialog.askstring("Input", "Output file:")
+        choice = simpledialog.askstring("Input", "Add or Overwrite to file?")
+        scraper(index, choice, filename)
+
+    def converter(self):
+        convert()
 
 
-
-
-#DEPRECIATED CODE
-
-#def recommendation_analysis(ticker):
-    #recommendation = yf.Ticker(ticker).recommendations
-    #SB = recommendation['strongBuy'].iloc[0]
-    #B = recommendation['buy'].iloc[0]
-    #H = recommendation['hold'].iloc[0]
-    #S = recommendation['sell'].iloc[0]
-    #SS = recommendation['strongSell'].iloc[0]
-    #result = f'Strong Buy:{SB} Buy:{B} Hold:{H} Sell:{S} Strong Sell:{SS}'
-    #return result
+root = tk.Tk()
+app = StockTracker(root)
+root.geometry("800x600+200+100")
+root.mainloop()

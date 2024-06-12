@@ -13,3 +13,13 @@ yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
 
 *must begin all databases containing tickers with "t_", "tickers_", or "ticker_" to be properly updated
 *must begin all portfolios with "p_" or "portfolio_" to be properly updated
+
+
+
+
+######IDEAS FOR FUTURE######
+"Short" experiment
+- copy sell experiment
+- short every stock above 95% (reverse calculation)
+- + over 80 rsi
+* switch to dual option of load data (one for short one for buy) and update sell bool
