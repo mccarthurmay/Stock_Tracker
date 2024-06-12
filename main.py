@@ -21,7 +21,7 @@ from data.database import (
     remData,
     resetData,
     loadData,
-    updateMain,
+    updatePortfolio,
     updateData,
     open_file,
     close_file
@@ -31,8 +31,8 @@ from data.analysis import (
     runall_sell,
     buy,
     sell,
-    slope,
-    confidence,
+    over_confidence,
+    under_confidence,
     con_plot,
     rsi_calc,
     day_movement,
@@ -40,6 +40,7 @@ from data.analysis import (
 )
 from settings.settings_manager import SettingsManager
 from data.winrate import WinrateManager
+from data.shortrate import ShortrateManager
 from applications.scraper import scraper
 from applications.converter import convert
 
@@ -52,6 +53,8 @@ class StockTracker:
         self.root.title("Stock Tracker")
         self.settings_manager = SettingsManager()
         self.winrate_manager = WinrateManager()
+        self.shortrate_manager = ShortrateManager()
+
         tk.Label(root, text="Main Menu", font=("Arial", 20)).pack(pady=0)
 
         tk.Button(root, text="Run", command=self.run).pack(pady=10)
@@ -71,15 +74,19 @@ class StockTracker:
         tk.Button(root, text="Quit", command=self.quit).pack(pady=5)
 
     def run(self):
-        #Run settings/winrate
+        #Run settings/winrate/shortrate
         self.settings_manager.checkSettings()
         self.winrate_manager.winrate()
         self.winrate_manager.checkwinrate()
-
+        self.shortrate_manager.shortrate()
+        self.shortrate_manager.checkshortrate()
 
         winrate_window = WinrateWindow(self.root)
         winrate_window.root.mainloop()
-
+        print("done")
+        shortrate_window = ShortrateWindow(self.root)
+        shortrate_window.root.mainloop()
+        print("complete")
     def commands(self):
         commands_window = CommandsWindow(self.root)
         commands_window.root.mainloop()
@@ -110,7 +117,7 @@ class WinrateWindow:
         self.root.title("Winrate Results")
         self.root.geometry("800x600+200+100")
 
-        result_frame = tk.Frame(root)
+        result_frame = tk.Frame(self.root)
         result_frame.pack(fill = tk.X, expand = True)
 
         result_canvas = tk.Canvas(result_frame, width=600, height=200)
@@ -145,6 +152,46 @@ class WinrateWindow:
         actual_height= y_pos
         result_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
+class ShortrateWindow:
+    def __init__(self, root):
+        self.root = tk.Tk()
+        self.root.title("Shorting Results")
+        self.root.geometry("800x600+200+100")
+
+        result_frame = tk.Frame(self.root)
+        result_frame.pack(fill = tk.X, expand = True)
+
+        result_canvas = tk.Canvas(result_frame, width=600, height=200)
+        result_canvas.pack(side=tk.LEFT)
+
+        y_scrollbar = tk.Scrollbar(result_frame, orient=tk.VERTICAL, command=result_canvas.yview)
+        y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
+
+        y_pos = 10
+
+        result_canvas.create_text(400, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
+        y_pos += 20
+
+        db, dbfile = open_file('shortrate')
+        db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
+        for key, value in db_sorted.items():
+            label_text = f"{key}: {value}\n"
+            y_pos +=15
+            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+
+
+        result_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
+        y_pos += 20
+
+        db, dbfile = open_file('shortrate')
+        db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
+        for key, value in db_sorted.items():
+            label_text = f"{key}: {value}\n"
+            y_pos +=15
+            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+
+        actual_height= y_pos
+        result_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
 class EditWindow:
     def __init__(self, root):
@@ -173,7 +220,12 @@ class EditWindow:
 
     def load(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
-        loadData(dbname)
+        try:
+            sort_choice = simpledialog.askstring("Sort", "Sort by over 95%(short) or under 95%(normal)? ('short ' or 'normal') ").lower().strip()
+            loadData(dbname, sort_choice)
+        except:
+            sort_choice = simpledialog.askstring("Sort", "There has been a typo. 'short' or 'normal'").lower().strip()
+            loadData(dbname, sort_choice)
 
     def add(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
@@ -256,9 +308,7 @@ class PortWindow:
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text = "Portfolio", command = self.portfolio).pack(pady=5)
         tk.Button(self.root, text = "Portfolio Update", command = self.portfolio).pack(pady=5)
-        tk.Button(self.root, text="Back", command=self.back).pack(pady=50)
-
-
+        tk.Button(self.root,.
 
     def portfolio(self):
         dbname = simpledialog.askstring("Input", "Name of database:")

@@ -75,17 +75,14 @@ class StockTracker:
 
     def run(self):
         #Run settings/winrate/shortrate
-        #self.settings_manager.checkSettings()
+        self.settings_manager.checkSettings()
         self.winrate_manager.winrate()
         self.winrate_manager.checkwinrate()
         self.shortrate_manager.shortrate()
         self.shortrate_manager.checkshortrate()
 
-        winrate_window = WinrateWindow(self.root)
-        winrate_window.root.mainloop()
-
-        shortrate_window = ShortrateWindow(self.root)
-        shortrate_window.root.mainloop()
+        winshort_window = WinShortWindow(self.root)
+        winshort_window.root.mainloop()
 
     def commands(self):
         commands_window = CommandsWindow(self.root)
@@ -111,24 +108,24 @@ class StockTracker:
         self.root.quit()
 
 
-class WinrateWindow:
+class WinShortWindow:
     def __init__(self, root):
         self.root = tk.Tk()
-        self.root.title("Winrate Results")
+        self.root.title("Winrate Results/Shorting Results")
         self.root.geometry("800x600+200+100")
 
-        result_frame = tk.Frame(self.root)
-        result_frame.pack(fill = tk.X, expand = True)
+        win_frame = tk.Frame(self.root)
+        win_frame.pack(fill = tk.X, expand = True)
 
-        result_canvas = tk.Canvas(result_frame, width=600, height=200)
-        result_canvas.pack(side=tk.LEFT)
+        win_canvas = tk.Canvas(win_frame, width=600, height=200)
+        win_canvas.pack(side=tk.LEFT)
 
-        y_scrollbar = tk.Scrollbar(result_frame, orient=tk.VERTICAL, command=result_canvas.yview)
+        y_scrollbar = tk.Scrollbar(win_frame, orient=tk.VERTICAL, command=win_canvas.yview)
         y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
 
         y_pos = 10
 
-        result_canvas.create_text(400, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
+        win_canvas.create_text(400, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
         y_pos += 20
 
         db, dbfile = open_file('winrate')
@@ -136,10 +133,9 @@ class WinrateWindow:
         for key, value in db_sorted.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
-            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+            win_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
 
-
-        result_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
+        win_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
         y_pos += 20
 
         db, dbfile = open_file('winrate_storage')
@@ -147,29 +143,26 @@ class WinrateWindow:
         for key, value in db_sorted.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
-            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+            win_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
 
         actual_height= y_pos
-        result_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
+        win_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
-class ShortrateWindow:
-    def __init__(self, root):
-        self.root = tk.Tk()
-        self.root.title("Shorting Results")
-        self.root.geometry("800x600+200+100")
 
-        result_frame = tk.Frame(self.root)
-        result_frame.pack(fill = tk.X, expand = True)
 
-        result_canvas = tk.Canvas(result_frame, width=600, height=200)
-        result_canvas.pack(side=tk.LEFT)
 
-        y_scrollbar = tk.Scrollbar(result_frame, orient=tk.VERTICAL, command=result_canvas.yview)
+        short_frame = tk.Frame(self.root)
+        short_frame.pack(fill = tk.X, expand = True)
+
+        short_canvas = tk.Canvas(short_frame, width=600, height=200)
+        short_canvas.pack(side=tk.LEFT)
+
+        y_scrollbar = tk.Scrollbar(short_frame, orient=tk.VERTICAL, command=short_canvas.yview)
         y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
 
         y_pos = 10
 
-        result_canvas.create_text(400, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
+        short_canvas.create_text(400, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
         y_pos += 20
 
         db, dbfile = open_file('shortrate')
@@ -177,21 +170,20 @@ class ShortrateWindow:
         for key, value in db_sorted.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
-            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+            short_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
 
-
-        result_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
+        short_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
         y_pos += 20
 
-        db, dbfile = open_file('shortrate')
+        db, dbfile = open_file('shortrate_storage')
         db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
         for key, value in db_sorted.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
-            result_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+            short_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
 
         actual_height= y_pos
-        result_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
+        short_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
 class EditWindow:
     def __init__(self, root):
