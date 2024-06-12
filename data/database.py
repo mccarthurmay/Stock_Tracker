@@ -86,14 +86,17 @@ def loadData(dbname, sort_choice):
     try:
         db, dbfile = open_file(dbname)
         if sort_choice == "normal":
-            sorted_data = sorted(db.values(), key=lambda x: x['% Below 95% Confidence Interval'] if x['% Below 95% Confidence Interval'] is not None else float('inf'))
+            sorted_data = sorted(db.values(), key=lambda x: x['% Below 95% Confidence Interval'] if x['% Below 95% Confidence Interval'] is not None else float('inf'), reverse = True)
         elif sort_choice == "short":
-            sorted_data = sorted(db.values(), key=lambda x: x['% Above 95% Confidence Interval'] if x['% Above 95% Confidence Interval'] is not None else float('inf'))
+            sorted_data = sorted(db.values(), key=lambda x: x['% Above 95% Confidence Interval'] if x['% Above 95% Confidence Interval'] is not None else float('inf'), reverse = True)
         for ticker in sorted_data:
             print(ticker)
         dbfile.close()
+        return sorted_data
+
     except FileNotFoundError:
         print("File not found")
+
 
 #UPDATE PORTFOLIO
 def updatePortfolio(dbname):

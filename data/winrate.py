@@ -24,7 +24,7 @@ class WinrateManager:
                     price = yf.Ticker(ticker).info['currentPrice']
                     if ticker not in db_w or db_w[ticker]['Price'] > price:
                         db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
-                        print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')}")
+                        print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (win)")
             close_file(db_w, 'winrate_storage')
         except:
             self.makeWinrate()
@@ -49,7 +49,7 @@ class WinrateManager:
                         'New Date': date.today().strftime("%Y-%m-%d")
                     }
                     del db[ticker]
-                    print(f"{ticker} deleted")
+                    print(f"{ticker} deleted (win)")
             close_file(db_w, 'winrate')
             close_file(db, 'winrate_storage')
         except:

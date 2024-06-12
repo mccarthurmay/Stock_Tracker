@@ -24,7 +24,7 @@ class ShortrateManager:
                     price = yf.Ticker(ticker).info['currentPrice']
                     if ticker not in db_w or db_w[ticker]['Price'] < price:
                         db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d"), 'RSI': ticker_data['RSI']}
-                        print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')}")  #needs to hold different data
+                        print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (short)")  #needs to hold different data
             close_file(db_w, 'shortrate_storage')
         except:
             self.makeshortrate()
@@ -53,6 +53,6 @@ class ShortrateManager:
                     'New RSI': new_rsi
                 }
                 del db[ticker]
-                print(f"{ticker} deleted")
+                print(f"{ticker} deleted (short)")
         close_file(db_w, 'shortrate')
         close_file(db, 'shortrate_storage')

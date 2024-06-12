@@ -150,7 +150,6 @@ class WinShortWindow:
 
 
 
-
         short_frame = tk.Frame(self.root)
         short_frame.pack(fill = tk.X, expand = True)
 
@@ -211,13 +210,13 @@ class EditWindow:
             messagebox.showinfo("Info", "We ran into a problem, please check names of files and resubmit.")
 
     def load(self):
-        dbname = simpledialog.askstring("Input", "Name of database:")
         try:
-            sort_choice = simpledialog.askstring("Sort", "Sort by over 95%(short) or under 95%(normal)? ('short ' or 'normal') ").lower().strip()
-            loadData(dbname, sort_choice)
+            load_window = LoadWindow(self.root)
+            load_window.load()
+            load_window.run()
         except:
-            sort_choice = simpledialog.askstring("Sort", "There has been a typo. 'short' or 'normal'").lower().strip()
-            loadData(dbname, sort_choice)
+            messagebox.showinfo("Sort", "There has been a typo.")
+
 
     def add(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
@@ -302,8 +301,6 @@ class PortWindow:
         tk.Button(self.root, text = "Portfolio Update", command = self.portfolio).pack(pady=5)
         tk.Button(self.root, text="Back", command=self.back).pack(pady=50)
 
-
-
     def portfolio(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
         mainPortfolio(dbname)
@@ -331,6 +328,44 @@ class AppWindow:
 
     def converter(self):
         convert()
+
+
+
+
+
+
+
+class LoadWindow:
+    def __init__(self, root):
+        self.root = tk.Tk()
+        self.root.title = "Loaded Results"
+        self.root.geometry("800x600+400+200")
+
+    def load(self):
+        dbname = simpledialog.askstring("Input", "Name of database:")
+        sort_choice = simpledialog.askstring("Sort", "Sort by over 95%(short) or under 95%(normal)? ('short ' or 'normal') ").lower().strip()
+        sorted_data = loadData(dbname, sort_choice)
+
+        load_frame = tk.Frame(self.root)
+        load_frame.pack(fill = tk.X, expand = True)
+
+        load_canvas = tk.Canvas(load_frame, width=780, height=700)
+        load_canvas.pack(side=tk.LEFT)
+
+        y_scrollbar = tk.Scrollbar(load_frame, orient=tk.VERTICAL, command=load_canvas.yview)
+        y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
+
+        y_pos = 10
+
+        for ticker in sorted_data:
+            load_canvas.create_text(400, y_pos, text=ticker, anchor = "center")
+            y_pos +=15
+
+        actual_height= y_pos
+        load_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
+
+    def run(self):
+        self.root.mainloop()
 
 
 root = tk.Tk()
