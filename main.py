@@ -54,24 +54,27 @@ class StockTracker:
         self.settings_manager = SettingsManager()
         self.winrate_manager = WinrateManager()
         self.shortrate_manager = ShortrateManager()
+        tk.Label(root, text="Main Menu", font=("Arial", 25)).pack(pady=20)
 
-        tk.Label(root, text="Main Menu", font=("Arial", 20)).pack(pady=0)
+        tk.Button(root, text="Run", command=self.run, height = 2, width = 15).pack(pady=20)
+        tk.Label(root, text="Check settings, update portfolios, update databases, run short and winrate experiments.", font = ("Arial", 10)).pack(pady=0)
 
-        tk.Button(root, text="Run", command=self.run).pack(pady=10)
-
-        tk.Button(root, text="Commands", command=self.commands).pack(pady=20)
+        tk.Button(root, text="Commands", command=self.commands, height = 2, width = 15).pack(pady=20)
         tk.Label(root, text="Run individual tasks.", font=("Arial", 10)).pack(pady=0)
 
-        tk.Button(root, text="Manage Databases", command=self.manage_databases).pack(pady=20)
+        tk.Button(root, text="Manage Databases", command=self.manage_databases, height = 2, width = 15).pack(pady=20)
+        tk.Label(root, text="Database related settings.", font=("Arial", 10)).pack(pady=0)
 
-        tk.Button(root, text="Portfolio", command=self.portfolio).pack(pady=20) #make this more suitable for tkinter
+        tk.Button(root, text="Portfolio", command=self.portfolio, height = 2, width = 15).pack(pady=20) #make this more suitable for tkinter
         tk.Label(root, text="Manage running portfolios.", font=("Arial", 10)).pack(pady=0)
 
-        tk.Button(root, text="Applications", command=self.application).pack(pady=20)
+        tk.Button(root, text="Applications", command=self.application, height = 2, width = 15).pack(pady=20)
+        tk.Label(root, text="External applications.", font=("Arial", 10)).pack(pady=0)
 
-        tk.Button(root, text="Settings", command=self.settings).pack(pady=10)
+        tk.Button(root, text="Settings", command=self.settings, height = 2, width = 15).pack(pady=20)
+        tk.Label(root, text="Edit Settings File.", font=("Arial", 10)).pack(pady=0)
 
-        tk.Button(root, text="Quit", command=self.quit).pack(pady=5)
+        tk.Button(root, text="Quit", command=self.quit, height = 2, width = 15).pack(pady=20)
 
     def run(self):
         #Run settings/winrate/shortrate
@@ -82,27 +85,27 @@ class StockTracker:
         self.shortrate_manager.checkshortrate()
 
         winshort_window = WinShortWindow(self.root)
-        winshort_window.root.mainloop()
+        winshort_window.run()
 
     def commands(self):
         commands_window = CommandsWindow(self.root)
-        commands_window.root.mainloop()
+        commands_window.run()
 
     def manage_databases(self):
         edit_window = EditWindow(self.root)
-        edit_window.root.mainloop()
+        edit_window.run()
 
     def portfolio(self):
         port_window = PortWindow(self.root)
-        port_window.root.mainloop()
+        port_window.run()
 
     def application(self):
         app_window = AppWindow(self.root)
-        app_window.root.mainloop()
+        app_window.run()
 
     def settings(self):
         settings_window = SettingsWindow(self.root)
-        settings_window.root.mainloop()
+        settings_window.run()
 
     def quit(self):
         self.root.quit()
@@ -114,15 +117,14 @@ class WinShortWindow:
         self.root.title("Winrate Results/Shorting Results")
         self.root.geometry("800x600+200+100")
 
+    def WinFrame(self):
         win_frame = tk.Frame(self.root)
         win_frame.pack(fill = tk.X, expand = True)
-
         win_canvas = tk.Canvas(win_frame, width=600, height=200)
         win_canvas.pack(side=tk.LEFT)
 
         y_scrollbar = tk.Scrollbar(win_frame, orient=tk.VERTICAL, command=win_canvas.yview)
         y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
-
         y_pos = 10
 
         win_canvas.create_text(400, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
@@ -148,8 +150,7 @@ class WinShortWindow:
         actual_height= y_pos
         win_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
-
-
+    def ShortFrame(self):
         short_frame = tk.Frame(self.root)
         short_frame.pack(fill = tk.X, expand = True)
 
@@ -184,6 +185,11 @@ class WinShortWindow:
         actual_height= y_pos
         short_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
+    def run(self):
+        self.WinFrame()
+        self.ShortFrame()
+        self.root.mainloop()
+
 class EditWindow:
     def __init__(self, root):
         self.root = tk.Tk()
@@ -212,7 +218,6 @@ class EditWindow:
     def load(self):
         try:
             load_window = LoadWindow(self.root)
-            load_window.load()
             load_window.run()
         except:
             messagebox.showinfo("Sort", "There has been a typo.")
@@ -235,14 +240,18 @@ class EditWindow:
     def back(self):
         self.root.destroy()
 
+    def run(self):
+        self.root.mainloop()
 
-class SettingsWindow:
+class SettingsWindow:       ##should make this resemble a settings screen - auto popup choices of database then switches etc
     def __init__(self,root):
         self.root = tk.Tk()
         self.root.title("Settings")
         self.settings_manager = SettingsManager()
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text="Startup", command = self.startup).pack(pady=5)
+        tk.Button(self.root, text="Back", command = self.startup).pack(pady=5)
+
 
 
     def startup(self):
@@ -251,6 +260,11 @@ class SettingsWindow:
         choice = messagebox.askyesno("Y/N", "Would you like this database to update on startup?")
         self.settings_manager.adjustSettings(database, choice)
 
+    def back(self):
+        self.root.destroy()
+
+    def run(self):
+        self.root.mainloop()
 
 
 
@@ -260,7 +274,7 @@ class CommandsWindow:
         self.root.title = "Commands"
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text="Update", command=self.update).pack(pady=5)
-        tk.Button(self.root, text="Winrate", command=self.winrate).pack(pady=5)
+        tk.Button(self.root, text="WinShort", command=self.winshort).pack(pady=5)
         tk.Button(self.root, text="RSI", command=self.rsi).pack(pady=5)
         tk.Button(self.root, text="Back", command=self.back).pack(pady=10)
 
@@ -271,11 +285,9 @@ class CommandsWindow:
         dbname = simpledialog.askstring("Input", "Name of database:")
         updateData(dbname)
 
-    def winrate(self):
-        winrate_manager.winrate()
-        winrate_manager.checkwinrate()
-        db, dbfile = open_file('winrate')
-        #WIP
+    def winshort(self):
+        winshort_window = WinShortWindow(self.root)
+        winshort_window.run()
 
     def rsi(self):
         ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
@@ -289,7 +301,8 @@ class CommandsWindow:
     def back(self):
         self.root.destroy()
 
-
+    def run(self):
+        self.root.mainloop()
 
 #WIP
 class PortWindow:
@@ -308,9 +321,12 @@ class PortWindow:
     def back(self):
         self.root.destroy()
 
-
     def updatePortfolio(self):
         pass
+
+    def run(self):
+        self.root.mainloop()
+
 
 class AppWindow:
     def __init__(self, root):
@@ -319,6 +335,7 @@ class AppWindow:
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text = "Converter", command = self.converter).pack(pady=5)
         tk.Button(self.root, text = "Scraper", command = self.scraper).pack(pady=5)
+        tk.Button(self.root, text = "Back", command = self.back).pack(pady=5)
 
     def scraper(self):
         index = simpledialog.askstring("Input", "Name of index (eg. dowjones, sp500, nasdaq100):")
@@ -328,6 +345,15 @@ class AppWindow:
 
     def converter(self):
         convert()
+
+    def back(self):
+        self.root.destroy()
+
+    def run(self):
+        self.root.mainloop()
+
+
+
 
 
 
@@ -339,7 +365,7 @@ class LoadWindow:
 
     def load(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
-        sort_choice = simpledialog.askstring("Sort", "Sort by over 95%(short) or under 95%(normal)? ('short ' or 'normal') ").lower().strip()
+        sort_choice = simpledialog.askstring("Sort", "Sort by over 95% (short) or under 95% (normal)? ('short ' or 'normal') ").lower().strip()
         sorted_data = loadData(dbname, sort_choice)
 
         load_frame = tk.Frame(self.root)
@@ -361,10 +387,12 @@ class LoadWindow:
         load_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,500, actual_height))
 
     def run(self):
+        load_window = LoadWindow(self.root)
+        load_window.load()
         self.root.mainloop()
 
 
 root = tk.Tk()
 app = StockTracker(root)
-root.geometry("800x600+200+100")
+root.geometry("1000x800+200+100")
 root.mainloop()
