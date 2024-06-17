@@ -131,11 +131,11 @@ class WinShortWindow:
         y_pos += 20
 
         db, dbfile = open_file('winrate')
-        db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
-        for key, value in db_sorted.items():
-            label_text = f"{key}: {value}\n"
+        for key, value in db.items():
+            label_text = f"{key}: {value} \n"
             y_pos +=15
             win_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
+            print(f"{key}: {value}\n")
 
         win_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
         y_pos += 20
@@ -166,12 +166,11 @@ class WinShortWindow:
         y_pos += 20
 
         db, dbfile = open_file('shortrate')
-        db_sorted = dict(sorted(db.items(), key=lambda x: x[1]["Date"]))
-        for key, value in db_sorted.items():
+        for key, value in db.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
             short_canvas.create_text(400, y_pos, text=label_text, anchor = "center")
-
+            print(f"{key}: {value}\n")
         short_canvas.create_text(400, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
         y_pos += 20
 
