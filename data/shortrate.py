@@ -30,29 +30,46 @@ class ShortrateManager:
             self.makeshortrate()
             self.shortrate()
 
-    def checkshortrate(self):
 
-        db, dbfile = open_file('shortrate_storage')
-        db_w, dbfile_w = open_file('shortrate')
-        for ticker, data in db.items():
-            old_price = data['Price']
-            old_date = data['Date']
-            old_rsi = data['RSI']
-            rsi = rsi_calc(ticker, graph = False)
-            short_sell_bool = short_sell(rsi)
-            if short_sell_bool == True and ticker not in db_w:
-                new_price = yf.Ticker(ticker).info['currentPrice']
-                new_rsi = rsi_calc(ticker, graph = False)
-                db_w[ticker] = {
-                    'New Price': new_price,
-                    'Old Price': old_price,
-                    'Gain': old_price - new_price,
-                    'Old Date': date,
-                    'New Date': date.today().strftime("%Y-%m-%d"),
-                    'Old RSI': old_rsi,
-                    'New RSI': new_rsi
-                }
-                del db[ticker]
-                print(f"{ticker} deleted (short)")
-        close_file(db_w, 'shortrate')
-        close_file(db, 'shortrate_storage')
+
+    def w_dupes(self):
+        try:
+            db, dbfile = open_file('shortrate_storage')
+            db_w, dbfile_w = open_file('shortrate')
+            for ticker in db_w:
+                if ticker in db:
+                    del db[ticker]
+                    print(f"{ticker} deleted (short)")
+            close_file(db, 'shortrate_storage')
+
+        except Exception as e:
+            print(f"duplicate did not work(shortrate){e}")
+        
+
+    def checkshortrate(self):
+        try:
+            db, dbfile = open_file('shortrate_storage')
+            db_w, dbfile_w = open_file('shortrate')
+            for ticker, data in db.items():
+                old_price = data['Price']
+                old_date = data['Date']
+                old_rsi = data['RSI']
+                rsi = rsi_calc(ticker, graph = False)
+                short_sell_bool = short_sell(rsi)
+                if short_sell_bool == True and ticker not in db_w:
+                    new_price = yf.Ticker(ticker).info['currentPrice']
+                    new_rsi = rsi_calc(ticker, graph = False)
+                    db_w[ticker] = {
+                        'New Price': new_price,
+                        'Old Price': old_price,
+                        'Gain': old_price - new_price,
+                        'Old Date': old_date,
+                        'New Date': date.today().strftime("%Y-%m-%d"),
+                        'Old RSI': old_rsi,
+                        'New RSI': new_rsi
+                    }
+            close_file(db_w, 'shortrate')
+            close_file(db, 'shortrate_storage')
+            self.w_dupes()
+        except Exception as e:
+            print(e)

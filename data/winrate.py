@@ -30,6 +30,21 @@ class WinrateManager:
             self.makeWinrate()
             self.winrate()
 
+    def w_dupes(self):
+        try:
+            db, dbfile = open_file('winrate_storage')
+            db_w, dbfile_w = open_file('winrate')
+            for ticker in db_w:
+                if ticker in db:
+                    del db[ticker]
+                    print(f"{ticker} deleted (win)")
+            close_file(db, 'winrate_storage')
+
+        except Exception as e:
+            print(f"duplicate did not work(winrate){e}")
+        
+        
+        
     def checkwinrate(self):
         try:
             db, dbfile = open_file('winrate_storage')
@@ -45,12 +60,13 @@ class WinrateManager:
                         'New Price': new_price,
                         'Old Price': old_price,
                         'Gain': new_price - old_price,
-                        'Old Date': date,
+                        'Old Date': old_date,
                         'New Date': date.today().strftime("%Y-%m-%d")
                     }
-                    del db[ticker]
-                    print(f"{ticker} deleted (win)")
+                    
             close_file(db_w, 'winrate')
             close_file(db, 'winrate_storage')
+            self.w_dupes()
         except:
             print("Did not work (winrate)")
+        
