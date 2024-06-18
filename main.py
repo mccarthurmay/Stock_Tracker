@@ -79,12 +79,16 @@ class StockTracker:
     def run(self):
         #Run settings/winrate/shortrate
         self.settings_manager.checkSettings()
+        self.winrate_manager.checkWinrate()
+        self.shortrate_manager.checkShortrate()
+
         self.winrate_manager.winrate()
-        self.winrate_manager.checkwinrate()
-        self.winrate_manager.winrate_potential()
+        self.winrate_manager.scanWinrate()
+        self.winrate_manager.winratePotential()
+
         self.shortrate_manager.shortrate()
-        self.shortrate_manager.checkshortrate()
-        self.shortrate_manager.shortrate_potential()
+        self.shortrate_manager.scanShortrate()
+        self.shortrate_manager.shortratePotential()
 
         winshort_window = WinShortWindow(self.root)
         winshort_window.run()
@@ -92,6 +96,7 @@ class StockTracker:
     def commands(self):
         commands_window = CommandsWindow(self.root)
         commands_window.run()
+        
 
     def manage_databases(self):
         edit_window = EditWindow(self.root)
@@ -113,6 +118,7 @@ class StockTracker:
         self.root.quit()
 
 
+
 class WinShortWindow:
     def __init__(self, root):
         self.root = tk.Tk()
@@ -122,14 +128,12 @@ class WinShortWindow:
     def WinFrame(self):
         win_frame = tk.Frame(self.root)
         win_frame.pack(fill = tk.X, expand = True)
-        win_canvas = tk.Canvas(win_frame, width=900, height=300)
+        win_canvas = tk.Canvas(win_frame, width=900, height=380, highlightthickness = 1, highlightbackground = 'black')
         win_canvas.pack(side=tk.LEFT)
 
         y_scrollbar = tk.Scrollbar(win_frame, orient=tk.VERTICAL, command=win_canvas.yview)
         y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
-        y_pos = 10
-
-
+        y_pos = 20
 
 
         win_canvas.create_text(500, y_pos, text="Potential Sell", font=("Arial", 16), anchor = "center")
@@ -181,13 +185,13 @@ class WinShortWindow:
         short_frame = tk.Frame(self.root)
         short_frame.pack(fill = tk.X, expand = True)
 
-        short_canvas = tk.Canvas(short_frame, width=900, height=300)
+        short_canvas = tk.Canvas(short_frame, width=900, height=380, highlightthickness = 1, highlightbackground = 'black')
         short_canvas.pack(side=tk.LEFT)
 
         y_scrollbar = tk.Scrollbar(short_frame, orient=tk.VERTICAL, command=short_canvas.yview)
         y_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
 
-        y_pos = 10
+        y_pos = 20
 
 
 
@@ -242,6 +246,7 @@ class EditWindow:
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text="Store", command=self.store).pack(pady=5)
         tk.Button(self.root, text="Load", command=self.load).pack(pady=5)
+        tk.Button(self.root, text="Load WinShort", command=self.loadWinShort).pack(pady=5)
         tk.Button(self.root, text="Add Ticker", command=self.add).pack(pady=5)
         tk.Button(self.root, text="Remove Ticker", command=self.remove).pack(pady=5)
         tk.Button(self.root, text="Reset Database", command=self.reset).pack(pady=5)
@@ -267,6 +272,9 @@ class EditWindow:
         except:
             messagebox.showinfo("Sort", "There has been a typo.")
 
+    def loadWinShort(self):
+        winshort_window = WinShortWindow(self.root)
+        winshort_window.run()
 
     def add(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
@@ -325,12 +333,22 @@ class CommandsWindow:
 
         self.settings_manager = SettingsManager()
         self.winrate_manager = WinrateManager()
+        self.shortrate_manager = ShortrateManager()
 
     def update(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
         updateData(dbname)
 
     def winshort(self):
+        self.winrate_manager.checkWinrate()
+        self.winrate_manager.winrate()
+        self.winrate_manager.scanWinrate()
+        self.winrate_manager.winratePotential()
+        self.shortrate_manager.checkShortrate()
+        self.shortrate_manager.shortrate()
+        self.shortrate_manager.scanShortrate()
+        self.shortrate_manager.shortratePotential()
+
         winshort_window = WinShortWindow(self.root)
         winshort_window.run()
 
