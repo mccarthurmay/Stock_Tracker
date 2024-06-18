@@ -21,7 +21,20 @@ def storeData(dbname, stock_list):
         }
     #source, destination
     close_file(db, dbname)
-    updateData(dbname)
+
+    db, dbfile = open_file(dbname)
+
+    def process_ticker(ticker):
+        try:
+            runall(ticker, db)
+        except Exception as e:
+            print(f"Removing {ticker}: {e}")
+            del db[ticker]
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        executor.map(process_ticker, db.keys())
+
+    close_file(db, dbname)
 
 
 #CREATE/EDIT MAIN PORTFOLIO
@@ -132,8 +145,8 @@ def updateData(dbname):
         try:
             runall(ticker, db)
         except Exception as e:
-            print(f"Removing {ticker}: {e}")
-            del db[ticker]
+            print(f"There has been an error with {ticker}: {e}")
+
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         executor.map(process_ticker, db.keys())
