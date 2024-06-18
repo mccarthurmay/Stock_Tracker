@@ -13,6 +13,7 @@ class ShortrateManager:
         db = {}
         close_file(db, 'shortrate_storage')
         close_file(db, 'shortrate')
+        close_file(db, 'shortrate_potential')
 
 
     def shortrate(self):
@@ -57,7 +58,7 @@ class ShortrateManager:
                 rsi = rsi_calc(ticker, graph = False)
                 short_sell_bool = short_sell(rsi)
                 if short_sell_bool == True and ticker not in db_w:
-                    new_price = yf.Ticker(ticker).info['currentPrice']
+                    new_price = round(yf.Ticker(ticker).info['currentPrice'], 2)
                     new_rsi = rsi_calc(ticker, graph = False)
                     db_w[ticker] = {
                         'New Price': new_price,
@@ -68,8 +69,62 @@ class ShortrateManager:
                         'Old RSI': old_rsi,
                         'New RSI': new_rsi
                     }
+                    print(f"Updated sold: {ticker}")
             close_file(db_w, 'shortrate')
             close_file(db, 'shortrate_storage')
             self.w_dupes()
         except Exception as e:
             print(e)
+
+
+
+    def shortrate_potential(self):  #third database to track potential best sell
+        #try: 
+        db_w, dbfile_w = open_file('shortrate')
+        db_p, dbfile_p = open_file('shortrate_potential')
+
+        for ticker, data in db_w.items():
+            sold_price = data['New Price']
+            sold_date = data['New Date']
+            previous_gain = data['Gain']
+            rsi = rsi_calc(ticker, graph = False)
+            sold_rsi = data['New RSI']
+            sell_bool = sell(rsi)
+
+            if sell_bool == True:
+                new_price = yf.Ticker(ticker).info['currentPrice']
+
+
+
+                if ticker not in db_p:
+
+                        
+                    db_p[ticker] = {
+                        'New Price': new_price,
+                        '"Sold" Price': sold_price,
+                        'Gain': round(new_price - sold_price,2),
+                        'Total Gain': round(new_price - sold_price + previous_gain, 2),
+                        '"Sold" Date': sold_date,
+                        'New Date': date.today().strftime("%Y-%m-%d"),
+                        '"Sold" RSI': sold_rsi,
+                        'New RSI': rsi
+                    }
+                    print(f"Created potential: {ticker}")
+                else:
+                    if db_p[ticker]['New Price'] < new_price:
+                        db_p[ticker] = {
+                            'New Price': new_price,
+                            '"Sold" Price': sold_price,
+                            'Gain': round(new_price - sold_price,2),
+                            'Total Gain': round(new_price - sold_price + previous_gain, 2),
+                            '"Sold" Date': sold_date,
+                            'New Date': date.today().strftime("%Y-%m-%d"),
+                            '"Sold" RSI': sold_rsi,
+                            'New RSI': rsi
+                        }
+                        print(f"Updated sold: {ticker}")
+
+
+            
+            close_file(db_w, 'shortrate')
+            close_file(db_p, 'shortrate_potential')

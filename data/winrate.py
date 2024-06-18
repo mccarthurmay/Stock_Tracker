@@ -3,6 +3,16 @@ from datetime import date
 from data.database import open_file, close_file
 from data.analysis import rsi_calc, sell
 
+#note
+
+#winrate_storage stores 'holds'
+#winrate stores 'sold'
+#winrate_potential stores 'best possible sell'
+
+
+
+
+
 class WinrateManager:
     def __init__(self):
         pass
@@ -13,6 +23,7 @@ class WinrateManager:
         db = {}
         close_file(db, 'winrate_storage')
         close_file(db, 'winrate')
+        close_file(db, 'winrate_potential')
 
 
     def winrate(self):
@@ -56,17 +67,79 @@ class WinrateManager:
                 sell_bool = sell(rsi)
                 if sell_bool == True and ticker not in db_w:
                     new_price = yf.Ticker(ticker).info['currentPrice']
+                    gain = new_price - old_price
                     db_w[ticker] = {
                         'New Price': new_price,
                         'Old Price': old_price,
-                        'Gain': new_price - old_price,
+                        'Percent Gain': round( gain / old_price ,2),
                         'Old Date': old_date,
-                        'New Date': date.today().strftime("%Y-%m-%d")
+                        'New Date': date.today().strftime("%Y-%m-%d"),
                     }
-                    
+                    print(f"Updated sold: {ticker}")
+
             close_file(db_w, 'winrate')
             close_file(db, 'winrate_storage')
             self.w_dupes()
-        except:
-            print("Did not work (winrate)")
-        
+
+        except Exception as e:
+            print(f"Did not work (winrate): {e}")
+            close_file(db_w, 'winrate')
+            close_file(db, 'winrate_storage')
+
+    def winrate_potential(self):  #third database to track potential best sell
+        #try: 
+        db_w, dbfile_w = open_file('winrate')
+        db_p, dbfile_p = open_file('winrate_potential')
+
+        for ticker, data in db_w.items():
+            sold_price = data['New Price']
+            sold_date = data['New Date']
+            previous_gain = data['Gain']
+            rsi = rsi_calc(ticker, graph = False)
+            sell_bool = sell(rsi)
+
+            if sell_bool == True:
+                new_price = yf.Ticker(ticker).info['currentPrice']
+
+
+
+                if ticker not in db_p:
+
+                        
+                    db_p[ticker] = {
+                        'New Price': new_price,
+                        '"Sold" Price': sold_price,
+                        'Gain': round(new_price - sold_price,2),
+                        'Total Gain': round(new_price - sold_price + previous_gain, 2),
+                        '"Sold" Date': sold_date,
+                        'New Date': date.today().strftime("%Y-%m-%d")
+                    }
+                    print(f"Created potential: {ticker}")
+                else:
+                    if db_p[ticker]['New Price'] < new_price:
+                        db_p[ticker] = {
+                            'New Price': new_price,
+                            '"Sold" Price': sold_price,
+                            'Gain': round(new_price - sold_price,2),
+                            'Total Gain': round(new_price - sold_price + previous_gain, 2),
+                            '"Sold" Date': sold_date,
+                            'New Date': date.today().strftime("%Y-%m-%d")
+                        }
+                        print(f"Updated sold: {ticker}")
+
+
+            
+            close_file(db_w, 'winrate')
+            close_file(db_p, 'winrate_potential')
+
+        #except Exception as e:
+            #print(f"Did not work (winrate_potential): {e}")
+
+
+
+
+
+
+
+
+#UPDATE ALL HoLDINGS TO KEEP TRACK WITH RSI AND PRICE BUT DONT UPDATE ANYTHING ELSE
