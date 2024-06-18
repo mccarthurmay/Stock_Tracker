@@ -2,7 +2,7 @@ import os
 import pickle
 import concurrent.futures
 from data.analysis import runall, runall_sell
-
+from tkinter import messagebox, simpledialog
 
 def storeData(dbname, stock_list):
     try:
@@ -32,7 +32,8 @@ def mainPortfolio(dbname):
         db = {}
 
     while True:
-        ticker = input("Input ticker to be added ('done' to leave): ").strip().upper()
+        ticker = simpledialog.askstring("Input", "Input ticker to be added (type 'done' to exit):").strip().upper()
+
 
         if ticker == "DONE":
             break
