@@ -2,34 +2,37 @@ import yfinance as yf
 from datetime import date
 from data.database import open_file, close_file
 from data.analysis import rsi_calc, sell, short_sell
-
+import os
 class ShortrateManager:
     def __init__(self):
         pass
 
 
-    def makeshortrate(self):
-
+    def checkShortrate(self):
         db = {}
-        close_file(db, 'shortrate_storage')
-        close_file(db, 'shortrate')
-        close_file(db, 'shortrate_potential')
+        if not os.path.exists('./storage/databases/shortrate_storage.pickle'):
+            close_file(db, 'shortrate_storage')
+            print('shortrate_storage.py created')
+        if not os.path.exists('./storage/databases/shortrate.pickle'):
+            close_file(db, 'shortrate')
+            print('shortrate.py created')
+        if not os.path.exists('./storage/databases/shortrate_potential.pickle'):
+            close_file(db, 'shortrate_potential')
+            print('shortrate_potential.py created')
 
 
     def shortrate(self):
-        try:
-            db, dbfile = open_file('t_safe') #NEED TO MAKE THIS CHANGEABLE, OR HAVE MULTIPLE FILES
-            db_w, dbfile_w = open_file('shortrate_storage')
-            for ticker, ticker_data in db.items():
-                if ticker_data['Short'] == True:
-                    price = yf.Ticker(ticker).info['currentPrice']
-                    if ticker not in db_w or db_w[ticker]['Price'] < price:
-                        db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d"), 'RSI': ticker_data['RSI']}
-                        print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (short)")  #needs to hold different data
-            close_file(db_w, 'shortrate_storage')
-        except:
-            self.makeshortrate()
-            self.shortrate()
+        db, dbfile = open_file('t_safe') #NEED TO MAKE THIS CHANGEABLE, OR HAVE MULTIPLE FILES
+        db_w, dbfile_w = open_file('shortrate_storage')
+        open_file('shortrate')
+        for ticker, ticker_data in db.items():
+            if ticker_data['Short'] == True:
+                price = yf.Ticker(ticker).info['currentPrice']
+                if ticker not in db_w or db_w[ticker]['Price'] < price:
+                    db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d"), 'RSI': ticker_data['RSI']}
+                    print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (short)")  #needs to hold different data
+        close_file(db_w, 'shortrate_storage')
+
 
 
 
@@ -47,7 +50,7 @@ class ShortrateManager:
             print(f"duplicate did not work(shortrate){e}")
         
 
-    def checkshortrate(self):
+    def scanShortrate(self):
         try:
             db, dbfile = open_file('shortrate_storage')
             db_w, dbfile_w = open_file('shortrate')
@@ -60,10 +63,11 @@ class ShortrateManager:
                 if short_sell_bool == True and ticker not in db_w:
                     new_price = round(yf.Ticker(ticker).info['currentPrice'], 2)
                     new_rsi = rsi_calc(ticker, graph = False)
+                    gain = old_price - new_price
                     db_w[ticker] = {
                         'New Price': new_price,
                         'Old Price': old_price,
-                        'Gain': old_price - new_price,
+                        'Gain': str(round( gain / old_price* 100,1))+ '%',
                         'Old Date': old_date,
                         'New Date': date.today().strftime("%Y-%m-%d"),
                         'Old RSI': old_rsi,
@@ -78,7 +82,7 @@ class ShortrateManager:
 
 
 
-    def shortrate_potential(self):  #third database to track potential best sell
+    def shortratePotential(self):  #third database to track potential best sell
         #try: 
         db_w, dbfile_w = open_file('shortrate')
         db_p, dbfile_p = open_file('shortrate_potential')
@@ -93,8 +97,8 @@ class ShortrateManager:
 
             if sell_bool == True:
                 new_price = yf.Ticker(ticker).info['currentPrice']
-
-
+                gain = new_price - sold_price
+                
 
                 if ticker not in db_p:
 
@@ -102,8 +106,8 @@ class ShortrateManager:
                     db_p[ticker] = {
                         'New Price': new_price,
                         '"Sold" Price': sold_price,
-                        'Gain': round(new_price - sold_price,2),
-                        'Total Gain': round(new_price - sold_price + previous_gain, 2),
+                        'Gain': str(round(gain,2)),
+                        'Total Gain': str(round((gain + float(previous_gain))/sold_price * 100, 1)) + '%',
                         '"Sold" Date': sold_date,
                         'New Date': date.today().strftime("%Y-%m-%d"),
                         '"Sold" RSI': sold_rsi,
@@ -115,8 +119,8 @@ class ShortrateManager:
                         db_p[ticker] = {
                             'New Price': new_price,
                             '"Sold" Price': sold_price,
-                            'Gain': round(new_price - sold_price,2),
-                            'Total Gain': round(new_price - sold_price + previous_gain, 2),
+                            'Gain': str(round(gain,2)),
+                            'Total Gain': round((gain + float(previous_gain))/sold_price * 100, 1) + '%',
                             '"Sold" Date': sold_date,
                             'New Date': date.today().strftime("%Y-%m-%d"),
                             '"Sold" RSI': sold_rsi,

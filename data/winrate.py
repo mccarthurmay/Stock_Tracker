@@ -2,7 +2,7 @@ import yfinance as yf
 from datetime import date
 from data.database import open_file, close_file
 from data.analysis import rsi_calc, sell
-
+import os
 #note
 
 #winrate_storage stores 'holds'
@@ -18,28 +18,32 @@ class WinrateManager:
         pass
 
 
-    def makeWinrate(self):
-
+    def checkWinrate(self):
         db = {}
-        close_file(db, 'winrate_storage')
-        close_file(db, 'winrate')
-        close_file(db, 'winrate_potential')
+        if not os.path.exists('./storage/databases/winrate_storage.pickle'):
+            close_file(db, 'winrate_storage')
+            print('winrate_storage.py created')
+        if not os.path.exists('./storage/databases/winrate.pickle'):
+            close_file(db, 'winrate')
+            print('winrate.py created')
+        if not os.path.exists('./storage/databases/winrate_potential.pickle'):
+            close_file(db, 'winrate_potential')
+            print('winrate_potential.py created')
 
 
     def winrate(self):
-        try:
-            db, dbfile = open_file('t_safe') #NEED TO MAKE THIS CHANGEABLE, OR HAVE MULTIPLE FILES
-            db_w, dbfile_w = open_file('winrate_storage')
-            for ticker, ticker_data in db.items():
-                if ticker_data['Buy'] == True:
-                    price = yf.Ticker(ticker).info['currentPrice']
-                    if ticker not in db_w or db_w[ticker]['Price'] > price:
-                        db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
-                        print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (win)")
-            close_file(db_w, 'winrate_storage')
-        except:
-            self.makeWinrate()
-            self.winrate()
+
+        db, dbfile = open_file('t_safe') #NEED TO MAKE THIS CHANGEABLE, OR HAVE MULTIPLE FILES
+        db_w, dbfile_w = open_file('winrate_storage')
+        open_file('winrate')
+        open_file('winrate_potential')
+        for ticker, ticker_data in db.items():
+            if ticker_data['Buy'] == True:
+                price = yf.Ticker(ticker).info['currentPrice']
+                if ticker not in db_w or db_w[ticker]['Price'] > price:
+                    db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
+                    print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (win)")
+        close_file(db_w, 'winrate_storage')
 
     def w_dupes(self):
         try:
@@ -56,7 +60,7 @@ class WinrateManager:
         
         
         
-    def checkwinrate(self):
+    def scanWinrate(self):
         try:
             db, dbfile = open_file('winrate_storage')
             db_w, dbfile_w = open_file('winrate')
@@ -71,11 +75,12 @@ class WinrateManager:
                     db_w[ticker] = {
                         'New Price': new_price,
                         'Old Price': old_price,
-                        'Percent Gain': round( gain / old_price ,2),
+                        'Gain': round(gain, 2),
+                        '% Gain': str(round( gain / old_price * 100 ,1)) + '%',
                         'Old Date': old_date,
                         'New Date': date.today().strftime("%Y-%m-%d"),
                     }
-                    print(f"Updated sold: {ticker}")
+                    print(f"Updated Sold: {ticker} (win)")
 
             close_file(db_w, 'winrate')
             close_file(db, 'winrate_storage')
@@ -86,7 +91,7 @@ class WinrateManager:
             close_file(db_w, 'winrate')
             close_file(db, 'winrate_storage')
 
-    def winrate_potential(self):  #third database to track potential best sell
+    def winratePotential(self):  #third database to track potential best sell
         #try: 
         db_w, dbfile_w = open_file('winrate')
         db_p, dbfile_p = open_file('winrate_potential')
@@ -100,7 +105,8 @@ class WinrateManager:
 
             if sell_bool == True:
                 new_price = yf.Ticker(ticker).info['currentPrice']
-
+                gain = new_price - sold_price
+                old_price = data['Old Price']
 
 
                 if ticker not in db_p:
@@ -109,23 +115,23 @@ class WinrateManager:
                     db_p[ticker] = {
                         'New Price': new_price,
                         '"Sold" Price': sold_price,
-                        'Gain': round(new_price - sold_price,2),
-                        'Total Gain': round(new_price - sold_price + previous_gain, 2),
+                        '% Gain': str(round(gain/old_price * 100,1)),
+                        'Total % Gain': str(round((gain + float(previous_gain))/old_price * 100, 1)) + '%',
                         '"Sold" Date': sold_date,
                         'New Date': date.today().strftime("%Y-%m-%d")
                     }
-                    print(f"Created potential: {ticker}")
+                    print(f"Created potential: {ticker} (win)")
                 else:
                     if db_p[ticker]['New Price'] < new_price:
                         db_p[ticker] = {
                             'New Price': new_price,
                             '"Sold" Price': sold_price,
-                            'Gain': round(new_price - sold_price,2),
-                            'Total Gain': round(new_price - sold_price + previous_gain, 2),
+                            '% Gain': str(round(gain/old_price * 100,1)),
+                            'Total % Gain': str(round((gain + float(previous_gain))/old_price * 100, 1)) + '%',
                             '"Sold" Date': sold_date,
                             'New Date': date.today().strftime("%Y-%m-%d")
                         }
-                        print(f"Updated sold: {ticker}")
+                        print(f"Updated potential: {ticker} (win)")
 
 
             
