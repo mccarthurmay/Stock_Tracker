@@ -1,8 +1,7 @@
 Hello, this is a WIP.
 
-main_track.py - Recommended, newest working version
-test.py - Beta without loading settings/winrate
-working.py - Beta, working file
+main.py - Recommended, newest working version
+tk_test.py - Beta 
 
 
 Requirements:
