@@ -17,8 +17,11 @@ def storeData(dbname, stock_list):
             'Short': None,
             '% Above 95% Confidence Interval': None,
             '% Below 95% Convidence Interval': None,
-            'RSI': None
+            'RSI': None,
+            'RSI COS Accuracy': None,
+            'RSI MSD Accuracy': None
         }
+
     #source, destination
     close_file(db, dbname)
 
@@ -103,13 +106,18 @@ def loadData(dbname, sort_choice):
             sorted_data = sorted(db.values(), key=lambda x: x['% Below 95% Confidence Interval'] if x['% Below 95% Confidence Interval'] is not None else float('inf'), reverse = True)
         elif sort_choice == "short":
             sorted_data = sorted(db.values(), key=lambda x: x['% Above 95% Confidence Interval'] if x['% Above 95% Confidence Interval'] is not None else float('inf'), reverse = True)
+        elif sort_choice == "msd":
+            sorted_data = sorted(db.values(), key=lambda x: x['RSI MSD Accuracy'] if x['RSI MSD Accuracy'] is not None else float('inf'), reverse = True)
+        elif sort_choice == "cos":
+            sorted_data = sorted(db.values(), key=lambda x: x['RSI COS Accuracy'] if x['RSI COS Accuracy'] is not None else float('inf'), reverse = True)
+        
         for ticker in sorted_data:
             print(ticker)
         dbfile.close()
         return sorted_data
 
-    except FileNotFoundError:
-        print("File not found")
+    except Exception as e:
+        print(f"{e}")
 
 
 #UPDATE PORTFOLIO

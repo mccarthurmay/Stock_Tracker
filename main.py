@@ -36,7 +36,8 @@ from data.analysis import (
     con_plot,
     rsi_calc,
     day_movement,
-    showinfo
+    showinfo,
+    rsi_accuracy
 )
 from settings.settings_manager import SettingsManager
 from data.winrate import WinrateManager
@@ -329,6 +330,7 @@ class CommandsWindow:
         tk.Button(self.root, text="Update", command=self.update).pack(pady=5)
         tk.Button(self.root, text="WinShort", command=self.winshort).pack(pady=5)
         tk.Button(self.root, text="RSI", command=self.rsi).pack(pady=5)
+        tk.Button(self.root, text= "RSI Accuracy", command=self.rsi_acc).pack(pady=5)
         tk.Button(self.root, text="Back", command=self.back).pack(pady=10)
 
         self.settings_manager = SettingsManager()
@@ -360,6 +362,11 @@ class CommandsWindow:
             messagebox.showinfo(title = "RSI", message = f"RSI for {ticker}: {rsi_value}")
         else:
             rsi_calc(ticker, graph)
+
+    def rsi_acc(self):
+        ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
+        cos_accuracy, msd_accuracy = rsi_accuracy(ticker)
+        messagebox.showinfo(title = "RSI Accuracy", message = f"RSI Cosine, MSD Accuracy for {ticker}: {round(cos_accuracy,2)}, {round(msd_accuracy,2)}")
 
     def back(self):
         self.root.destroy()
@@ -428,7 +435,7 @@ class LoadWindow:
 
     def load(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
-        sort_choice = simpledialog.askstring("Sort", "Sort by over 95% (short) or under 95% (normal)? ('short ' or 'normal') ").lower().strip()
+        sort_choice = simpledialog.askstring("Sort", "Sort by over 95% (short), under 95% (normal), or by RSI accuracy (MSD or COS)? ('short ', 'normal', 'MSD', 'COS') ").lower().strip()
         sorted_data = loadData(dbname, sort_choice)
 
         load_frame = tk.Frame(self.root)
