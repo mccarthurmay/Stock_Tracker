@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import linregress
 import matplotlib.pyplot as plt
+from sklearn.metrics.pairwise import cosine_similarity
 
 def runall(ticker, db):
     percent_under = round(under_confidence(ticker, db).iloc[0])
@@ -10,13 +11,16 @@ def runall(ticker, db):
     rsi = rsi_calc(ticker, graph = False)
     buy_bool = buy(rsi, percent_under)
     short_bool = short(rsi, percent_over)
+    cos, msd = rsi_accuracy(ticker)
     db[ticker] = {
         'Ticker': ticker,
         'Buy': buy_bool,
         'Short': short_bool,
         '% Above 95% Confidence Interval': percent_over,
         '% Below 95% Confidence Interval': percent_under,
-        'RSI': rsi
+        'RSI': rsi,
+        'RSI COS Accuracy': round(cos,2),
+        'RSI MSD Accuracy': round(msd,2)
     }
 
 
@@ -26,13 +30,16 @@ def runall_sell(ticker, db):
     rsi = rsi_calc(ticker, graph = False)
     sell_bool = sell(rsi)
     short_sell_bool = short_sell(rsi)
+    cos, msd = rsi_accuracy(ticker)
     db[ticker] = {
         'Ticker': ticker,
         'Sell': sell_bool,
         'Short Sell': short_sell_bool,
         '% Above 95% Confidence Interval': percent_over,
         '% Below 95% Confidence Interval': percent_under,
-        'RSI': rsi
+        'RSI': rsi,
+        'RSI COS Accuracy': round(cos,2),
+        'RSI MSD Accuracy': round(msd,2)
     }
 
 
@@ -207,6 +214,57 @@ def rsi_calc(ticker, graph):
         plt.show()
     else:
         return (round(rsi[-1]))
+    
+
+def rsi_accuracy(ticker):
+    ticker = yf.Ticker(ticker)
+    df = ticker.history(interval="1d", period="2y")
+    df = df['Close']
+
+    #find differences between every number (eg. Close 1 = 55, close 2 = 58, close 3 = 53, print(change) = 3,-5)
+    change = df.diff()
+    change.dropna(inplace=True)
+    #create two copies of closing price
+    change_up = change.copy()
+    change_down = change.copy()
+
+    #sets all values under 0 to 0
+    change_up[change_up<0]= 0
+    #sets all values above 0 to 0
+    change_down[change_down>0]= 0
+
+    #moves through every 14 numbers, calculating mean
+    mean_up = change_up.rolling(14).mean()
+    mean_down = change_down.rolling(14).mean().abs()
+    #calculate rsi
+    rsi = 100 * mean_up / (mean_up + mean_down)
+
+    #calculate mean + std of both datasets
+    mean_df = np.mean(df)
+    mean_rsi = np.mean(rsi)
+    std_df = np.std(df)
+    std_rsi = np.std(rsi)
+    
+    #standardize data
+    df_standardized = (df - mean_df) / std_df
+    rsi_standardized = (rsi - mean_rsi) / std_rsi
+
+
+    #COSINE SIMIlARITY - penalizes larger differences more heavily
+    df_standardized = df_standardized.iloc[14:] #deleting first 13 numbers due to rolling average producing NAN in rsi
+    rsi_standardized = rsi_standardized.iloc[13:] #deleting first 13 numbers due to rolling average producing NAN in rsi
+    df_standardized = df_standardized.values.reshape(1,-1)
+    rsi_standardized = rsi_standardized.values.reshape(1,-1)
+    cos_accuracy = cosine_similarity(df_standardized, rsi_standardized)[0][0]
+
+
+    #MEAN SQUARED DIFFERENCE - prioritizes relative direction and order of data points more than absolute values
+    MSD = (np.mean(np.square(df_standardized - rsi_standardized)))
+    msd_accuracy = 1 / (1 + MSD)
+
+    return cos_accuracy, msd_accuracy
+
+
 
 
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
