@@ -19,7 +19,8 @@ def storeData(dbname, stock_list):
             '% Below 95% Convidence Interval': None,
             'RSI': None,
             'RSI COS Accuracy': None,
-            'RSI MSD Accuracy': None
+            'RSI MSD Accuracy': None,
+            'RSI Avg Turnover': None
         }
 
     #source, destination
@@ -110,6 +111,8 @@ def loadData(dbname, sort_choice):
             sorted_data = sorted(db.values(), key=lambda x: x['RSI MSD Accuracy'] if x['RSI MSD Accuracy'] is not None else float('inf'), reverse = True)
         elif sort_choice == "cos":
             sorted_data = sorted(db.values(), key=lambda x: x['RSI COS Accuracy'] if x['RSI COS Accuracy'] is not None else float('inf'), reverse = True)
+        elif sort_choice == "turn":
+            sorted_data = sorted(db.values(), key=lambda x: x['RSI Avg Turnover'] if x['RSI Avg Turnover'] is not None else float('inf'), reverse = False)
         
         for ticker in sorted_data:
             print(ticker)
@@ -173,3 +176,6 @@ def close_file(db, dbname):
     with open(f'./storage/databases/{dbname}.pickle', 'wb') as dbfile:
         pickle.dump(db, dbfile)
     dbfile.close()
+
+
+
