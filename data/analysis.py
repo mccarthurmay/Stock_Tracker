@@ -171,7 +171,7 @@ def con_plot(ticker):
 
 
 #RSI
-def rsi_calc(ticker, graph):
+def rsi_base(ticker):
     ticker = yf.Ticker(ticker)
     df = ticker.history(interval="1d", period="2y")
 
@@ -190,6 +190,10 @@ def rsi_calc(ticker, graph):
     mean_down = change_down.rolling(14).mean().abs()
     #calculate rsi
     rsi = 100 * mean_up / (mean_up + mean_down)
+    return rsi, ticker, df
+
+def rsi_calc(ticker, graph):
+    rsi, ticker, df = rsi_base(ticker)
 
     #Graph
     if graph == True:
@@ -217,28 +221,8 @@ def rsi_calc(ticker, graph):
     
 
 def rsi_accuracy(ticker):
-    ticker = yf.Ticker(ticker)
-    df = ticker.history(interval="1d", period="2y")
+    rsi, ticker, df = rsi_base(ticker)
     df = df['Close']
-
-    #find differences between every number (eg. Close 1 = 55, close 2 = 58, close 3 = 53, print(change) = 3,-5)
-    change = df.diff()
-    change.dropna(inplace=True)
-    #create two copies of closing price
-    change_up = change.copy()
-    change_down = change.copy()
-
-    #sets all values under 0 to 0
-    change_up[change_up<0]= 0
-    #sets all values above 0 to 0
-    change_down[change_down>0]= 0
-
-    #moves through every 14 numbers, calculating mean
-    mean_up = change_up.rolling(14).mean()
-    mean_down = change_down.rolling(14).mean().abs()
-    #calculate rsi
-    rsi = 100 * mean_up / (mean_up + mean_down)
-
     #calculate mean + std of both datasets
     mean_df = np.mean(df)
     mean_rsi = np.mean(rsi)
@@ -264,6 +248,8 @@ def rsi_accuracy(ticker):
 
     return cos_accuracy, msd_accuracy
 
+def rsi_turnover(ticker):
+    rsi, ticker, df = rsi_base(ticker)
 
 
 
