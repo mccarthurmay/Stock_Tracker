@@ -40,8 +40,14 @@ class WinrateManager:
         for ticker, ticker_data in db.items():
             if ticker_data['Buy'] == True:
                 price = yf.Ticker(ticker).info['currentPrice']
-                if ticker not in db_w or db_w[ticker]['Price'] > price:
-                    db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d")}
+                if ticker not in db_w or db_w[ticker]['Price'] < price:
+                    db_w[ticker] = {'Price': price, 
+                                    'Date': date.today().strftime("%Y-%m-%d"), 
+                                    'RSI': ticker_data['RSI'], 
+                                    'RSI Avg Turnover': ticker_data['RSI Avg Turnover'], 
+                                    'RSI MSD Accuracy': ticker_data['RSI MSD Accuracy'], 
+                                    'RSI COS Accuracy': ticker_data['RSI COS Accuracy']
+                                    }
                     print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (win)")
         close_file(db_w, 'winrate_storage')
 
@@ -58,7 +64,8 @@ class WinrateManager:
         except Exception as e:
             print(f"duplicate did not work(winrate){e}")
         
-        
+
+
         
     def scanWinrate(self):
         try:
@@ -69,6 +76,10 @@ class WinrateManager:
                 old_date = data['Date']
                 rsi = rsi_calc(ticker, graph = False)
                 sell_bool = sell(rsi)
+                turnover = data['RSI Avg Turnover']
+                accuracy_msd = data['RSI MSD Accuracy']
+                accuracy_cos = data['RSI COS Accuracy']
+
                 if sell_bool == True and ticker not in db_w:
                     new_price = yf.Ticker(ticker).info['currentPrice']
                     gain = new_price - old_price
@@ -79,6 +90,9 @@ class WinrateManager:
                         '% Gain': str(round( gain / old_price * 100 ,1)) + '%',
                         'Old Date': old_date,
                         'New Date': date.today().strftime("%Y-%m-%d"),
+                        'RSI Avg Turnover': turnover,
+                        'RSI MSD Accuracy': accuracy_msd,
+                        'RSI COS Accuracy': accuracy_cos
                     }
                     print(f"Updated Sold: {ticker} (win)")
 
@@ -91,7 +105,7 @@ class WinrateManager:
             close_file(db_w, 'winrate')
             close_file(db, 'winrate_storage')
 
-    def winratePotential(self):  #third database to track potential best sell
+    def winratePotential(self):  #third database to track potential best sell ***NEED TO ADD WAY TO HAND ADD INFORMATION****
         #try: 
         db_w, dbfile_w = open_file('winrate')
         db_p, dbfile_p = open_file('winrate_potential')
@@ -100,6 +114,9 @@ class WinrateManager:
             sold_price = data['New Price']
             sold_date = data['New Date']
             previous_gain = data['Gain']
+            turnover = data['RSI Avg Turnover']
+            accuracy_msd = data['RSI MSD Accuracy']
+            accuracy_cos = data['RSI COS Accuracy']
             rsi = rsi_calc(ticker, graph = False)
             sell_bool = sell(rsi)
 
@@ -118,7 +135,10 @@ class WinrateManager:
                         '% Gain': str(round(gain/old_price * 100,1)),
                         'Total % Gain': str(round((gain + float(previous_gain))/old_price * 100, 1)) + '%',
                         '"Sold" Date': sold_date,
-                        'New Date': date.today().strftime("%Y-%m-%d")
+                        'New Date': date.today().strftime("%Y-%m-%d"),
+                        'RSI Avg Turnover': turnover,
+                        'RSI MSD Accuracy': accuracy_msd,
+                        'RSI COS Accuracy': accuracy_cos
                     }
                     print(f"Created potential: {ticker} (win)")
                 else:
@@ -129,7 +149,10 @@ class WinrateManager:
                             '% Gain': str(round(gain/old_price * 100,1)),
                             'Total % Gain': str(round((gain + float(previous_gain))/old_price * 100, 1)) + '%',
                             '"Sold" Date': sold_date,
-                            'New Date': date.today().strftime("%Y-%m-%d")
+                            'New Date': date.today().strftime("%Y-%m-%d"),
+                            'RSI Avg Turnover': turnover,
+                            'RSI MSD Accuracy': accuracy_msd,
+                            'RSI COS Accuracy': accuracy_cos
                         }
                         print(f"Updated potential: {ticker} (win)")
 

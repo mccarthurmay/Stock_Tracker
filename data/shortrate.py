@@ -1,7 +1,7 @@
 import yfinance as yf
 from datetime import date
 from data.database import open_file, close_file
-from data.analysis import rsi_calc, sell, short_sell
+from data.analysis import rsi_calc, sell, short_sell, rsi_turnover, rsi_accuracy
 import os
 class ShortrateManager:
     def __init__(self):
@@ -29,7 +29,13 @@ class ShortrateManager:
             if ticker_data['Short'] == True:
                 price = yf.Ticker(ticker).info['currentPrice']
                 if ticker not in db_w or db_w[ticker]['Price'] < price:
-                    db_w[ticker] = {'Price': price, 'Date': date.today().strftime("%Y-%m-%d"), 'RSI': ticker_data['RSI']}
+                    db_w[ticker] = {'Price': price, 
+                                    'Date': date.today().strftime("%Y-%m-%d"), 
+                                    'RSI': ticker_data['RSI'], 
+                                    'RSI Avg Turnover': ticker_data['RSI Avg Turnover'], 
+                                    'RSI MSD Accuracy': ticker_data['RSI MSD Accuracy'], 
+                                    'RSI COS Accuracy': ticker_data['RSI COS Accuracy']
+                                    }
                     print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (short)")  #needs to hold different data
         close_file(db_w, 'shortrate_storage')
 
@@ -60,6 +66,9 @@ class ShortrateManager:
                 old_rsi = data['RSI']
                 rsi = rsi_calc(ticker, graph = False)
                 short_sell_bool = short_sell(rsi)
+                turnover = data['RSI Avg Turnover']
+                accuracy_msd = data['RSI MSD Accuracy']
+                accuracy_cos = data['RSI COS Accuracy']
                 if short_sell_bool == True and ticker not in db_w:
                     new_price = round(yf.Ticker(ticker).info['currentPrice'], 2)
                     new_rsi = rsi_calc(ticker, graph = False)
@@ -71,7 +80,10 @@ class ShortrateManager:
                         'Old Date': old_date,
                         'New Date': date.today().strftime("%Y-%m-%d"),
                         'Old RSI': old_rsi,
-                        'New RSI': new_rsi
+                        'New RSI': new_rsi,
+                        'RSI Avg Turnover': turnover,
+                        'RSI MSD Accuracy': accuracy_msd,
+                        'RSI COS Accuracy': accuracy_cos
                     }
                     print(f"Updated sold: {ticker}")
             close_file(db_w, 'shortrate')
@@ -94,6 +106,9 @@ class ShortrateManager:
             rsi = rsi_calc(ticker, graph = False)
             sold_rsi = data['New RSI']
             sell_bool = sell(rsi)
+            turnover = data['RSI Avg Turnover']
+            accuracy_msd = data['RSI MSD Accuracy']
+            accuracy_cos = data['RSI COS Accuracy']
 
             if sell_bool == True:
                 new_price = yf.Ticker(ticker).info['currentPrice']
@@ -111,7 +126,10 @@ class ShortrateManager:
                         '"Sold" Date': sold_date,
                         'New Date': date.today().strftime("%Y-%m-%d"),
                         '"Sold" RSI': sold_rsi,
-                        'New RSI': rsi
+                        'New RSI': rsi,
+                        'RSI Avg Turnover': turnover,
+                        'RSI MSD Accuracy': accuracy_msd,
+                        'RSI COS Accuracy': accuracy_cos
                     }
                     print(f"Created potential: {ticker}")
                 else:
@@ -124,7 +142,10 @@ class ShortrateManager:
                             '"Sold" Date': sold_date,
                             'New Date': date.today().strftime("%Y-%m-%d"),
                             '"Sold" RSI': sold_rsi,
-                            'New RSI': rsi
+                            'New RSI': rsi,
+                            'RSI Avg Turnover': turnover,
+                            'RSI MSD Accuracy': accuracy_msd,
+                            'RSI COS Accuracy': accuracy_cos
                         }
                         print(f"Updated sold: {ticker}")
 
