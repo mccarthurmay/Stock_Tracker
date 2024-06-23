@@ -4,6 +4,8 @@ import numpy as np
 from scipy.stats import linregress
 import matplotlib.pyplot as plt
 from sklearn.metrics.pairwise import cosine_similarity
+from datetime import datetime
+
 
 def runall(ticker, db):
     percent_under = round(under_confidence(ticker, db).iloc[0])
@@ -12,6 +14,7 @@ def runall(ticker, db):
     buy_bool = buy(rsi, percent_under)
     short_bool = short(rsi, percent_over)
     cos, msd = rsi_accuracy(ticker)
+    turnover = rsi_turnover(ticker)
     db[ticker] = {
         'Ticker': ticker,
         'Buy': buy_bool,
@@ -20,7 +23,8 @@ def runall(ticker, db):
         '% Below 95% Confidence Interval': percent_under,
         'RSI': rsi,
         'RSI COS Accuracy': round(cos,2),
-        'RSI MSD Accuracy': round(msd,2)
+        'RSI MSD Accuracy': round(msd,2),
+        'RSI Avg Turnover': turnover,
     }
 
 
@@ -31,6 +35,7 @@ def runall_sell(ticker, db):
     sell_bool = sell(rsi)
     short_sell_bool = short_sell(rsi)
     cos, msd = rsi_accuracy(ticker)
+    turnover = rsi_turnover(ticker)
     db[ticker] = {
         'Ticker': ticker,
         'Sell': sell_bool,
@@ -39,7 +44,8 @@ def runall_sell(ticker, db):
         '% Below 95% Confidence Interval': percent_under,
         'RSI': rsi,
         'RSI COS Accuracy': round(cos,2),
-        'RSI MSD Accuracy': round(msd,2)
+        'RSI MSD Accuracy': round(msd,2),
+        'RSI Avg Turnover': turnover
     }
 
 
@@ -200,7 +206,7 @@ def rsi_calc(ticker, graph):
         plt.style.use('fivethirtyeight')
         #figure size
         plt.rcParams['figure.figsize'] = (15,10)
-
+        df = df.iloc[13:]
         ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
         ax2 = plt.subplot2grid((10, 1), (5, 0), rowspan=4, colspan=1)
 
@@ -250,8 +256,25 @@ def rsi_accuracy(ticker):
 
 def rsi_turnover(ticker):
     rsi, ticker, df = rsi_base(ticker)
+  
+    rsi_frame = rsi.iloc[13:]
+    low_threshold = True
+    peak_dates = []   
+    for date, value in rsi_frame.items():
+        if value > 70 and low_threshold == True:
+            peak_dates.append(date)
+            low_threshold = False
+        if value < 30:
+            low_threshold = True
 
-
+    turnover = []
+    for i in range(len(peak_dates) - 1):
+        date1_obj = datetime.fromisoformat(str(peak_dates[i]))
+        date2_obj = datetime.fromisoformat(str(peak_dates[i + 1]))
+        delta = date2_obj - date1_obj
+        turnover.append(delta.days)
+    average_turnaround = sum(turnover) / len(turnover)
+    return round(average_turnaround, 0)
 
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
 #not done
