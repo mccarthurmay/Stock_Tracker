@@ -89,7 +89,7 @@ def short_sell(rsi): #should switch to something else
 #CONFIDENCE - UNDER
 def under_confidence(ticker, dbname):
     # closing price of input stock
-    stock_data = yf.Ticker(ticker).history(period="2mo").reset_index(drop=True)
+    stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
 
     stock_close = pd.DataFrame(stock_data['Close'])
 
@@ -116,7 +116,7 @@ def under_confidence(ticker, dbname):
 #CONFIDENCE - OVER
 def over_confidence(ticker, dbname):
     # closing price of input stock
-    stock_data = yf.Ticker(ticker).history(period="2mo").reset_index(drop=True)
+    stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
 
     stock_close = pd.DataFrame(stock_data['Close'])
 
