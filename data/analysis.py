@@ -289,6 +289,45 @@ def plot_data(rsi, ticker, df):
 
 
 
+def MA(ticker, graph):
+    df = yf.Ticker(ticker).history(period="2y")
+    MA = pd.DataFrame()
+    MA['ST']= df['Close'].rolling(window=20).mean()
+    MA['LT']= df['Close'].rolling(window=50).mean()
+    MA.dropna(inplace=True)
+
+    latest_date = []
+    latest_market = None
+    warning = False
+    for i in reversed(range(len(MA))):
+        date = MA.index[i] 
+        if i > 0:
+            if MA['LT'].iloc[i-1] > MA['ST'].iloc[i-1] and MA['LT'].iloc[i] < MA['ST'].iloc[i]:
+                latest_date = date
+                latest_market = "BULL"
+                if MA['ST'][-1] < MA['ST'][i]:
+                    warning = True
+                break  
+            elif MA['LT'].iloc[i-1] < MA['ST'].iloc[i-1] and MA['LT'].iloc[i] > MA['ST'].iloc[i]:
+                latest_date = date
+                latest_market = "BEAR"
+                if MA['ST'][-1] > MA['ST'][i]:
+                    warning = True
+                break 
+
+    if latest_date:
+        print(f"Most recent {latest_market} market detected on {latest_date}. Approaching cross: {warning}")
+
+    else:
+        print("No recent crossing detected")
+
+    if graph == True:
+        plt.plot(df['Close'].rolling(window=20).mean(), label = "short")
+        plt.plot(df['Close'].rolling(window=50).mean())
+        plt.legend()
+        plt.show()
+
+
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
 #not done
 def day_movement(ticker):
