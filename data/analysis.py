@@ -203,25 +203,7 @@ def rsi_calc(ticker, graph):
 
     #Graph
     if graph == True:
-        plt.style.use('fivethirtyeight')
-        #figure size
-        plt.rcParams['figure.figsize'] = (15,10)
-        df = df.iloc[13:]
-        ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-        ax2 = plt.subplot2grid((10, 1), (5, 0), rowspan=4, colspan=1)
-
-        ax1.plot(df['Close'], linewidth = 2)
-        ax1.set_title('Close prices')
-
-        ax2.set_title('Relative Strength Index')
-        ax2.plot(rsi, color = 'orange', linewidth = 1)
-
-        #Oversold
-        ax2.axhline(30, linestyle = '--', linewidth = 1.5, color = 'green')
-        #Overbought
-        ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
-
-        plt.show()
+        plot_data(rsi, ticker, df)
     else:
         return (round(rsi[-1]))
     
@@ -275,6 +257,37 @@ def rsi_turnover(ticker):
         turnover.append(delta.days)
     average_turnaround = sum(turnover) / len(turnover)
     return round(average_turnaround, 0)
+
+
+def plot_data(rsi, ticker, df):
+
+    plt.style.use('fivethirtyeight')
+    #figure size
+    plt.rcParams['figure.figsize'] = (15,10)
+    df = df.iloc[13:]
+    s_df = {}
+    l_df = {}
+    s_df['MA'] = df['Close'].rolling(window=20).mean()
+    l_df['MA'] = df['Close'].rolling(window=50).mean()
+    ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
+    ax2 = plt.subplot2grid((10, 1), (5, 0), rowspan=4, colspan=1)
+
+    ax1.plot(df['Close'], linewidth = 3)
+    ax1.plot(s_df['MA'], label = 'Short-Term Moving Average', color = 'Red', linestyle = '--', linewidth = 2)
+    ax1.plot(l_df['MA'], label = 'Long-Term Moving Average', color = 'Purple', linestyle = '--', linewidth = 2)
+    ax1.set_title('Close prices')
+
+    ax2.set_title('Relative Strength Index')
+    ax2.plot(rsi, color = 'orange', linewidth = 1)
+
+    #Oversold
+    ax2.axhline(30, linestyle = '--', linewidth = 1.5, color = 'green')
+    #Overbought
+    ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
+    ax1.legend()
+    plt.show()
+
+
 
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
 #not done
