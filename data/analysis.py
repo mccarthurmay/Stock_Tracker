@@ -15,6 +15,7 @@ def runall(ticker, db):
     short_bool = short(rsi, percent_over)
     cos, msd = rsi_accuracy(ticker)
     turnover = rsi_turnover(ticker)
+    ma, ma_cross = MA(ticker, graph = False)
     db[ticker] = {
         'Ticker': ticker,
         'Buy': buy_bool,
@@ -25,6 +26,8 @@ def runall(ticker, db):
         'RSI COS Accuracy': round(cos,2),
         'RSI MSD Accuracy': round(msd,2),
         'RSI Avg Turnover': turnover,
+        'Moving Average': ma,
+        'Moving Average Cross': ma_cross
     }
 
 
@@ -288,12 +291,11 @@ def plot_data(rsi, ticker, df):
     plt.show()
 
 
-
 def MA(ticker, graph):
     df = yf.Ticker(ticker).history(period="2y")
     MA = pd.DataFrame()
-    MA['ST']= df['Close'].rolling(window=20).mean()
-    MA['LT']= df['Close'].rolling(window=50).mean()
+    MA['ST'] = df['Close'].ewm(span=20, adjust=False).mean() 
+    MA['LT'] = df['Close'].ewm(span=50, adjust=False).mean()
     MA.dropna(inplace=True)
 
     latest_date = []
@@ -326,6 +328,8 @@ def MA(ticker, graph):
         plt.plot(df['Close'].rolling(window=50).mean())
         plt.legend()
         plt.show()
+
+    return latest_date, warning
 
 
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)

@@ -16,12 +16,12 @@ from keras.callbacks import EarlyStopping
 #       - Bearish crossover
 #           - Short-term moving average crosses below a longer-term moving average
 
-ds = yf.Ticker('F').history(period="3y")
-ds['S_MA'] = ds['Close'].rolling(window=20).mean()
-ds['L_MA'] = ds['Close'].rolling(window=50).mean()
-ds['RSI'] = ds['Close'].diff(1).apply(lambda x: max(x, 0)).rolling(window=14).mean() / ds['Close'].diff(1).abs().rolling(window=14).mean() * 100
-ds.dropna(inplace=True)
-ds_train = ds[['Close', 'S_MA', 'L_MA', 'RSI']].values
+df = yf.Ticker('F').history(period="3y")
+df['S_MA'] = df['Close'].rolling(window=20).mean()
+df['L_MA'] = df['Close'].rolling(window=50).mean()
+df['RSI'] = df['Close'].diff(1).apply(lambda x: max(x, 0)).rolling(window=14).mean() / df['Close'].diff(1).abs().rolling(window=14).mean() * 100
+df.dropna(inplace=True)
+df_train = df[['Close', 'S_MA', 'L_MA', 'RSI']].values
 
 
 #Scale data
@@ -29,18 +29,18 @@ ds_train = ds[['Close', 'S_MA', 'L_MA', 'RSI']].values
 #   - Scaling data ensures all features have same range
 #       - Normalizes data
 #       - Improves convergence (neural networks are sensitive to scale of input data)
-#       - Avoids dominance (larger ranges may dominate learning process, neglecting shorter ranges)
+#       - Avoidf dominance (larger ranges may dominate learning process, neglecting shorter ranges)
 
 scaler = MinMaxScaler(feature_range=(0, 1))
-ds_scaled = scaler.fit_transform(ds_train)
+df_scaled = scaler.fit_transform(df_train)
 
 #Create training dataset
 
 X_train = []
 y_train = []
-for i in range(60, len(ds_scaled)):
-    X_train.append(ds_scaled[i-60:i, :])
-    y_train.append(ds_scaled[i, 0])
+for i in range(60, len(df_scaled)):
+    X_train.append(df_scaled[i-60:i, :])
+    y_train.append(df_scaled[i, 0])
 X_train = np.array(X_train)
 y_train = np.array(y_train)
 
@@ -62,7 +62,7 @@ regressor.add(MaxPooling1D(pool_size=2))
 # Long Short-Term Memory
 #       - type of recurrent neural network architecture, different from traditional RNNs in that it remembers long-term dependencies
 #   - memory cell (units)
-#       - maintain a cell state over time, stores information for long periods
+#       - maintain a cell state over time, stores information for long periodf
 #   - gates
 #       -forget gate = decides what in information to discard from the cell state
 #       -input gate = updates the cell by selectively adding new information
@@ -101,8 +101,8 @@ early_stopping = EarlyStopping(monitor='loss', patience=10, restore_best_weights
 regressor.fit(X_train, y_train, epochs=200, batch_size=32, callbacks=[early_stopping])
 
 #Show Prediction of Past Values
-dataset_total = pd.concat((pd.DataFrame(ds_train, columns=['Close', 'S_MA', 'L_MA', 'RSI']), ds[['Close', 'S_MA', 'L_MA', 'RSI']]), axis=0)
-inputs = dataset_total[len(dataset_total) - len(ds) - 60:].values
+dataset_total = pd.concat((pd.DataFrame(df_train, columns=['Close', 'S_MA', 'L_MA', 'RSI']), df[['Close', 'S_MA', 'L_MA', 'RSI']]), axis=0)
+inputs = dataset_total[len(dataset_total) - len(df) - 60:].values
 inputs = scaler.transform(inputs)
 
 X_test = []
@@ -110,8 +110,8 @@ for i in range(60, len(inputs)):
     X_test.append(inputs[i-60:i, :])
 X_test = np.array(X_test)
 
-predicted_ds = regressor.predict(X_test)
-predicted_ds = scaler.inverse_transform(np.concatenate([predicted_ds, np.zeros((predicted_ds.shape[0], 3))], axis=1))[:, 0]
+predicted_df = regressor.predict(X_test)
+predicted_df = scaler.inverse_transform(np.concatenate([predicted_df, np.zeros((predicted_df.shape[0], 3))], axis=1))[:, 0]
 
 #Predict future values
 future_days = 30
@@ -127,16 +127,16 @@ for _ in range(future_days):
 future_predictions = scaler.inverse_transform(np.concatenate([np.array(future_predictions).reshape(-1, 1), np.zeros((future_days, 3))], axis=1))[:, 0]
 
 #Plotting the results
-plt.plot(ds.index, ds['Close'], color='black', label='Actual Price')
-#plt.plot(ds.index[len(ds)-len(predicted_ds):], predicted_ds, color='gray', label='Predicted Price')
+plt.plot(df.index, df['Close'], color='black', label='Actual Price')
+#plt.plot(df.index[len(df)-len(predicted_df):], predicted_df, color='gray', label='Predicted Price')
 
 #Append future predictions to the dataset for plotting
-future_indices = pd.date_range(start=ds.index[-1], periods=future_days + 1, freq='B')[1:]
+future_indices = pd.date_range(start=df.index[-1], periodf=future_days + 1, freq='B')[1:]
 future_df = pd.DataFrame(future_predictions, index=future_indices, columns=['Close'])
 
 #Plot the moving averages
-plt.plot(ds.index, ds['S_MA'], color='purple', label='Short Term MA')
-plt.plot(ds.index, ds['L_MA'], color='red', label='Long Term MA')
+plt.plot(df.index, df['S_MA'], color='purple', label='Short Term MA')
+plt.plot(df.index, df['L_MA'], color='red', label='Long Term MA')
 
 plt.plot(future_df.index, future_df['Close'], color='blue', label='Future Predictions')
 plt.title('Stock Price Prediction')
