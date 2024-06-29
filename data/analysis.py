@@ -10,30 +10,30 @@ from datetime import datetime
 def runall(ticker, db):
     percent_under = round(under_confidence(ticker, db).iloc[0])
     percent_over = round(over_confidence(ticker, db).iloc[0])
+    ma, ma_date = MA(ticker, graph = False)
     rsi = rsi_calc(ticker, graph = False)
     buy_bool = buy(rsi, percent_under)
     short_bool = short(rsi, percent_over)
     cos, msd = rsi_accuracy(ticker)
     turnover = rsi_turnover(ticker)
-    ma, ma_cross = MA(ticker, graph = False)
     db[ticker] = {
         'Ticker': ticker,
         'Buy': buy_bool,
         'Short': short_bool,
-        '% Above 95% Confidence Interval': percent_over,
-        '% Below 95% Confidence Interval': percent_under,
+        '% Above 95% CI': percent_over,
+        '% Below 95% CI': percent_under,
         'RSI': rsi,
-        'RSI COS Accuracy': round(cos,2),
-        'RSI MSD Accuracy': round(msd,2),
+        'RSI COS': round(cos,2),
+        'RSI MSD': round(msd,2),
         'RSI Avg Turnover': turnover,
-        'Moving Average': ma,
-        'Moving Average Cross': ma_cross
+        'MA': (ma, ma_date),
     }
 
 
 def runall_sell(ticker, db):
     percent_under = round(under_confidence(ticker, db).iloc[0])
     percent_over = round(over_confidence(ticker, db).iloc[0])
+    ma, ma_date = MA(ticker, graph = False)
     rsi = rsi_calc(ticker, graph = False)
     sell_bool = sell(rsi)
     short_sell_bool = short_sell(rsi)
@@ -43,12 +43,13 @@ def runall_sell(ticker, db):
         'Ticker': ticker,
         'Sell': sell_bool,
         'Short Sell': short_sell_bool,
-        '% Above 95% Confidence Interval': percent_over,
-        '% Below 95% Confidence Interval': percent_under,
+        '% Above 95% CI': percent_over,
+        '% Below 95% CI': percent_under,
         'RSI': rsi,
-        'RSI COS Accuracy': round(cos,2),
-        'RSI MSD Accuracy': round(msd,2),
-        'RSI Avg Turnover': turnover
+        'RSI COS': round(cos,2),
+        'RSI MSD': round(msd,2),
+        'RSI Avg Turnover': turnover,
+        'MA': (ma, ma_date)
     }
 
 
@@ -58,6 +59,11 @@ def buy(rsi, percent_under):
         return True
     else:
         return False
+    
+
+
+            
+            
 
 def short(rsi, percent_over):
     if percent_over > -1 and rsi > 79:
@@ -300,36 +306,31 @@ def MA(ticker, graph):
 
     latest_date = []
     latest_market = None
-    warning = False
     for i in reversed(range(len(MA))):
         date = MA.index[i] 
         if i > 0:
             if MA['LT'].iloc[i-1] > MA['ST'].iloc[i-1] and MA['LT'].iloc[i] < MA['ST'].iloc[i]:
                 latest_date = date
                 latest_market = "BULL"
-                if MA['ST'][-1] < MA['ST'][i]:
-                    warning = True
                 break  
             elif MA['LT'].iloc[i-1] < MA['ST'].iloc[i-1] and MA['LT'].iloc[i] > MA['ST'].iloc[i]:
                 latest_date = date
                 latest_market = "BEAR"
-                if MA['ST'][-1] > MA['ST'][i]:
-                    warning = True
                 break 
-
-    if latest_date:
-        print(f"Most recent {latest_market} market detected on {latest_date}. Approaching cross: {warning}")
-
-    else:
-        print("No recent crossing detected")
 
     if graph == True:
         plt.plot(df['Close'].rolling(window=20).mean(), label = "short")
         plt.plot(df['Close'].rolling(window=50).mean())
         plt.legend()
         plt.show()
-
-    return latest_date, warning
+    
+    if latest_date:
+        latest_date = latest_date.strftime('%m-%d')
+        #print(f"Most recent {latest_market} market detected on {latest_date}. Approaching cross: {warning}")
+        return latest_market, latest_date
+    else:
+        print("No recent crossing detected")
+    
 
 
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
@@ -351,3 +352,11 @@ def showinfo(ticker):
     stock_close = pd.DataFrame(stock_history['Close']).iloc[-2].item()
     stock_curr = yf.Ticker(ticker).info['currentPrice']
     print('\nStock Close:',stock_close,'\nCurrent Price:', stock_curr)
+
+
+
+
+###CALLING yf.ticker.history for many functions... may be increasing time signfificantly
+
+
+###'approaching bull' should be a new metric...
