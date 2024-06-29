@@ -45,8 +45,9 @@ class WinrateManager:
                                     'Date': date.today().strftime("%Y-%m-%d"), 
                                     'RSI': ticker_data['RSI'], 
                                     'RSI Avg Turnover': ticker_data['RSI Avg Turnover'], 
-                                    'RSI MSD Accuracy': ticker_data['RSI MSD Accuracy'], 
-                                    'RSI COS Accuracy': ticker_data['RSI COS Accuracy']
+                                    'RSI MSD Accuracy': ticker_data['RSI MSD'], 
+                                    'RSI COS Accuracy': ticker_data['RSI COS'],
+                                    'MA': (ticker_data['MA'])
                                     }
                     print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (win)")
         close_file(db_w, 'winrate_storage')
@@ -79,6 +80,8 @@ class WinrateManager:
                 turnover = data['RSI Avg Turnover']
                 accuracy_msd = data['RSI MSD Accuracy']
                 accuracy_cos = data['RSI COS Accuracy']
+                ma = data['MA']
+
 
                 if sell_bool == True and ticker not in db_w:
                     new_price = yf.Ticker(ticker).info['currentPrice']
@@ -92,7 +95,8 @@ class WinrateManager:
                         'New Date': date.today().strftime("%Y-%m-%d"),
                         'RSI Avg Turnover': turnover,
                         'RSI MSD Accuracy': accuracy_msd,
-                        'RSI COS Accuracy': accuracy_cos
+                        'RSI COS Accuracy': accuracy_cos,
+                        'MA': ma
                     }
                     print(f"Updated Sold: {ticker} (win)")
 
@@ -105,7 +109,7 @@ class WinrateManager:
             close_file(db_w, 'winrate')
             close_file(db, 'winrate_storage')
 
-    def winratePotential(self):  #third database to track potential best sell ***NEED TO ADD WAY TO HAND ADD INFORMATION****
+    def winratePotential(self):  #third database to track potential best sell
         #try: 
         db_w, dbfile_w = open_file('winrate')
         db_p, dbfile_p = open_file('winrate_potential')
@@ -117,6 +121,7 @@ class WinrateManager:
             turnover = data['RSI Avg Turnover']
             accuracy_msd = data['RSI MSD Accuracy']
             accuracy_cos = data['RSI COS Accuracy']
+            ma = data['MA']
             rsi = rsi_calc(ticker, graph = False)
             sell_bool = sell(rsi)
 
@@ -138,7 +143,8 @@ class WinrateManager:
                         'New Date': date.today().strftime("%Y-%m-%d"),
                         'RSI Avg Turnover': turnover,
                         'RSI MSD Accuracy': accuracy_msd,
-                        'RSI COS Accuracy': accuracy_cos
+                        'RSI COS Accuracy': accuracy_cos,
+                        'MA': ma
                     }
                     print(f"Created potential: {ticker} (win)")
                 else:
@@ -152,7 +158,8 @@ class WinrateManager:
                             'New Date': date.today().strftime("%Y-%m-%d"),
                             'RSI Avg Turnover': turnover,
                             'RSI MSD Accuracy': accuracy_msd,
-                            'RSI COS Accuracy': accuracy_cos
+                            'RSI COS Accuracy': accuracy_cos,
+                            'MA': ma
                         }
                         print(f"Updated potential: {ticker} (win)")
 

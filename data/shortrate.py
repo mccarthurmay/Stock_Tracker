@@ -33,8 +33,9 @@ class ShortrateManager:
                                     'Date': date.today().strftime("%Y-%m-%d"), 
                                     'RSI': ticker_data['RSI'], 
                                     'RSI Avg Turnover': ticker_data['RSI Avg Turnover'], 
-                                    'RSI MSD Accuracy': ticker_data['RSI MSD Accuracy'], 
-                                    'RSI COS Accuracy': ticker_data['RSI COS Accuracy']
+                                    'RSI MSD Accuracy': ticker_data['RSI MSD'], 
+                                    'RSI COS Accuracy': ticker_data['RSI COS'],
+                                    'MA': (ticker_data['MA'])
                                     }
                     print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (short)")  #needs to hold different data
         close_file(db_w, 'shortrate_storage')
@@ -69,6 +70,7 @@ class ShortrateManager:
                 turnover = data['RSI Avg Turnover']
                 accuracy_msd = data['RSI MSD Accuracy']
                 accuracy_cos = data['RSI COS Accuracy']
+                ma = data['MA']
                 if short_sell_bool == True and ticker not in db_w:
                     new_price = round(yf.Ticker(ticker).info['currentPrice'], 2)
                     new_rsi = rsi_calc(ticker, graph = False)
@@ -83,7 +85,8 @@ class ShortrateManager:
                         'New RSI': new_rsi,
                         'RSI Avg Turnover': turnover,
                         'RSI MSD Accuracy': accuracy_msd,
-                        'RSI COS Accuracy': accuracy_cos
+                        'RSI COS Accuracy': accuracy_cos,
+                        'MA': ma
                     }
                     print(f"Updated sold: {ticker}")
             close_file(db_w, 'shortrate')
@@ -109,6 +112,7 @@ class ShortrateManager:
             turnover = data['RSI Avg Turnover']
             accuracy_msd = data['RSI MSD Accuracy']
             accuracy_cos = data['RSI COS Accuracy']
+            ma = data['MA']
 
             if sell_bool == True:
                 new_price = yf.Ticker(ticker).info['currentPrice']
@@ -129,7 +133,8 @@ class ShortrateManager:
                         'New RSI': rsi,
                         'RSI Avg Turnover': turnover,
                         'RSI MSD Accuracy': accuracy_msd,
-                        'RSI COS Accuracy': accuracy_cos
+                        'RSI COS Accuracy': accuracy_cos,
+                        'MA': ma
                     }
                     print(f"Created potential: {ticker}")
                 else:
@@ -145,7 +150,8 @@ class ShortrateManager:
                             'New RSI': rsi,
                             'RSI Avg Turnover': turnover,
                             'RSI MSD Accuracy': accuracy_msd,
-                            'RSI COS Accuracy': accuracy_cos
+                            'RSI COS Accuracy': accuracy_cos,
+                            'MA': ma
                         }
                         print(f"Updated sold: {ticker}")
 
