@@ -8,7 +8,7 @@ import pandas as pd
 import os
 import concurrent.futures
 import matplotlib.pyplot as plt
-from datetime import datetime
+from datetime import datetime, timedelta
 from scipy.stats import linregress
 import numpy as np
 from datetime import date
@@ -24,7 +24,7 @@ from data.database import (
     updatePortfolio,
     updateData,
     open_file,
-    close_file
+    close_file,
 )
 from data.analysis import (
     runall,
@@ -38,7 +38,9 @@ from data.analysis import (
     day_movement,
     showinfo,
     rsi_accuracy,
-    rsi_turnover
+    rsi_turnover,
+    MA,
+    
 )
 from settings.settings_manager import SettingsManager
 from data.winrate import WinrateManager
@@ -98,7 +100,7 @@ class StockTracker:
     def commands(self):
         commands_window = CommandsWindow(self.root)
         commands_window.run()
-        
+    
 
     def manage_databases(self):
         edit_window = EditWindow(self.root)
@@ -115,6 +117,7 @@ class StockTracker:
     def settings(self):
         settings_window = SettingsWindow(self.root)
         settings_window.run()
+
 
     def quit(self):
         self.root.quit()
@@ -268,11 +271,11 @@ class EditWindow:
             messagebox.showinfo("Info", "We ran into a problem, please check names of files and resubmit.")
 
     def load(self):
-        try:
-            load_window = LoadWindow(self.root)
-            load_window.run()
-        except:
-            messagebox.showinfo("Sort", "There has been a typo.")
+        #try:
+        load_window = LoadWindow(self.root)
+        load_window.run()
+        #except:
+        #    messagebox.showinfo("Sort", "There has been a typo.")
 
     def loadWinShort(self):
         winshort_window = WinShortWindow(self.root)
@@ -333,6 +336,7 @@ class CommandsWindow:
         tk.Button(self.root, text="RSI", command=self.rsi).pack(pady=5)
         tk.Button(self.root, text= "RSI Accuracy", command=self.rsi_acc).pack(pady=5)
         tk.Button(self.root, text="RSI Turnover", command=self.rsi_turn).pack(pady=5)
+        tk.Button(self.root, text="MA", command = self.ma).pack(pady=5)
         tk.Button(self.root, text="Back", command=self.back).pack(pady=10)
 
         self.settings_manager = SettingsManager()
@@ -374,7 +378,9 @@ class CommandsWindow:
         ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
         turnover = rsi_turnover(ticker)
         messagebox.showinfo(title = "RSI Turnover", message = f"The average RSI turnover for {ticker} is {round(turnover,0)} days.")
-
+    def ma(self):
+        ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
+        MA(ticker, graph = True)
     def back(self):
         self.root.destroy()
 
@@ -477,57 +483,50 @@ class LoadWindow:
 
 
 
+
+
+
 root = tk.Tk()
 app = StockTracker(root)
 root.geometry("1000x800+200+100")
 root.mainloop()
-
 
 """
 def update_all():
     
     db_w_s, dbfile_w_s = open_file('winrate_storage') #holds
     db_w, dbfile_w = open_file('winrate') #sold
-    db_w_p, dbfile_w_p = open_file('winrate_potential')
-    db_s, dbfile_s = open_file('shortrate')
-    db_s_s, dbfile_s_s = open_file('shortrate_storage')
+    db_w_p, dbfile_w_p = open_file('winrate_potential') 
+    db_s, dbfile_s = open_file('shortrate') #sold
+    db_s_s, dbfile_s_s = open_file('shortrate_storage') #holds
     db_s_p, dbfile_s_p = open_file('shortrate_potential')     
     db_ticker, dbfile_ticker = open_file('t_safe')
 
     for ticker, ticker_data in db_ticker.items():
-        if ticker in db_w_s and 'RSI Avg Turnover' not in db_w_s[ticker]:
-            db_w_s[ticker]['RSI Avg Turnover'] = ticker_data['RSI Avg Turnover']
-            db_w_s[ticker]['RSI MSD Accuracy'] = ticker_data['RSI MSD Accuracy']
-            db_w_s[ticker]['RSI COS Accuracy'] = ticker_data['RSI COS Accuracy']
+        if ticker in db_w_s:
+            db_w_s[ticker]['MA'] = ticker_data['MA']
             print(f'Updated {ticker}')
     close_file(db_w_s, 'winrate_storage')
 
     for ticker, ticker_data in db_ticker.items():
-        if ticker in db_w and 'RSI Avg Turnover' not in db_w[ticker]:
-            db_w[ticker]['RSI Avg Turnover'] = ticker_data['RSI Avg Turnover']
-            db_w[ticker]['RSI MSD Accuracy'] = ticker_data['RSI MSD Accuracy']
-            db_w[ticker]['RSI COS Accuracy'] = ticker_data['RSI COS Accuracy']
+        if ticker in db_w:
+            db_w[ticker]['MA'] = ticker_data['MA']
             print(f'Updated {ticker}')
     close_file(db_w, 'winrate')
 
     for ticker, ticker_data in db_ticker.items():
-        if ticker in db_w_p and 'RSI Avg Turnover' not in db_w_p[ticker]:
-            db_w_p[ticker]['RSI Avg Turnover'] = ticker_data['RSI Avg Turnover']
-            db_w_p[ticker]['RSI MSD Accuracy'] = ticker_data['RSI MSD Accuracy']
-            db_w_p[ticker]['RSI COS Accuracy'] = ticker_data['RSI COS Accuracy']
+        if ticker in db_w_p:
+            db_w_p[ticker]['MA'] = ticker_data['MA']
             print(f'Updated {ticker}')
     close_file(db_w_p, 'winrate_potential')
     
 
     for ticker, ticker_data in db_ticker.items():
-        if ticker in db_s_s and 'RSI Avg Turnover' not in db_s_s[ticker]:
-            db_s_s[ticker]['RSI Avg Turnover'] = ticker_data['RSI Avg Turnover']
-            db_s_s[ticker]['RSI MSD Accuracy'] = ticker_data['RSI MSD Accuracy']
-            db_s_s[ticker]['RSI COS Accuracy'] = ticker_data['RSI COS Accuracy']
+        if ticker in db_s_s:
+            db_s_s[ticker]['MA'] = ticker_data['MA']
             print(f'Updated {ticker}')
     close_file(db_s_s, 'shortrate_storage')
 
 
 update_all()
-
 """
