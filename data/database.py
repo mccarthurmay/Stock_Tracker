@@ -3,6 +3,7 @@ import pickle
 import concurrent.futures
 from data.analysis import runall, runall_sell
 from tkinter import messagebox, simpledialog
+from datetime import datetime, timedelta
 
 def storeData(dbname, stock_list):
     try:
@@ -12,15 +13,6 @@ def storeData(dbname, stock_list):
 
     for ticker in stock_list:
         db[ticker] = {
-            'Ticker': None,
-            'Buy': None,
-            'Short': None,
-            '% Above 95% Confidence Interval': None,
-            '% Below 95% Convidence Interval': None,
-            'RSI': None,
-            'RSI COS Accuracy': None,
-            'RSI MSD Accuracy': None,
-            'RSI Avg Turnover': None
         }
 
     #source, destination
@@ -101,26 +93,38 @@ def resetData(dbname):
 
 #DISPLAY DATABASE
 def loadData(dbname, sort_choice):
-    try:
-        db, dbfile = open_file(dbname)
-        if sort_choice == "normal":
-            sorted_data = sorted(db.values(), key=lambda x: x['% Below 95% Confidence Interval'] if x['% Below 95% Confidence Interval'] is not None else float('inf'), reverse = True)
-        elif sort_choice == "short":
-            sorted_data = sorted(db.values(), key=lambda x: x['% Above 95% Confidence Interval'] if x['% Above 95% Confidence Interval'] is not None else float('inf'), reverse = True)
-        elif sort_choice == "msd":
-            sorted_data = sorted(db.values(), key=lambda x: x['RSI MSD Accuracy'] if x['RSI MSD Accuracy'] is not None else float('inf'), reverse = True)
-        elif sort_choice == "cos":
-            sorted_data = sorted(db.values(), key=lambda x: x['RSI COS Accuracy'] if x['RSI COS Accuracy'] is not None else float('inf'), reverse = True)
-        elif sort_choice == "turn":
-            sorted_data = sorted(db.values(), key=lambda x: x['RSI Avg Turnover'] if x['RSI Avg Turnover'] is not None else float('inf'), reverse = False)
-        
-        for ticker in sorted_data:
-            print(ticker)
-        dbfile.close()
-        return sorted_data
+    #try:
+    db, dbfile = open_file(dbname)
+    if sort_choice == "normal":
+        sorted_data = sorted(db.values(), key=lambda x: x['% Below 95% CI'] if x['% Below 95% CI'] is not None else float('inf'), reverse = True)
+    elif sort_choice == "short":
+        sorted_data = sorted(db.values(), key=lambda x: x['% Above 95% CI'] if x['% Above 95% CI'] is not None else float('inf'), reverse = True)
+    elif sort_choice == "msd":
+        sorted_data = sorted(db.values(), key=lambda x: x['RSI MSD'] if x['RSI MSD'] is not None else float('inf'), reverse = True)
+    elif sort_choice == "cos":
+        sorted_data = sorted(db.values(), key=lambda x: x['RSI COS'] if x['RSI COS'] is not None else float('inf'), reverse = True)
+    elif sort_choice == "turn":
+        sorted_data = sorted(db.values(), key=lambda x: x['RSI Avg Turnover'] if x['RSI Avg Turnover'] is not None else float('inf'), reverse = False)
+    
+    for ticker in sorted_data:
+        print(ticker)
+    dbfile.close()
+    return sorted_data
 
-    except Exception as e:
-        print(f"{e}")
+    #except Exception as e:
+    #    print(f"{e}")
+
+def find_s_buy(database):
+    db, dbfile = open_file(database)
+    for ticker, info in db.items():
+        try:           
+            if info['MA'][0] == "BULL" and info['Buy'] == True:
+                date_obj = datetime.strptime(info['MA'][1], "%m-%d")
+                if (datetime.today() - date_obj) < timedelta(days=30):
+                    messagebox.showinfo(title = "strong buy", message = f"{ticker} is currently a strong buy.")
+        except Exception as e:
+            print(e)
+            pass
 
 
 #UPDATE PORTFOLIO
