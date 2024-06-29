@@ -1,6 +1,6 @@
 import os
 import pickle
-from data.database import updateData, updatePortfolio
+from data.database import updateData, updatePortfolio, find_s_buy
 
 class SettingsManager:
     def __init__(self, settings_file = './storage/settings/settings.pickle'):
@@ -46,6 +46,7 @@ class SettingsManager:
         for database, values in self.settings.items():
             if values.get('AutoUpdate', True):
                 updateData(database)
+                find_s_buy(database)
 
         for database in os.listdir('./storage/databases'):
             if database.startswith('p_') or database.startswith('portfolio_'):
