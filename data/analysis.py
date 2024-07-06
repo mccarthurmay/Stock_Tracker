@@ -10,7 +10,7 @@ from datetime import datetime
 def runall(ticker, db):
     percent_under = round(under_confidence(ticker, db).iloc[0])
     percent_over = round(over_confidence(ticker, db).iloc[0])
-    ma, ma_date = MA(ticker, graph = False)
+    ma, ma_date, converging = MA(ticker, graph = False)
     rsi = rsi_calc(ticker, graph = False)
     buy_bool = buy(rsi, percent_under)
     short_bool = short(rsi, percent_over)
@@ -27,30 +27,49 @@ def runall(ticker, db):
         'RSI MSD': round(msd,2),
         'RSI Avg Turnover': turnover,
         'MA': (ma, ma_date),
+        'MA Converging': converging
     }
 
 
-def runall_sell(ticker, db):
+def runall_sell(ticker, db, price):
     percent_under = round(under_confidence(ticker, db).iloc[0])
     percent_over = round(over_confidence(ticker, db).iloc[0])
-    ma, ma_date = MA(ticker, graph = False)
+    ma, ma_date, converging = MA(ticker, graph = False)
     rsi = rsi_calc(ticker, graph = False)
     sell_bool = sell(rsi)
     short_sell_bool = short_sell(rsi)
     cos, msd = rsi_accuracy(ticker)
     turnover = rsi_turnover(ticker)
-    db[ticker] = {
-        'Ticker': ticker,
-        'Sell': sell_bool,
-        'Short Sell': short_sell_bool,
-        '% Above 95% CI': percent_over,
-        '% Below 95% CI': percent_under,
-        'RSI': rsi,
-        'RSI COS': round(cos,2),
-        'RSI MSD': round(msd,2),
-        'RSI Avg Turnover': turnover,
-        'MA': (ma, ma_date)
-    }
+    if price == None:
+        db[ticker] = {
+            'Ticker': ticker,
+            'Sell': sell_bool,
+            'Short Sell': short_sell_bool,
+            '% Above 95% CI': percent_over,
+            '% Below 95% CI': percent_under,
+            'RSI': rsi,
+            'RSI COS': round(cos,2),
+            'RSI MSD': round(msd,2),
+            'RSI Avg Turnover': turnover,
+            'MA': (ma, ma_date),
+            'MA Converging': converging,
+        }
+    else:
+         db[ticker] = {
+            'Ticker': ticker,
+            'Buy Price': price,
+            'Sell': sell_bool,
+            'Short Sell': short_sell_bool,
+            '% Above 95% CI': percent_over,
+            '% Below 95% CI': percent_under,
+            'RSI': rsi,
+            'RSI COS': round(cos,2),
+            'RSI MSD': round(msd,2),
+            'RSI Avg Turnover': turnover,
+            'MA': (ma, ma_date),
+            'MA Converging': converging,
+        
+        }
 
 
 #BUY/SELL BOOL
@@ -303,12 +322,14 @@ def MA(ticker, graph):
     MA['ST'] = df['Close'].ewm(span=20, adjust=False).mean() 
     MA['LT'] = df['Close'].ewm(span=50, adjust=False).mean()
     MA.dropna(inplace=True)
-
+    converging = False
     latest_date = []
+    converging_li = []    
     latest_market = None
     for i in reversed(range(len(MA))):
         date = MA.index[i] 
         if i > 0:
+
             if MA['LT'].iloc[i-1] > MA['ST'].iloc[i-1] and MA['LT'].iloc[i] < MA['ST'].iloc[i]:
                 latest_date = date
                 latest_market = "BULL"
@@ -317,7 +338,22 @@ def MA(ticker, graph):
                 latest_date = date
                 latest_market = "BEAR"
                 break 
+            converging_li.append(abs(MA['LT'].iloc[i] - MA['ST'].iloc[i]))
+            
+    converging_li.reverse()
+    if len(converging_li) >= 5 and converging_li[-1] < converging_li[-2] < converging_li[-3] < converging_li[-4] < converging_li[-5]:
+        #total_change = 0
+        #for i in range(4):
+        #    percent_change = abs((converging_li[-(i+1)] - converging_li[-(i+2)]) / converging_li[-(i+2)] ) * 100
+        #    total_change += percent_change
+        #average_change = total_change / 4
+        #if average_change > 1:
+        converging = True
+        #    print(converging_li)
+        #    print(ticker, 'TRUE')
+        #    print(average_change)        
 
+    
     if graph == True:
         plt.plot(df['Close'].rolling(window=20).mean(), label = "short")
         plt.plot(df['Close'].rolling(window=50).mean())
@@ -327,9 +363,12 @@ def MA(ticker, graph):
     if latest_date:
         latest_date = latest_date.strftime('%m-%d')
         #print(f"Most recent {latest_market} market detected on {latest_date}. Approaching cross: {warning}")
-        return latest_market, latest_date
+        return latest_market, latest_date, converging
     else:
         print("No recent crossing detected")
+
+    
+    
     
 
 
@@ -359,4 +398,4 @@ def showinfo(ticker):
 ###CALLING yf.ticker.history for many functions... may be increasing time signfificantly
 
 
-###'approaching bull' should be a new metric...
+###Add to winrate/shortrate... 'current rsi current approaching' and update that each time
