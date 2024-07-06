@@ -42,6 +42,8 @@ from data.analysis import (
     MA,
     
 )
+
+from data.ml import ml
 from settings.settings_manager import SettingsManager
 from data.winrate import WinrateManager
 from data.shortrate import ShortrateManager
@@ -128,12 +130,12 @@ class WinShortWindow:
     def __init__(self, root):
         self.root = tk.Tk()
         self.root.title("Winrate Results/Shorting Results")
-        self.root.geometry("1400x800+200+100")
+        self.root.geometry("1500x800+200+100")
 
     def WinFrame(self):
         win_frame = tk.Frame(self.root)
         win_frame.pack(fill = tk.X, expand = True)
-        win_canvas = tk.Canvas(win_frame, width=1380, height=380, highlightthickness = 1, highlightbackground = 'black')
+        win_canvas = tk.Canvas(win_frame, width=1480, height=380, highlightthickness = 1, highlightbackground = 'black')
         win_canvas.pack(side=tk.LEFT)
 
         y_scrollbar = tk.Scrollbar(win_frame, orient=tk.VERTICAL, command=win_canvas.yview)
@@ -141,14 +143,14 @@ class WinShortWindow:
         y_pos = 20
 
 
-        win_canvas.create_text(700, y_pos, text="Potential Sell", font=("Arial", 16), anchor = "center")
+        win_canvas.create_text(750, y_pos, text="Potential Sell", font=("Arial", 16), anchor = "center")
         y_pos += 20 
     
         db, dbfile = open_file('winrate_potential')
         for key, value in db.items():
             label_text = f"{key}: {value} \n"
             y_pos +=15
-            win_canvas.create_text(700, y_pos, text=label_text, anchor = "center")
+            win_canvas.create_text(750, y_pos, text=label_text, anchor = "center")
 
         y_pos += 20
 
@@ -156,17 +158,17 @@ class WinShortWindow:
 
 
 
-        win_canvas.create_text(700, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
+        win_canvas.create_text(750, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
         y_pos += 20 
 
         db, dbfile = open_file('winrate')
         for key, value in db.items():
             label_text = f"{key}: {value} \n"
             y_pos +=15
-            win_canvas.create_text(700, y_pos, text=label_text, anchor = "center")
+            win_canvas.create_text(750, y_pos, text=label_text, anchor = "center")
 
         y_pos += 20
-        win_canvas.create_text(700, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
+        win_canvas.create_text(750, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
         y_pos += 20
 
 
@@ -177,10 +179,10 @@ class WinShortWindow:
         for key, value in db_sorted.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
-            win_canvas.create_text(700, y_pos, text=label_text, anchor = "center")
+            win_canvas.create_text(750, y_pos, text=label_text, anchor = "center")
 
         actual_height= y_pos
-        win_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,700, actual_height))
+        win_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,750, actual_height))
 
 
 
@@ -190,7 +192,7 @@ class WinShortWindow:
         short_frame = tk.Frame(self.root)
         short_frame.pack(fill = tk.X, expand = True)
 
-        short_canvas = tk.Canvas(short_frame, width=1380, height=380, highlightthickness = 1, highlightbackground = 'black')
+        short_canvas = tk.Canvas(short_frame, width=1480, height=380, highlightthickness = 1, highlightbackground = 'black')
         short_canvas.pack(side=tk.LEFT)
 
         y_scrollbar = tk.Scrollbar(short_frame, orient=tk.VERTICAL, command=short_canvas.yview)
@@ -200,30 +202,30 @@ class WinShortWindow:
 
 
 
-        short_canvas.create_text(700, y_pos, text="Potential Sell", font=("Arial", 16), anchor = "center")
+        short_canvas.create_text(750, y_pos, text="Potential Sell", font=("Arial", 16), anchor = "center")
         y_pos += 20 
     
         db, dbfile = open_file('shortrate_potential')
         for key, value in db.items():
             label_text = f"{key}: {value} \n"
             y_pos +=15
-            short_canvas.create_text(700, y_pos, text=label_text, anchor = "center")
+            short_canvas.create_text(750, y_pos, text=label_text, anchor = "center")
 
         y_pos += 20
 
 
 
 
-        short_canvas.create_text(700, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
+        short_canvas.create_text(750, y_pos, text="Sold", font=("Arial", 16), anchor = "center")
         y_pos += 20
 
         db, dbfile = open_file('shortrate')
         for key, value in db.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
-            short_canvas.create_text(700, y_pos, text=label_text, anchor = "center")
+            short_canvas.create_text(750, y_pos, text=label_text, anchor = "center")
             print(f"{key}: {value}\n")
-        short_canvas.create_text(700, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
+        short_canvas.create_text(750, y_pos, text="Holding", font=("Arial", 16), anchor = "center")
         y_pos += 20
 
 
@@ -234,10 +236,10 @@ class WinShortWindow:
         for key, value in db_sorted.items():
             label_text = f"{key}: {value}\n"
             y_pos +=15
-            short_canvas.create_text(700, y_pos, text=label_text, anchor = "center")
+            short_canvas.create_text(750, y_pos, text=label_text, anchor = "center")
 
         actual_height= y_pos
-        short_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,700, actual_height))
+        short_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,750, actual_height))
 
     def run(self):
         self.WinFrame()
@@ -332,12 +334,14 @@ class CommandsWindow:
         self.root.title = "Commands"
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text="Update", command=self.update).pack(pady=5)
-        tk.Button(self.root, text="WinShort", command=self.winshort).pack(pady=5)
+        tk.Button(self.root, text="Update Winrate/Shortrate", command=self.winshort).pack(pady=5)
         tk.Button(self.root, text="RSI", command=self.rsi).pack(pady=5)
-        tk.Button(self.root, text= "RSI Accuracy", command=self.rsi_acc).pack(pady=5)
+        tk.Button(self.root, text="RSI Accuracy", command=self.rsi_acc).pack(pady=5)
         tk.Button(self.root, text="RSI Turnover", command=self.rsi_turn).pack(pady=5)
-        tk.Button(self.root, text="MA", command = self.ma).pack(pady=5)
+        tk.Button(self.root, text="Moving Average", command = self.MovingAverage).pack(pady=5)
+        tk.Button(self.root, text="Machine Learning Prediction (not working correctly)", command = self.MachineLearning).pack(pady=5)
         tk.Button(self.root, text="Back", command=self.back).pack(pady=10)
+        
 
         self.settings_manager = SettingsManager()
         self.winrate_manager = WinrateManager()
@@ -378,9 +382,13 @@ class CommandsWindow:
         ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
         turnover = rsi_turnover(ticker)
         messagebox.showinfo(title = "RSI Turnover", message = f"The average RSI turnover for {ticker} is {round(turnover,0)} days.")
-    def ma(self):
+    def MovingAverage(self):
         ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
         MA(ticker, graph = True)
+    def MachineLearning(self):
+        ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
+        ml(ticker)
+
     def back(self):
         self.root.destroy()
 
@@ -394,7 +402,7 @@ class PortWindow:
         self.root.title = "Portfolio Manager"
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text = "Portfolio", command = self.portfolio).pack(pady=5)
-        tk.Button(self.root, text = "Portfolio Update", command = self.portfolio).pack(pady=5)
+        tk.Button(self.root, text = "Portfolio Update", command = self.updatePortfolio).pack(pady=5)
         tk.Button(self.root, text="Back", command=self.back).pack(pady=50)
 
     def portfolio(self):
@@ -405,7 +413,8 @@ class PortWindow:
         self.root.destroy()
 
     def updatePortfolio(self):
-        pass
+        dbname = simpledialog.askstring("Input", "Name of database:")
+        updatePortfolio(dbname)
 
     def run(self):
         self.root.mainloop()
@@ -463,11 +472,11 @@ class LoadWindow:
         y_pos = 10
 
         for ticker in sorted_data:
-            load_canvas.create_text(700, y_pos, text=ticker, anchor = "center")
+            load_canvas.create_text(750, y_pos, text=ticker, anchor = "center")
             y_pos +=15
 
         actual_height= y_pos
-        load_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,700, actual_height))
+        load_canvas.configure(yscrollcommand=y_scrollbar.set, scrollregion=(0,0,750, actual_height))
 
     def run(self):
         load_window = LoadWindow(self.root)
@@ -504,26 +513,26 @@ def update_all():
 
     for ticker, ticker_data in db_ticker.items():
         if ticker in db_w_s:
-            db_w_s[ticker]['MA'] = ticker_data['MA']
+            db_w_s[ticker]['MA Converging'] = ticker_data['MA Converging']
             print(f'Updated {ticker}')
     close_file(db_w_s, 'winrate_storage')
 
     for ticker, ticker_data in db_ticker.items():
         if ticker in db_w:
-            db_w[ticker]['MA'] = ticker_data['MA']
+            db_w[ticker]['MA Converging'] = ticker_data['MA Converging']
             print(f'Updated {ticker}')
     close_file(db_w, 'winrate')
 
     for ticker, ticker_data in db_ticker.items():
         if ticker in db_w_p:
-            db_w_p[ticker]['MA'] = ticker_data['MA']
+            db_w_p[ticker]['MA Converging'] = ticker_data['MA Converging']
             print(f'Updated {ticker}')
     close_file(db_w_p, 'winrate_potential')
     
 
     for ticker, ticker_data in db_ticker.items():
         if ticker in db_s_s:
-            db_s_s[ticker]['MA'] = ticker_data['MA']
+            db_s_s[ticker]['MA Converging'] = ticker_data['MA Converging']
             print(f'Updated {ticker}')
     close_file(db_s_s, 'shortrate_storage')
 
