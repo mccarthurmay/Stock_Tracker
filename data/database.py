@@ -4,6 +4,7 @@ import concurrent.futures
 from data.analysis import runall, runall_sell
 from tkinter import messagebox, simpledialog
 from datetime import datetime, timedelta
+import yfinance as yf
 
 def storeData(dbname, stock_list):
     try:
@@ -48,7 +49,9 @@ def mainPortfolio(dbname):
             break
 
         if ticker not in db:
-            runall_sell(ticker, db)
+            price = simpledialog.askstring("Input", "Price of purchased stock:")
+            runall_sell(ticker, db, price)
+            
         else:
             print("Ticker already exists")
 
@@ -137,7 +140,7 @@ def updatePortfolio(dbname):
 
     def process_ticker(ticker):
         try:
-            runall_sell(ticker, db)
+            runall_sell(ticker, db, price = None)
         except Exception as e:
             print(f"There has been an error with {ticker}: {e}")
 
