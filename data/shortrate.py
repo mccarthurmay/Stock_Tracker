@@ -35,7 +35,8 @@ class ShortrateManager:
                                     'RSI Avg Turnover': ticker_data['RSI Avg Turnover'], 
                                     'RSI MSD Accuracy': ticker_data['RSI MSD'], 
                                     'RSI COS Accuracy': ticker_data['RSI COS'],
-                                    'MA': (ticker_data['MA'])
+                                    'MA': (ticker_data['MA']),
+                                    'MA Converging': ticker_data['MA Converging']
                                     }
                     print(f"Updated {ticker}: Price {price}, Date {date.today().strftime('%Y-%m-%d')} (short)")  #needs to hold different data
         close_file(db_w, 'shortrate_storage')
@@ -71,6 +72,7 @@ class ShortrateManager:
                 accuracy_msd = data['RSI MSD Accuracy']
                 accuracy_cos = data['RSI COS Accuracy']
                 ma = data['MA']
+                converging = data['MA Converging']
                 if short_sell_bool == True and ticker not in db_w:
                     new_price = round(yf.Ticker(ticker).info['currentPrice'], 2)
                     new_rsi = rsi_calc(ticker, graph = False)
@@ -86,7 +88,8 @@ class ShortrateManager:
                         'RSI Avg Turnover': turnover,
                         'RSI MSD Accuracy': accuracy_msd,
                         'RSI COS Accuracy': accuracy_cos,
-                        'MA': ma
+                        'MA': ma,
+                        'MA Converging': converging
                     }
                     print(f"Updated sold: {ticker}")
             close_file(db_w, 'shortrate')
@@ -113,6 +116,7 @@ class ShortrateManager:
             accuracy_msd = data['RSI MSD Accuracy']
             accuracy_cos = data['RSI COS Accuracy']
             ma = data['MA']
+            converging = data['MA Converging']
 
             if sell_bool == True:
                 new_price = yf.Ticker(ticker).info['currentPrice']
@@ -134,7 +138,8 @@ class ShortrateManager:
                         'RSI Avg Turnover': turnover,
                         'RSI MSD Accuracy': accuracy_msd,
                         'RSI COS Accuracy': accuracy_cos,
-                        'MA': ma
+                        'MA': ma,
+                        'MA Converging': converging
                     }
                     print(f"Created potential: {ticker}")
                 else:
@@ -151,7 +156,8 @@ class ShortrateManager:
                             'RSI Avg Turnover': turnover,
                             'RSI MSD Accuracy': accuracy_msd,
                             'RSI COS Accuracy': accuracy_cos,
-                            'MA': ma
+                            'MA': ma,
+                            'MA Converging': converging
                         }
                         print(f"Updated sold: {ticker}")
 
