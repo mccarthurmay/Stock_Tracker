@@ -12,3 +12,28 @@ yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
 
 *must begin all databases containing tickers with "t_", "tickers_", or "ticker_" to be properly updated
 *must begin all portfolios with "p_" or "portfolio_" to be properly updated
+
+
+
+Todo:
+1. absolute low project 
+    - find how much holders fluctuate 
+    - use 10 rsi, 20 rsi, and 30 rsi as buy signals
+    - collect all necessary information at purchase date
+        - date, volume, rsi, moving average (maybe a ratio)
+    - gives information on how to set limits
+2. winrate project
+    - find signals on why DDOG and ADBE kept rising above 70 rsi
+
+
+Bugs:
+1. main.py two windows when clicking "load"
+2. shortrate window not displaying correctly
+
+
+Notes:
+1. winrate project
+    - shows that 'most' stocks do not gain any more once above 70 rsi
+    - bought stocks showing 'bull' and 'MA Converging: False' or 'bear' and 'MA Converging: True' are very promising to be gainers
+2. shortrate project
+    - still waiting on rsi values to go under
