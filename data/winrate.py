@@ -17,6 +17,18 @@ class WinrateManager:
     def __init__(self):
         pass
 
+    def temp_analysis(self):
+        db, dbfile = open_file('winrate_storage')
+        li = []
+        for ticker, ticker_data in db.items():
+            date_1 = db[ticker]['Date']
+            print(date_1)
+            try:
+                li.append(rsi_calc(ticker, graph = False, date = date_1))
+            except:
+                pass
+            print(li)
+
 
     def checkWinrate(self):
         db = {}
@@ -176,7 +188,6 @@ class WinrateManager:
 
         #except Exception as e:
             #print(f"Did not work (winrate_potential): {e}")
-
 
 
 
