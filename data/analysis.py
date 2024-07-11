@@ -5,13 +5,15 @@ from scipy.stats import linregress
 import matplotlib.pyplot as plt
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
+import tkinter as tk
+from tkinter import messagebox
 
 
 def runall(ticker, db):
     percent_under = round(under_confidence(ticker, db).iloc[0])
     percent_over = round(over_confidence(ticker, db).iloc[0])
     ma, ma_date, converging = MA(ticker, graph = False)
-    rsi = rsi_calc(ticker, graph = False)
+    rsi = rsi_calc(ticker, graph = False, date = None)
     buy_bool = buy(rsi, percent_under)
     short_bool = short(rsi, percent_over)
     cos, msd = rsi_accuracy(ticker)
@@ -35,11 +37,13 @@ def runall_sell(ticker, db, price):
     percent_under = round(under_confidence(ticker, db).iloc[0])
     percent_over = round(over_confidence(ticker, db).iloc[0])
     ma, ma_date, converging = MA(ticker, graph = False)
-    rsi = rsi_calc(ticker, graph = False)
+    rsi = rsi_calc(ticker, graph = False, date = None)
     sell_bool = sell(rsi)
     short_sell_bool = short_sell(rsi)
     cos, msd = rsi_accuracy(ticker)
     turnover = rsi_turnover(ticker)
+    if sell_bool == True:
+        messagebox.showinfo(title = "SELL ALERT", message = f"{ticker} is currently a sell.")
     if price == None:
         db[ticker] = {
             'Ticker': ticker,
@@ -226,12 +230,14 @@ def rsi_base(ticker):
     rsi = 100 * mean_up / (mean_up + mean_down)
     return rsi, ticker, df
 
-def rsi_calc(ticker, graph):
+def rsi_calc(ticker, graph, date):
     rsi, ticker, df = rsi_base(ticker)
 
     #Graph
     if graph == True:
         plot_data(rsi, ticker, df)
+    elif date != None:
+        return (round(rsi[date]))
     else:
         return (round(rsi[-1]))
     
