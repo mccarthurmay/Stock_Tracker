@@ -104,8 +104,8 @@ def loadData(dbname, sort_choice):
         sorted_data = sorted(db.values(), key=lambda x: x['% Above 95% CI'] if x['% Above 95% CI'] is not None else float('inf'), reverse = True)
     elif sort_choice == "msd":
         sorted_data = sorted(db.values(), key=lambda x: x['RSI MSD'] if x['RSI MSD'] is not None else float('inf'), reverse = True)
-    elif sort_choice == "cos":
-        sorted_data = sorted(db.values(), key=lambda x: x['RSI COS'] if x['RSI COS'] is not None else float('inf'), reverse = True)
+    elif sort_choice == "rsi":
+        sorted_data = sorted(db.values(), key=lambda x: x['RSI'] if x['RSI'] is not None else float('inf'), reverse = True)
     elif sort_choice == "turn":
         sorted_data = sorted(db.values(), key=lambda x: x['RSI Avg Turnover'] if x['RSI Avg Turnover'] is not None else float('inf'), reverse = False)
     
@@ -128,7 +128,6 @@ def find_s_buy(database):
         except Exception as e:
             print(e)
             pass
-
 
 #UPDATE PORTFOLIO
 def updatePortfolio(dbname):
