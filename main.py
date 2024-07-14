@@ -367,11 +367,19 @@ class CommandsWindow:
     def rsi(self):
         ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
         graph = messagebox.askyesno("Y/N","Would you like a graph?")
+
         if graph == False:
-            rsi_value = rsi_calc(ticker, graph = False)
-            messagebox.showinfo(title = "RSI", message = f"RSI for {ticker}: {rsi_value}")
+            date_q = messagebox.askyesno("Y/N", "Would you like to input a specific date?")
+            if date_q == False:
+                rsi_value = rsi_calc(ticker, graph, date = None)
+                messagebox.showinfo(title = "RSI", message = f"RSI for {ticker}: {rsi_value}")
+            else:
+                date_q = simpledialog.askstring("Input", "Date in Y-M-D Format:")
+                rsi_value = rsi_calc(ticker, graph = False, date = date_q)
+                messagebox.showinfo(title = "RSI", message = f"RSI for {ticker} on {date_q}: {rsi_value}")
         else:
-            rsi_calc(ticker, graph)
+            rsi_calc(ticker, graph, date = None)
+            
 
     def rsi_acc(self):
         ticker = simpledialog.askstring("Input", "Name of ticker:").upper()
@@ -457,7 +465,7 @@ class LoadWindow:
 
     def load(self):
         dbname = simpledialog.askstring("Input", "Name of database:")
-        sort_choice = simpledialog.askstring("Sort", "Sort by over 95% (short), under 95% (normal), RSI accuracy (MSD or COS), or RSI turnover (turn)? ('short ', 'normal', 'MSD', 'COS', 'turn) ").lower().strip()
+        sort_choice = simpledialog.askstring("Sort", "Sort by over 95% (short), under 95% (normal), RSI (RSI), RSI accuracy (MSD), or RSI turnover (turn)? ('short ', 'normal', 'MSD', 'RSI', 'turn) ").lower().strip()
         sorted_data = loadData(dbname, sort_choice)
 
         load_frame = tk.Frame(self.root)
