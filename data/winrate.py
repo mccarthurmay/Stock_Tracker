@@ -88,7 +88,7 @@ class WinrateManager:
             for ticker, data in db.items():
                 old_price = data['Price']
                 old_date = data['Date']
-                rsi = rsi_calc(ticker, graph = False)
+                rsi = rsi_calc(ticker, graph = False, date = None)
                 sell_bool = sell(rsi)
                 turnover = data['RSI Avg Turnover']
                 accuracy_msd = data['RSI MSD Accuracy']
@@ -138,7 +138,7 @@ class WinrateManager:
             accuracy_cos = data['RSI COS Accuracy']
             ma = data['MA']
             converging = data['MA Converging']
-            rsi = rsi_calc(ticker, graph = False)
+            rsi = rsi_calc(ticker, graph = False, date = None)
             sell_bool = sell(rsi)
 
             if sell_bool == True:

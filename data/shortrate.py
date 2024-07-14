@@ -66,7 +66,7 @@ class ShortrateManager:
                 old_price = data['Price']
                 old_date = data['Date']
                 old_rsi = data['RSI']
-                rsi = rsi_calc(ticker, graph = False)
+                rsi = rsi_calc(ticker, graph = False, date = None)
                 short_sell_bool = short_sell(rsi)
                 turnover = data['RSI Avg Turnover']
                 accuracy_msd = data['RSI MSD Accuracy']
@@ -75,7 +75,7 @@ class ShortrateManager:
                 converging = data['MA Converging']
                 if short_sell_bool == True and ticker not in db_w:
                     new_price = round(yf.Ticker(ticker).info['currentPrice'], 2)
-                    new_rsi = rsi_calc(ticker, graph = False)
+                    new_rsi = rsi_calc(ticker, graph = False, date = None)
                     gain = old_price - new_price
                     db_w[ticker] = {
                         'New Price': new_price,
@@ -109,7 +109,7 @@ class ShortrateManager:
             sold_price = data['New Price']
             sold_date = data['New Date']
             previous_gain = data['Gain']
-            rsi = rsi_calc(ticker, graph = False)
+            rsi = rsi_calc(ticker, graph = False, date = None)
             sold_rsi = data['New RSI']
             sell_bool = sell(rsi)
             turnover = data['RSI Avg Turnover']
