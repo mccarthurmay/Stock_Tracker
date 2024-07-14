@@ -44,36 +44,28 @@ def runall_sell(ticker, db, price):
     turnover = rsi_turnover(ticker)
     if sell_bool == True:
         messagebox.showinfo(title = "SELL ALERT", message = f"{ticker} is currently a sell.")
-    if price == None:
-        db[ticker] = {
-            'Ticker': ticker,
-            'Sell': sell_bool,
-            'Short Sell': short_sell_bool,
-            '% Above 95% CI': percent_over,
-            '% Below 95% CI': percent_under,
-            'RSI': rsi,
-            'RSI COS': round(cos,2),
-            'RSI MSD': round(msd,2),
-            'RSI Avg Turnover': turnover,
-            'MA': (ma, ma_date),
-            'MA Converging': converging,
-        }
+    if ticker in db:
+        #If it exists, preserve the buy price
+        buy_price = db[ticker].get('Buy Price')
     else:
-         db[ticker] = {
-            'Ticker': ticker,
-            'Buy Price': price,
-            'Sell': sell_bool,
-            'Short Sell': short_sell_bool,
-            '% Above 95% CI': percent_over,
-            '% Below 95% CI': percent_under,
-            'RSI': rsi,
-            'RSI COS': round(cos,2),
-            'RSI MSD': round(msd,2),
-            'RSI Avg Turnover': turnover,
-            'MA': (ma, ma_date),
-            'MA Converging': converging,
-        
-        }
+        #If it's a new entry, use the provided price
+        buy_price = price
+    
+    #Update the database entry
+    db[ticker] = {
+        'Ticker': ticker,
+        'Buy Price': buy_price,
+        'Sell': sell_bool,
+        'Short Sell': short_sell_bool,
+        '% Above 95% CI': percent_over,
+        '% Below 95% CI': percent_under,
+        'RSI': rsi,
+        'RSI COS': round(cos, 2),
+        'RSI MSD': round(msd, 2),
+        'RSI Avg Turnover': turnover,
+        'MA': (ma, ma_date),
+        'MA Converging': converging,
+    }
 
 
 #BUY/SELL BOOL
@@ -206,6 +198,7 @@ def con_plot(ticker):
     ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
 
     plt.show()
+
 
 
 #RSI
