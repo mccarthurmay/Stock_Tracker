@@ -116,7 +116,7 @@ def ml(ticker):
     predicted_df = scaler.inverse_transform(np.concatenate([predicted_df, np.zeros((predicted_df.shape[0], 3))], axis=1))[:, 0]
 
     #Predict future values
-    future_days = 10
+    future_days = 5
     future_inputs = inputs[-60:]
     future_predictions = []
 
@@ -148,5 +148,7 @@ def ml(ticker):
     plt.show()
 
 
-    f = open("test.txt", "a")
-    f.write(str(future_df['Close']))
+    #f = open("test.txt", "a")
+    
+    #f.write(str(future_df['Close']))
+    print(str(future_df['Close']))
