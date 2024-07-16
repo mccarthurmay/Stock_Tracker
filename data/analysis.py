@@ -42,11 +42,12 @@ def runall_sell(ticker, db, price):
     short_sell_bool = short_sell(rsi)
     cos, msd = rsi_accuracy(ticker)
     turnover = rsi_turnover(ticker)
-    if sell_bool == True:
-        messagebox.showinfo(title = "SELL ALERT", message = f"{ticker} is currently a sell.")
+    #if sell_bool == True:
+    #    messagebox.showinfo(title = "SELL ALERT", message = f"{ticker} is currently a sell.")
     if ticker in db:
         #If it exists, preserve the buy price
-        buy_price = db[ticker].get('Buy Price')
+        buy_price = db[ticker]['Buy Price']
+    
     else:
         #If it's a new entry, use the provided price
         buy_price = price
