@@ -50,11 +50,11 @@ from data.winrate import WinrateManager
 from data.shortrate import ShortrateManager
 from applications.scraper import scraper
 from applications.converter import convert
-
+warnings.simplefilter(action='ignore', category=FutureWarning)
 ab_low = ab_lowManager()
-ab_low.checkfile()
-ab_low.scanRSI()
 
-db, dbfile = open_file('15')
-for key, value in db.items():
-    print(key, value)
+ab_low.limit()
+
+#db, dbfile = open_file('15')
+#for key, value in db.items():
+#    print(key, value)
