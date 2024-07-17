@@ -203,9 +203,9 @@ def con_plot(ticker):
 
 
 #RSI
-def rsi_base(ticker):
+def rsi_base(ticker, time):
     ticker = yf.Ticker(ticker)
-    df = ticker.history(interval="1d", period="2y")
+    df = ticker.history(interval="1d", period= time)
 
     change = df['Close'].diff()
     change.dropna(inplace=True)
@@ -225,7 +225,7 @@ def rsi_base(ticker):
     return rsi, ticker, df
 
 def rsi_calc(ticker, graph, date):
-    rsi, ticker, df = rsi_base(ticker)
+    rsi, ticker, df = rsi_base(ticker, '2y')
 
     #Graph
     if graph == True:
