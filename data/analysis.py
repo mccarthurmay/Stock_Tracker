@@ -237,7 +237,7 @@ def rsi_calc(ticker, graph, date):
     
 
 def rsi_accuracy(ticker):
-    rsi, ticker, df = rsi_base(ticker)
+    rsi, ticker, df = rsi_base(ticker, '2y')
     df = df['Close']
     #calculate mean + std of both datasets
     mean_df = np.mean(df)
@@ -265,7 +265,7 @@ def rsi_accuracy(ticker):
     return cos_accuracy, msd_accuracy
 
 def rsi_turnover(ticker):
-    rsi, ticker, df = rsi_base(ticker)
+    rsi, ticker, df = rsi_base(ticker, '2y')
   
     rsi_frame = rsi.iloc[13:]
     low_threshold = True
