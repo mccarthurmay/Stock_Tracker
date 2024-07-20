@@ -6,11 +6,44 @@ import os
 import pandas as pd
 import concurrent.futures
 from functools import partial
-from datetime import timedelta
+from datetime import datetime, timedelta
+import numpy as np
+from scipy import stats
+
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
+
+def calculate_ci(data):
+    if not data or len(data) < 2:  # We need at least 2 data points to calculate CI
+        return "None", "None"
+    
+    data = [x for x in data if x is not None]  # Remove any None values
+    
+    if not data or len(data) < 2:
+        return "None", "None"
+    
+    # Convert Timedelta to days if necessary
+    if isinstance(data[0], timedelta):
+        data = [d.total_seconds() / (24*60*60) for d in data]  # Convert to days
+    
+    mean = np.mean(data)
+    
+    if len(data) == 2:
+        # If we only have 2 data points, return the range instead of CI
+        return round(mean, 2), (round(min(data), 2), round(max(data), 2))
+    
+    try:
+        ci = stats.t.interval(confidence=0.95, df=len(data)-1, loc=mean, scale=stats.sem(data))
+        return round(mean, 2), (round(ci[0], 2), round(ci[1], 2))
+    except Exception as e:
+        print(f"Error calculating CI: {e}")
+        return round(mean, 2), "Error"
+
+
 class ab_lowManager:
     def __init__(self):
         pass
-    
     #Finds 
     def find_lows_and_highs(self, rsi, df, ltr=(20, 30), ht=70):
         results = []
@@ -136,33 +169,52 @@ class ab_lowManager:
                         print(f'{ticker} generated an exception: {e}')
 
             print(ltr)
-            avg_d_d = round(self.Average(all_results['d_d']), 2) if all_results['d_d'] else "None"
-            avg_d_d_val = round(self.Average(all_results['d_d_value']), 2) if all_results['d_d_value'] else "None"
-            avg_d_i = round(self.Average(all_results['d_i']), 2) if all_results['d_i'] else "None"
-            avg_d_i_val = round(self.Average(all_results['d_i_value']), 2) if all_results['d_i_value'] else "None"
-            avg_d = round(self.Average(all_results['n_d']), 2) if all_results['n_d'] else "None"
-            avg_d_val = round(self.Average(all_results['n_d_value']), 2) if all_results['n_d_value'] else "None"
-            avg_turnover = round(self.Average_Time(all_results['avg_turnover'])) if all_results['avg_turnover'] else "None"
-            avg_d_i_d = round(self.Average(all_results['d_i_temp']), 2) if all_results['d_i_temp'] else "None"
-            avg_d_d_d = round(self.Average(all_results['d_d_temp']), 2) if all_results['d_d_temp'] else "None"
+            d_d = all_results['d_d']
+            d_d_value = all_results['d_d_value']
+            d_i = all_results['d_i']
+            d_i_value= all_results['d_i_value']
+            n_d = all_results['n_d']
+            n_d_value =  all_results['n_d_value']
+            avg_turnover = all_results['avg_turnover']
+            d_i_temp = all_results['d_i_temp']
+            d_d_temp = all_results['d_d_temp']
+
+
             
             #print("Decrease after RSI, Decrease at the end of the RSI interval")
             #print(f"{all_results['d_d']}, {avg_d_d}, {len(all_results['d_d'])}")
             #print()
-            print("Decrease after RSI, Increase at the end of the RSI interval")
+            #print("Decrease after RSI, Increase at the end of the RSI interval")
             #print(f"{all_results['d_i']}, {avg_d_i}, {len(all_results['d_i'])}")
             #print()
             #print("Only increase over whole RSI interval")
             #print(f"{all_results['n_d']}, {avg_d}, {len(all_results['n_d'])}")
             #print()
-            print(all_results['d_d_temp'])
+            #print(all_results['d_d_temp'])
+            
+            #send averages to confidence interval
+
+           
+            d_d_mean, d_d_ci = calculate_ci(d_d_value)
+            d_i_mean, d_i_ci = calculate_ci(d_i_value)
+            n_d_mean, n_d_ci = calculate_ci(n_d_value)
+            d_i_temp_mean, d_i_temp_ci = calculate_ci(d_i_temp)
+            d_d_temp_mean, d_d_temp_ci = calculate_ci(d_d_temp)
+            
+                # Calculate CI for turnover times
+            turnover_mean, turnover_ci = calculate_ci(all_results['avg_turnover'])
+            
+            # Calculate average turnover time separately
+            avg_turnover = self.Average_Time(all_results['avg_turnover']) if all_results['avg_turnover'] else None
+
             print("Decrease vs Increase")
             print(f"{len(all_results['d_d'])} vs {len(all_results['d_i']) + len(all_results['n_d'])}")
-            print(f"Average Decrease %: {avg_d_d_val} (limit {avg_d_d_d}), Average DI Increase %: {avg_d_i_val} (limit {avg_d_i_d}), Average ND Increase %: {avg_d_val}, Average RSI Turnover: {avg_turnover}")
+            print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
+            print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
+            print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
+            print(f"Average RSI Turnover: {avg_turnover:.2f} days")
+            print(f"Turnover CI: {turnover_mean:.2f} days (CI: {turnover_ci})")
             print("\n" + "="*200 + "\n")
-
-
-
 #Results
 
 """
