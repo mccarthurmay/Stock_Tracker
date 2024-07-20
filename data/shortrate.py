@@ -108,7 +108,7 @@ class ShortrateManager:
         for ticker, data in db_w.items():
             sold_price = data['New Price']
             sold_date = data['New Date']
-            previous_gain = data['Gain']
+            previous_gain = data['Gain'].strip('%')
             rsi = rsi_calc(ticker, graph = False, date = None)
             sold_rsi = data['New RSI']
             sell_bool = sell(rsi)
