@@ -92,9 +92,9 @@ class StockTracker:
         self.winrate_manager.scanWinrate()
         self.winrate_manager.winratePotential()
 
-        self.shortrate_manager.shortrate()
-        self.shortrate_manager.scanShortrate()
-        self.shortrate_manager.shortratePotential()
+        #self.shortrate_manager.shortrate()
+        #self.shortrate_manager.scanShortrate()
+        #self.shortrate_manager.shortratePotential()
 
         winshort_window = WinShortWindow(self.root)
         winshort_window.run()
