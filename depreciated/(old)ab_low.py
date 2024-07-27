@@ -49,33 +49,27 @@ class ab_lowManager:
         results = []
         i = 0
         while i < len(rsi):
-            # Find the next local minimum within the ltr
-            while i < len(rsi) - 1 and (rsi[i] >= rsi[i+1] or (rsi[i] < ltr[0] and rsi[i] >= ltr[1])):
+            # Find the first instance within the ltr
+            while i < len(rsi) and not (ltr[0] <= rsi[i] < ltr[1]):
                 i += 1
-            if i == len(rsi) - 1:
+            
+            if i == len(rsi):
                 break  # We've reached the end of the series
             
             low_value = rsi[i]
             low_date = df.index[i]
             
-            # Only proceed if the low value is within the ltr
-            if ltr[0] <= low_value < ltr[1]:
-                # Look for RSI of ht without going lower than the minimum
-                j = i + 1
-                while j < len(rsi) and rsi[j] < ht:
-                    if rsi[j] < low_value:
-                        # We found a lower value, so this isn't the minimum we're looking for
-                        break
-                    j += 1
-                
-                if j < len(rsi) and rsi[j] >= ht:
-                    # We found a rise to ht without a new low
-                    high_date = df.index[j]
-                    results.append((low_date, low_value, high_date, rsi[j]))
+            # Look for RSI of ht
+            j = i + 1
+            while j < len(rsi) and rsi[j] < ht:
+                j += 1
+            
+            if j < len(rsi):  # We found a rise to ht
+                high_date = df.index[j]
+                results.append((low_date, low_value, high_date, rsi[j]))
+                i = j + 1  # Move past this high point
             else:
-                j = i  # If we didn't process this point, set j = i so we can increment correctly
-
-            i = j + 1  # Move past this high point or the current point if we didn't process it
+                break  # We've reached the end without finding a high
 
         return results
     
@@ -104,7 +98,7 @@ class ab_lowManager:
         }
         
         # Calculate RSI, retrieve entire dataframe
-        rsi, _, df = rsi_base(ticker, '6mo') 
+        rsi, _, df = rsi_base(ticker, '2y') 
 
         lows_and_highs = self.find_lows_and_highs(rsi, df, ltr, ht)
         
@@ -138,8 +132,8 @@ class ab_lowManager:
         with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
             stock_list = stock_file.read().split('\n')
 
-        #ltr_list = [(65, 70), (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
-        ltr_list = [(45, 47.5), (47.5, 50)]
+        ltr_list = [(65, 70), (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
+        #ltr_list = [(45, 47.5), (47.5, 50)]
         ht = 70
 
         for ltr in ltr_list:
@@ -202,20 +196,30 @@ class ab_lowManager:
             d_d_temp_mean, d_d_temp_ci = calculate_ci(d_d_temp)
             
                 # Calculate CI for turnover times
-            turnover_mean, turnover_ci = calculate_ci(all_results['avg_turnover'])
+            turnover_mean, turnover_ci = calculate_ci(all_results['avg_turnover']) if all_results['avg_turnover'] else None
             
-            # Calculate average turnover time separately
-            avg_turnover = self.Average_Time(all_results['avg_turnover']) if all_results['avg_turnover'] else None
+
+
+
 
             print("Decrease vs Increase")
             print(f"{len(all_results['d_d'])} vs {len(all_results['d_i']) + len(all_results['n_d'])}")
             print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
             print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
             print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
-            print(f"Average RSI Turnover: {avg_turnover:.2f} days")
             print(f"Turnover CI: {turnover_mean:.2f} days (CI: {turnover_ci})")
+            gain = self.calc(len(all_results['d_d']), (len(all_results['d_i']) + len(all_results['n_d'])), d_d_mean, d_i_mean , turnover_mean)
+            print(f"Gain: {gain:.4f}%")
             print("\n" + "="*200 + "\n")
-#Results
+
+    def calc(self, lenloss, lengain, d, i, turnover):
+        p_loss = lenloss / (lenloss + lengain)
+        p_gain = lengain / (lenloss + lengain)
+        expected = p_gain * (i/100) + p_loss * (d/100)
+        events = 365/ turnover
+        value = (1+expected)**events
+        gain = (value - 1) /1 * 100
+        return gain
 
 """
 =======================================================
@@ -224,138 +228,165 @@ class ab_lowManager:
 5 years: 
 
 
-2 years: 
+2 years: 23 vs 34
+Average Decrease %: -11.64 (CI: (-15.39, -7.88)) (limit 19.84, CI: (14.98, 24.7))
+Average DI Increase %: 4.68 (CI: (3.38, 5.98)) (limit 5.32, CI: (4.21, 6.43))
+Average ND Increase %: None (CI: None)
+Turnover CI: 53.53 days (CI: (44.55, 62.5))
+Gain: -12.2928%
 
 
-1 year: 12 vs 14
-Average Decrease %: -8.83 (limit 16.58), Average DI Increase %: 5.38 (limit 3.91), Average ND Increase %: 26.25, Average RSI Turnover: 50
--22.3%
+1 year: 
+
 =======================================================
 (5,10)
 
 5 years: 
 
-2 years: 
-1 year: 61 vs 122
-Average Decrease %: -8.69 (limit 17.17), Average DI Increase %: 5.28 (limit 4.0), Average ND Increase %: 8.41, Average RSI Turnover: 48
--6.3%
+2 years: 164 vs 186
+Average Decrease %: -9.8 (CI: (-11.25, -8.34)) (limit 18.5, CI: (16.88, 20.12))
+Average DI Increase %: 5.51 (CI: (4.95, 6.08)) (limit 4.59, CI: (4.09, 5.1))
+Average ND Increase %: 7.92 (CI: (6.1, 9.75))
+Turnover CI: 55.91 days (CI: (52.1, 59.72))
+Gain: -10.3749%
+
+1 year: 
+
 =======================================================
 (10,15)
 
 5 years: 
 
-2 years: 
-1 year: 110 vs 309
-Average Decrease %: -5.96 (limit 13.08), Average DI Increase %: 5.57 (limit 3.4), Average ND Increase %: 8.5, Average RSI Turnover: 46
-6%
+2 years: 414 vs 556
+Average Decrease %: -8.37 (CI: (-9.19, -7.55)) (limit 16.31, CI: (15.44, 17.18))
+Average DI Increase %: 5.75 (CI: (5.36, 6.13)) (limit 4.22, CI: (3.91, 4.53))
+Average ND Increase %: 8.66 (CI: (6.5, 10.81))
+Turnover CI: 54.70 days (CI: (52.27, 57.14))
+Gain: -1.8304%
+
+1 year: 
+
 =======================================================
 (15,20)
 
 5 years: 
 
-2 years: 
+2 years: 767 vs 1068
+Average Decrease %: -8.37 (CI: (-8.97, -7.77)) (limit 16.23, CI: (15.56, 16.89))
+Average DI Increase %: 5.23 (CI: (4.99, 5.47)) (limit 4.31, CI: (4.08, 4.53))
+Average ND Increase %: 8.63 (CI: (7.62, 9.63))
+Turnover CI: 54.04 days (CI: (52.31, 55.76))
+Gain: -3.0305%
 
-1 year: 137 vs 557
-Average Decrease %: -4.65 (limit 11.04), Average DI Increase %: 5.47 (limit 3.01), Average ND Increase %: 8.92, Average RSI Turnover: 40
-14.5%
+1 year: 
+
 =======================================================
 (20,25)
 
 5 years: 
 
-2 years: 
+2 years: 1110 vs 1498
+Average Decrease %: -7.81 (CI: (-8.28, -7.33)) (limit 15.45, CI: (14.92, 15.99))
+Average DI Increase %: 5.22 (CI: (5.01, 5.43)) (limit 4.28, CI: (4.1, 4.46))
+Average ND Increase %: 8.3 (CI: (7.63, 8.97))
+Turnover CI: 53.24 days (CI: (51.81, 54.67))
+Gain: -2.2120%
 
-1 year: 89 vs 849
-Average Decrease %: -3.64 (limit 9.36), Average DI Increase %: 5.56 (limit 2.73), Average ND Increase %: 7.98, Average RSI Turnover: 32
-29.8%
+1 year:
 
 =======================================================
 (25,30)
 
 5 years: 
 
-2 years: 
-1 year: 47 vs 1142
-Average Decrease %: -2.82 (limit 7.62), Average DI Increase %: 5.66 (limit 2.22), Average ND Increase %: 7.8, Average RSI Turnover: 26
-44.5%
+2 years: 1411 vs 1984
+Average Decrease %: -8.11 (CI: (-8.55, -7.68)) (limit 15.64, CI: (15.17, 16.12))
+Average DI Increase %: 5.29 (CI: (5.1, 5.48)) (limit 4.2, CI: (4.03, 4.37))
+Average ND Increase %: 7.74 (CI: (7.28, 8.21))
+Turnover CI: 52.67 days (CI: (51.41, 53.94))
+Gain: -1.9188%
+
+1 year: 
+
 =======================================================
 (30,35)
 
 5 years: 
 
 
-2 years: 
+2 years: 1667 vs 2262
+Average Decrease %: -8.14 (CI: (-8.54, -7.75)) (limit 15.72, CI: (15.29, 16.15))
+Average DI Increase %: 4.89 (CI: (4.72, 5.06)) (limit 4.15, CI: (4.0, 4.29))
+Average ND Increase %: 8.76 (CI: (8.13, 9.39))
+Turnover CI: 53.22 days (CI: (52.02, 54.41))
+Gain: -4.2972%
 
-1 year: 33 vs 1237
-Average Decrease %: -0.94 (limit 5.72), Average DI Increase %: 5.65 (limit 1.8), Average ND Increase %: 7.49, Average RSI Turnover: 22
-37.6%
+1 year: 
+
 =======================================================
 (35,40)
 
 5 years: 
 
-2 years: 
+2 years: 1932 vs 2459
+Average Decrease %: -8.03 (CI: (-8.39, -7.68)) (limit 15.47, CI: (15.08, 15.86))
+Average DI Increase %: 4.69 (CI: (4.54, 4.85)) (limit 4.18, CI: (4.03, 4.33))
+Average ND Increase %: 7.65 (CI: (7.15, 8.14))
+Turnover CI: 53.55 days (CI: (52.41, 54.69))
+Gain: -6.0194%
  
-16 vs 1404
-Average Decrease %: -0.88 (limit 2.0), Average DI Increase %: 5.05 (limit 1.44), Average ND Increase %: 6.61, Average RSI Turnover: 17
-69.6%
+1 year:
+
 =======================================================
 (40,45)
 
 5 years: 
 
-2 years: 
+2 years: 2118 vs 2661
+Average Decrease %: -8.0 (CI: (-8.33, -7.67)) (limit 15.43, CI: (15.06, 15.8))
+Average DI Increase %: 4.48 (CI: (4.33, 4.62)) (limit 4.18, CI: (4.03, 4.32))
+Average ND Increase %: 6.77 (CI: (6.37, 7.17))
+Turnover CI: 52.65 days (CI: (51.55, 53.75))
+Gain: -7.0629%
 
-1 year: 54 vs 1462
-Average Decrease %: -0.94 (limit 1.5), Average DI Increase %: 4.64 (limit 1.25), Average ND Increase %: 6.1, Average RSI Turnover: 13
-85.1%
+1 year: 
+
+
 =======================================================
 (45,50)
 
 5 years: 
 
 
-2 years: 
+2 years: 2216 vs 2982
+Average Decrease %: -8.14 (CI: (-8.47, -7.81)) (limit 15.49, CI: (15.11, 15.87))
+Average DI Increase %: 4.34 (CI: (4.21, 4.48)) (limit 4.01, CI: (3.88, 4.14))
+Average ND Increase %: 6.01 (CI: (5.67, 6.34))
+Turnover CI: 50.95 days (CI: (49.87, 52.03))
+Gain: -6.8151%
 
-1 year: 74 vs 1563
-Average Decrease %: -0.71 (limit 1.46), Average DI Increase %: 4.16 (limit 1.08), Average ND Increase %: 4.96, Average RSI Turnover: 10 
-103.4%
+1 year: 
+
 ------------------------------------------------------------------------
 (45, 47.5)
 
-5 years: 223 vs 5261
-Average Decrease %: -0.99 (limit 1.8), Average DI Increase %: 5.28 (limit 1.54), Average ND Increase %: 6.66, Average RSI Turnover: 12
-112.4%
+5 years: 
 
-2 years: 90 vs 1855
-Average Decrease %: -0.88 (limit 1.53), Average DI Increase %: 4.79 (limit 1.33), Average ND Increase %: 5.66, Average RSI Turnover: 12
-102.3%
+2 years:
 
-1 year: 46 vs 968
-Average Decrease %: -0.77 (limit 1.71), Average DI Increase %: 3.77 (limit 1.11), Average ND Increase %: 4.65, Average RSI Turnover: 9
-104.5%
+1 year: 
 
-6 month: 31 vs 400
-Average Decrease %: -0.65 (limit 1.49), Average DI Increase %: 4.59 (limit 1.12), Average ND Increase %: 4.9, Average RSI Turnover: 11
-98.8%
+
 --------------------------------------------------------------------------
 (47.5, 50)
 
-5 years: 295 vs 5358
-Average Decrease %: -1.1 (limit 2.08), Average DI Increase %: 4.73 (limit 1.34), Average ND Increase %: 5.95, Average RSI Turnover: 10
-121.6%
+5 years: 
 
-2 years: 97 vs 1967
-Average Decrease %: -1.0 (limit 1.94), Average DI Increase %: 4.36 (limit 1.16), Average ND Increase %: 5.27, Average RSI Turnover: 10
-109.6%
+2 years: 
 
-1 year: 51 vs 925
-Average Decrease %: -0.69 (limit 1.24), Average DI Increase %: 4.3 (limit 1.12), Average ND Increase %: 5.09, Average RSI Turnover: 11
-93.7%
+1 year: 
 
-6 month: 17 vs 432
-Average Decrease %: -0.82 (limit 1.5), Average DI Increase %: 3.62 (limit 1.18), Average ND Increase %: 4.41, Average RSI Turnover: 10
-86.5%
+
 =======================================================
 (50,55)
 
@@ -363,45 +394,63 @@ Average Decrease %: -0.82 (limit 1.5), Average DI Increase %: 3.62 (limit 1.18),
 
 
 
-2 years: 
+2 years: 2391 vs 3238
+Average Decrease %: -8.02 (CI: (-8.34, -7.69)) (limit 15.05, CI: (14.68, 15.43))
+Average DI Increase %: 4.02 (CI: (3.9, 4.15)) (limit 4.1, CI: (3.97, 4.23))
+Average ND Increase %: 5.26 (CI: (4.98, 5.55))
+Turnover CI: 49.31 days (CI: (48.25, 50.37))
+Gain: -7.8210%
 
 
-1 year: 165 vs 1621
-Average Decrease %: -0.94 (limit 1.33), Average DI Increase %: 3.22 (limit 0.95), Average ND Increase %: 4.24, Average RSI Turnover: 8
-88.4%
+1 year:
+
 =======================================================
 
 (55,60)
 
 5 years: 
 
-2 years: 
+2 years: 2649 vs 3615
+Average Decrease %: -7.46 (CI: (-7.77, -7.14)) (limit 13.85, CI: (13.47, 14.22))
+Average DI Increase %: 3.8 (CI: (3.68, 3.92)) (limit 3.82, CI: (3.7, 3.94))
+Average ND Increase %: 4.57 (CI: (4.33, 4.81))
+Turnover CI: 44.88 days (CI: (43.85, 45.9))
+Gain: -7.5588%
 
-1 year: 365 vs 1587
-Average Decrease %: -0.82 (limit 1.16), Average DI Increase %: 2.26 (limit 0.88), Average ND Increase %: 3.44, Average RSI Turnover: 5
-75.8%
+1 year: 
+
+
 =======================================================
 (60,65)
 
 5 years: 
 
 
-2 years: 
+2 years: 3318 vs 4168
+Average Decrease %: -6.14 (CI: (-6.4, -5.89)) (limit 11.24, CI: (10.9, 11.58))
+Average DI Increase %: 3.34 (CI: (3.23, 3.45)) (limit 3.6, CI: (3.48, 3.72))
+Average ND Increase %: 3.66 (CI: (3.47, 3.85))
+Turnover CI: 37.02 days (CI: (36.09, 37.94))
+Gain: -8.1797%
 
-1 year: 640 vs 1882
-Average Decrease %: -0.81 (limit 1.01), Average DI Increase %: 1.39 (limit 0.85), Average ND Increase %: 2.39, Average RSI Turnover: 3
-47.7%
+1 year:
+
+
 =======================================================
 (65,70)
 
 5 years: 
 
 
-2 years: 
+2 years: 4753 vs 4832
+Average Decrease %: -4.34 (CI: (-4.52, -4.15)) (limit 7.57, CI: (7.3, 7.83))
+Average DI Increase %: 3.05 (CI: (2.93, 3.16)) (limit 3.49, CI: (3.38, 3.61))
+Average ND Increase %: 2.26 (CI: (2.15, 2.37))
+Turnover CI: 26.39 days (CI: (25.63, 27.14))
+Gain: -8.1727%
 
-1 year: 1109 vs 2051
-Average Decrease %: -0.89 (limit 0.96), Average DI Increase %: 0.99 (limit 0.68), Average ND Increase %: 1.69, Average RSI Turnover: 2
--2.4%
+1 year: 
+
 =======================================================
 
 
