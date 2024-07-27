@@ -16,7 +16,7 @@ class AnalysisManager:
     def runall(self, ticker, db):
         percent_under = round(self.CI.under_confidence(ticker, db).iloc[0])
         percent_over = round(self.CI.over_confidence(ticker, db).iloc[0])
-        ma, ma_date, converging = MA(ticker, graph = False)
+        ma, ma_date, converging = self.RSI.MA(ticker, graph = False)
         rsi = self.RSI.rsi_calc(ticker, graph = False, date = None)
         buy_bool = self.buy(rsi, percent_under)
         short_bool = self.short(rsi, percent_over)

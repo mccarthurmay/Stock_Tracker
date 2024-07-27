@@ -153,7 +153,7 @@ class Update():
                 pass
     
     #CREATE/EDIT MAIN PORTFOLIO
-    def mainPortfolio(dbname):
+    def mainPortfolio(self, dbname):
         try:
             db, dbfile = open_file(dbname)
         except FileNotFoundError:
