@@ -16,6 +16,17 @@ yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
 
 
 Todo:
+2. winrate project
+    - find signals on why DDOG and ADBE kept rising above 70 rsi
+
+4. ML that reads minute by minute data to predict the next half an hour                                                                                            
+
+6. Redo ml.py to predict if a stock is likely to reach 70rsi
+    - currently working, low accuracy at more than "likelihood to reach before 10 days"
+        - higher accuracy the lower the days
+
+
+Done:
 1. absolute low project 
     - find how much holders fluctuate 
     - use 10 rsi, 15 rsi, 20 rsi, and 30 rsi as buy signals
@@ -23,23 +34,26 @@ Todo:
         - date, volume, rsi, moving average (maybe a ratio)
     - gives information on how to set limits
     
-2. winrate project
-    - find signals on why DDOG and ADBE kept rising above 70 rsi
-
-4. ML that reads minute by minute data to predict the next half an hour                                                                                            
-
-5. Probability to gain in month? (test.py, p_test2.pk)
-
-
-Done:
 3. rework portfolio system
     - buy price is being overwritten
     - (7/11 prices on test)
     - show gain  
 
+7. complete a day trading module
+    - integrates absolute low project adjusted for minute by minute data
+    - provides stop loss and sell signals
+    - finds best stocks to purchase for any given day
+
+8. completely rework/organize code
+
+
+
+
+
 Bugs:
 1. main.py two windows when clicking "load"
 2. shortrate window not displaying correctly
+3. various bugs in main with code rework
 
 
 Notes:
@@ -49,3 +63,14 @@ Notes:
     - absolute minimum may 'peak' at under 20 rsi
 2. shortrate project
     - still waiting on rsi values to go under
+3. absolute low project
+    - recorded all information, found that the most optimal RSI is 45-50 (specifically 45-47.5)
+    - HOWEVER, found a flaw in my logic
+        - It only reads perfect situations, where rsi = 45 turning into rsi = 70 is guaranteed.
+        - NEED TO KNOW WHEN THIS OCCURS
+
+
+Depreciated Ideas:
+
+5. Probability to gain in month? (test.py, p_test2.pk)
+
