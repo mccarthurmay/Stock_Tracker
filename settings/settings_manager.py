@@ -1,11 +1,12 @@
 import os
 import pickle
-from data.database import updateData, updatePortfolio, find_s_buy
+from data.database import Update
 
 class SettingsManager:
     def __init__(self, settings_file = './storage/settings/settings.pickle'):
         self.settings_file = settings_file
         self.settings = self.open_settings()
+        self.update = Update()
 
 
     def makeSettings(self):
@@ -45,13 +46,13 @@ class SettingsManager:
         print("Settings loaded.")
         for database, values in self.settings.items():
             if values.get('AutoUpdate', True):
-                updateData(database)
-                find_s_buy(database)
+                self.update.updateData(database)
+                self.update.find_s_buy(database)
 
         for database in os.listdir('./storage/databases'):
             if database.startswith('p_') or database.startswith('portfolio_'):
                 database = os.path.splitext(database)[0]
-                updatePortfolio(database)
+                self.update.updatePortfolio(database)
 
         self.close_settings()
 
