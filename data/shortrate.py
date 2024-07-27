@@ -1,11 +1,12 @@
 import yfinance as yf
 from datetime import date
 from data.database import open_file, close_file
-from data.analysis import rsi_calc, sell, short_sell, rsi_turnover, rsi_accuracy
+from data.analysis import RSIManager, AnalysisManager
 import os
 class ShortrateManager:
     def __init__(self):
-        pass
+        self.rsi_manager = RSIManager()
+        self.analysis = AnalysisManager()
 
 
     def checkShortrate(self):
@@ -66,8 +67,8 @@ class ShortrateManager:
                 old_price = data['Price']
                 old_date = data['Date']
                 old_rsi = data['RSI']
-                rsi = rsi_calc(ticker, graph = False, date = None)
-                short_sell_bool = short_sell(rsi)
+                rsi = self.rsi_manager.rsi_calc(ticker, graph = False, date = None)
+                short_sell_bool = self.analysis.short_sell(rsi)
                 turnover = data['RSI Avg Turnover']
                 accuracy_msd = data['RSI MSD Accuracy']
                 accuracy_cos = data['RSI COS Accuracy']
@@ -75,7 +76,7 @@ class ShortrateManager:
                 converging = data['MA Converging']
                 if short_sell_bool == True and ticker not in db_w:
                     new_price = round(yf.Ticker(ticker).info['currentPrice'], 2)
-                    new_rsi = rsi_calc(ticker, graph = False, date = None)
+                    new_rsi = self.rsi_manager.rsi_calc(ticker, graph = False, date = None)
                     gain = old_price - new_price
                     db_w[ticker] = {
                         'New Price': new_price,
@@ -109,9 +110,9 @@ class ShortrateManager:
             sold_price = data['New Price']
             sold_date = data['New Date']
             previous_gain = data['Gain'].strip('%')
-            rsi = rsi_calc(ticker, graph = False, date = None)
+            rsi = self.rsi_manager.rsi_calc(ticker, graph = False, date = None)
             sold_rsi = data['New RSI']
-            sell_bool = sell(rsi)
+            sell_bool = self.analysis.sell(rsi)
             turnover = data['RSI Avg Turnover']
             accuracy_msd = data['RSI MSD Accuracy']
             accuracy_cos = data['RSI COS Accuracy']

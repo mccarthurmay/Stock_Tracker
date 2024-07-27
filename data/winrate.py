@@ -1,7 +1,7 @@
 import yfinance as yf
 from datetime import date
 from data.database import open_file, close_file
-from data.analysis import rsi_calc, sell
+from data.analysis import RSIManager, AnalysisManager
 import os
 #note
 
@@ -15,7 +15,9 @@ import os
 
 class WinrateManager:
     def __init__(self):
-        pass
+        self.rsi_manager = RSIManager()
+        self.analysis = AnalysisManager()
+        
 
     def temp_analysis(self):
         db, dbfile = open_file('winrate_storage')
@@ -24,7 +26,7 @@ class WinrateManager:
             date_1 = db[ticker]['Date']
             print(date_1)
             try:
-                li.append(rsi_calc(ticker, graph = False, date = date_1))
+                li.append(self.rsi_manager.rsi_calc(ticker, graph = False, date = date_1))
             except:
                 pass
             print(li)
@@ -88,8 +90,8 @@ class WinrateManager:
             for ticker, data in db.items():
                 old_price = data['Price']
                 old_date = data['Date']
-                rsi = rsi_calc(ticker, graph = False, date = None)
-                sell_bool = sell(rsi)
+                rsi= self.rsi_manager.rsi_calc(ticker, graph = False, date = None)
+                sell_bool = self.analysis.sell(rsi)
                 turnover = data['RSI Avg Turnover']
                 accuracy_msd = data['RSI MSD Accuracy']
                 accuracy_cos = data['RSI COS Accuracy']
@@ -138,9 +140,8 @@ class WinrateManager:
             accuracy_cos = data['RSI COS Accuracy']
             ma = data['MA']
             converging = data['MA Converging']
-            rsi = rsi_calc(ticker, graph = False, date = None)
-            sell_bool = sell(rsi)
-
+            rsi = self.rsi_manager.rsi_calc(ticker, graph = False, date = None)
+            sell_bool = self.analysis.sell(rsi)
             if sell_bool == True:
                 new_price = yf.Ticker(ticker).info['currentPrice']
                 gain = new_price - sold_price
