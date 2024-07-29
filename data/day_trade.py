@@ -42,7 +42,9 @@ class DTCalc:
         df['Volatility'] = df['Close'].rolling(14).std()
         
         df = df.dropna(subset=['RSI', 'Avg_Volume', 'RSI_MA', 'Volatility'])
-        return df['RSI'].values, df['RSI'].values, df
+        
+        current_price = ticker.info['currentPrice']
+        return df['RSI'].values, current_price, df
 
     def calculate_ci(self, data):
         if not data or len(data) < 2:  # We need at least 2 data points to calculate CI
@@ -206,70 +208,37 @@ class DTData:
             #print(f"Turnover CI: {turnover_mean:.2f} minutes (CI: {turnover_ci})")
             #print(f"Gain: {gain:.4f}%")
             #print("\n" + "="*200 + "\n")
-            return d_i_temp_mean, gain, turnover_mean
+            return d_i_temp_mean, gain, turnover_mean, d_i_mean, d_i_ci
 
 class DTManager:
     def __init__(self):
         self.data_manager = DTData()
-
-    def calculate_rsi_prices(self, ticker, period=14, target_rsis=[30, 70]):
-        # Fetch data
-        end_date = pd.Timestamp.now()
-        start_date = end_date - pd.Timedelta(days=5)
-        df = yf.download(ticker, start=start_date, end=end_date, interval="1m")
-        
-        # Calculate RSI
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        current_rsi = rsi.iloc[-1]
-        current_price = df['Close'].iloc[-1]
-        
-        results = {'current_rsi': current_rsi, 'current_price': current_price}
-        
-        for target_rsi in target_rsis:
-            target_rs = (100 / (100 - target_rsi) - 1)
-            
-            if target_rsi > current_rsi:  # Price needs to go up
-                required_gain = target_rs * loss.iloc[-1] - gain.iloc[-1]
-                price_change = required_gain * period
-            else:  # Price needs to go down
-                required_loss = gain.iloc[-1] / target_rs - loss.iloc[-1]
-                price_change = -required_loss * period
-            
-            target_price = current_price + price_change
-            results[f'price_at_rsi_{target_rsi}'] = target_price
-        
-        return results
+        self.calc = DTCalc()
     
     def main(self, ticker, range = True):
-        rsi_info = self.calculate_rsi_prices(ticker)
+        rsi, current_price, df = self.calc.rsi_base(ticker)
         
         if range == True:
-            print(f"Current RSI: {rsi_info['current_rsi']:.2f}")
-            print(f"Current Price: ${rsi_info['current_price']:.2f}")
-            print(f"Estimated price at RSI 30: ${rsi_info['price_at_rsi_30']:.2f}")
-            print(f"Estimated price at RSI 70: ${rsi_info['price_at_rsi_70']:.2f}")
-            messagebox.showinfo("RSI Information", f"{rsi_info['current_rsi']:.2f}")
-            rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
-            rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
-            rsi_range = [(int(rsi1), int(rsi2))]
-            stop, gain, time = self.data_manager.limit(ticker, rsi_range)
-            stop_p = 1 - stop / 100
-            print(f"Stop Price: ${rsi_info['current_price']*(stop_p)}")
-            print(f"Sell Price: ${rsi_info['price_at_rsi_70']:.2f}")
-            return rsi_info, stop_p, gain, time
+            print(f"Current RSI: {rsi[-1]:.2f}")
+            print(f"Current Price: ${current_price:.2f}")
+            #messagebox.showinfo("RSI Information", f"{rsi[-1]:.2f}")
+            #rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
+            #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
+            rsi_range = [(int(rsi[-1] - 5), int(rsi[-1] + 5))] #opt to switch to automatic 
+            stop, gain, time, p_increase, ci_increase = self.data_manager.limit(ticker, rsi_range)
+            stop_l = (1 - stop / 100) * current_price
+            stop = (1 + (ci_increase[0]/100)) * current_price # lower ci 
+            limit = (1 + (p_increase/100)) * current_price # average
+            print(f"Stop Loss: ${stop_l}")
+            print(f"Stop: ${stop} Limit: ${limit}")
+            return rsi[-1], current_price, stop_l, gain, time, stop, limit
             
         else:
-            c_rsi = rsi_info['current_rsi']
+            c_rsi = rsi[-1]
             if c_rsi < 65:
-                rsi_range = [(int(c_rsi- 3), int(c_rsi + 5))]
-                stop, gain, time= self.data_manager.limit(ticker, rsi_range)
-                return rsi_info['current_rsi'], ticker, gain
+                rsi_range = [(int(c_rsi- 5), int(c_rsi + 5))]
+                stop, gain, time, p_increase = self.data_manager.limit(ticker, rsi_range)
+                return rsi[-1], ticker, gain
             else:
                 pass
         
@@ -277,17 +246,22 @@ class DTManager:
     def find(self):
         with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
             stock_list = stock_file.read().split('\n')
-        full = []
-        stock_list = random.sample(stock_list, 50)
+        
         print(stock_list)
-        for ticker in stock_list:
+
+        def process_ticker(ticker):
             print(ticker)
             try:
-                rsi, ticker, gain = self.main(ticker, range = False)
-                full.append((round(gain, 2), ticker, round(rsi, 0)))
+                rsi, ticker, gain = self.main(ticker, range=False)
+                return (round(gain, 2), ticker, round(rsi, 0))
             except:
-                pass
-        messagebox.showinfo(title = "RSI", message = sorted(full))
+                return None
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = list(executor.map(process_ticker, stock_list))
+
+        full = [result for result in results if result is not None]
+        messagebox.showinfo(title="RSI", message=sorted(full))
 
 class DTViewer:
     def __init__(self, root):
@@ -301,10 +275,10 @@ class DTViewer:
         if task == '1':
             self.dt_manager.find()
         ticker = simpledialog.askstring("Input", "Ticker: ").strip()
-        rsi_info, stop_p, gain, time = self.dt_manager.main(ticker)
-        self.ResultFrame(rsi_info, stop_p, gain, time)
+        rsi, current_price, stop_l, gain, time, stop, limit = self.dt_manager.main(ticker)
+        self.ResultFrame(rsi, current_price, stop_l, gain, time, stop, limit)
 
-    def ResultFrame(self, rsi_info, stop_p, gain, time):
+    def ResultFrame(self, rsi, current_price, stop_l, gain, time, stop, limit):
         frame = tk.Frame(self.root) 
         frame.pack(fill=tk.X, padx=10, pady=10)  
         canvas = tk.Canvas(frame, width=250, height=275, highlightthickness = 1, highlightbackground = 'black')
@@ -313,17 +287,15 @@ class DTViewer:
         y_pos = 25
         canvas.create_text(125, y_pos, text="Potential Sell", font=("Arial", 16), anchor = "center")
         y_pos += 25
-        canvas.create_text(125, y_pos, text=f"Current RSI: {rsi_info['current_rsi']:.2f}", anchor = "center")
+        canvas.create_text(125, y_pos, text=f"Current RSI: {rsi:.2f}", anchor = "center")
         y_pos += 25
-        canvas.create_text(125, y_pos, text=f"Current Price: ${rsi_info['current_price']:.2f}", anchor = "center")
+        canvas.create_text(125, y_pos, text=f"Current Price: ${current_price:.2f}", anchor = "center")
         y_pos += 25
-        canvas.create_text(125, y_pos, text=f"Estimated price at RSI 30: ${rsi_info['price_at_rsi_30']:.2f}", anchor = "center")
+        canvas.create_text(125, y_pos, text=f"RSI Calc Range: ({rsi - 5:.2f}, {rsi + 5:.2f})", anchor = "center")
         y_pos += 25
-        canvas.create_text(125, y_pos, text=f"Estimated price at RSI 70: ${rsi_info['price_at_rsi_70']:.2f}", anchor = "center")
+        canvas.create_text(125, y_pos, text=f"Stop Loss: ${stop_l:.2f}", anchor = "center")
         y_pos += 25
-        canvas.create_text(125, y_pos, text=f"Stop Price: ${rsi_info['current_price']*(stop_p):.2f}", anchor = "center")
-        y_pos += 25
-        canvas.create_text(125, y_pos, text=f"Sell Price: ${rsi_info['price_at_rsi_70']:.2f}", anchor = "center")
+        canvas.create_text(125, y_pos, text=f"Stop: ${stop:.2f} Limit: ${limit:.2f}")
         y_pos += 25
         canvas.create_text(125, y_pos, text=f"Estimated Gain Per Day: {gain:.4f}%", anchor = "center")
         y_pos += 25
