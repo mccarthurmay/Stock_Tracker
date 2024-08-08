@@ -79,7 +79,7 @@ class DTCalc:
             events_per_day = (6.5 * 60) / turnover  # Events per day
             value_per_day = (1+expected)**events_per_day
             gain_per_day = (value_per_day - 1) * 100
-            return gain_per_day
+            return gain_per_day, p_gain, p_gain
 
 class DTData:
     def __init__(self):
@@ -119,18 +119,23 @@ class DTData:
     def Average_Time(self, lst): 
         return (sum(td.total_seconds() for td in lst) / len(lst)) / 60  # Changed to minutes
 
-    def process_ticker(self, ticker, ltr, ht):
+    
+
+    def limit(self, tick, rsi_range):
+        stock_list = tick
+        ltr_list = rsi_range
+        #ltr_list = [(65, 70), (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
+        ht = 70
         results = {
             'n_d': [], 'd_i': [], 'd_d': [],
             'd_d_value': [], 'd_i_value': [], 'n_d_value': [],
             'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': []
         }
         
+            
         # Calculate RSI, retrieve entire dataframe for 5 days with 1-minute intervals
-        rsi, _, df = self.data_calc.rsi_base(ticker, '5d', '1m')
-
-        lows_and_highs = self.find_lows_and_highs(rsi, df, ltr, ht)
-        
+        rsi, _, df = self.data_calc.rsi_base(tick, '5d', '1m')
+        lows_and_highs = self.find_lows_and_highs(rsi, df, rsi_range, ht)
         for low_date, low_value, high_date, high_value in lows_and_highs:
             stock_data = df['Close'].loc[low_date:high_date]
             rsi_price = stock_data.iloc[0]
@@ -152,63 +157,35 @@ class DTData:
                 results['d_d_value'].append(round(p_increase, 2))
                 results['d_d_temp'].append(round(p_decrease, 2))
             results['avg_turnover'].append((high_date - low_date).total_seconds() / 60)  # Convert to minutes
+        
+        d_d = results['d_d']
+        d_d_value = results['d_d_value']
+        d_i = results['d_i']
+        d_i_value= results['d_i_value']
+        n_d = results['n_d']
+        n_d_value =  results['n_d_value']
+        avg_turnover = results['avg_turnover']
+        d_i_temp = results['d_i_temp']
+        d_d_temp = results['d_d_temp']
 
-        return results
-
-    def limit(self, tick, rsi_range):
-        stock_list = tick
-        ltr_list = rsi_range
-        #ltr_list = [(65, 70), (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
-        ht = 70
-
-        for ltr in ltr_list:
-            all_results = {
-                'n_d': [], 'd_i': [], 'd_d': [],
-                'd_d_value': [], 'd_i_value': [], 'n_d_value': [],
-                'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': []
-            }
-            
-            process_ticker_partial = partial(self.process_ticker, ltr=ltr, ht=ht)
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_ticker = {executor.submit(process_ticker_partial, ticker): ticker for ticker in stock_list}
-                for future in concurrent.futures.as_completed(future_to_ticker):
-                    ticker = future_to_ticker[future]
-                    try:
-                        result = future.result()
-                        for key in all_results:
-                            all_results[key].extend(result[key])
-                    except Exception as e:
-                        print(f'{ticker} generated an exception: {e}')
-
-            print(ltr)
-            d_d = all_results['d_d']
-            d_d_value = all_results['d_d_value']
-            d_i = all_results['d_i']
-            d_i_value= all_results['d_i_value']
-            n_d = all_results['n_d']
-            n_d_value =  all_results['n_d_value']
-            avg_turnover = all_results['avg_turnover']
-            d_i_temp = all_results['d_i_temp']
-            d_d_temp = all_results['d_d_temp']
-
-            d_d_mean, d_d_ci = self.data_calc.calculate_ci(d_d_value)
-            d_i_mean, d_i_ci = self.data_calc.calculate_ci(d_i_value)
-            n_d_mean, n_d_ci = self.data_calc.calculate_ci(n_d_value)
-            d_i_temp_mean, d_i_temp_ci = self.data_calc.calculate_ci(d_i_temp)
-            d_d_temp_mean, d_d_temp_ci = self.data_calc.calculate_ci(d_d_temp)
-            
-            turnover_mean, turnover_ci = self.data_calc.calculate_ci(all_results['avg_turnover']) if all_results['avg_turnover'] else None
-            gain = self.data_calc.calc(len(all_results['d_d']), (len(all_results['d_i']) + len(all_results['n_d'])), d_i_temp_mean, d_i_mean , turnover_mean)
-            #print("Decrease vs Increase")
-            #print(f"{len(all_results['d_d'])} vs {len(all_results['d_i']) + len(all_results['n_d'])}")
-            #print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
-            #print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
-            #print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
-            #print(f"Turnover CI: {turnover_mean:.2f} minutes (CI: {turnover_ci})")
-            #print(f"Gain: {gain:.4f}%")
-            #print("\n" + "="*200 + "\n")
-            return d_i_temp_mean, gain, turnover_mean, d_i_mean, d_i_ci
+        d_d_mean, d_d_ci = self.data_calc.calculate_ci(d_d_value)
+        d_i_mean, d_i_ci = self.data_calc.calculate_ci(d_i_value)
+        n_d_mean, n_d_ci = self.data_calc.calculate_ci(n_d_value)
+        d_i_temp_mean, d_i_temp_ci = self.data_calc.calculate_ci(d_i_temp) 
+        d_d_temp_mean, d_d_temp_ci = self.data_calc.calculate_ci(d_d_temp)
+        
+        turnover_mean, turnover_ci = self.data_calc.calculate_ci(results['avg_turnover']) if results['avg_turnover'] else None
+        gain, p_pos, wl = self.data_calc.calc(len(results['d_d']), (len(results['d_i']) + len(results['n_d'])), d_i_temp_ci[0], d_i_mean , turnover_mean) #changed d_i_temp_mean for d_i_temp_ci[0]
+        
+        #print("Decrease vs Increase")
+        #print(f"{len(all_results['d_d'])} vs {len(all_results['d_i']) + len(all_results['n_d'])}")
+        #print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
+        #print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
+        #print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
+        #print(f"Turnover CI: {turnover_mean:.2f} minutes (CI: {turnover_ci})")
+        #print(f"Gain: {gain:.4f}%")
+        #print("\n" + "="*200 + "\n")
+        return d_i_temp_mean, gain, turnover_mean, d_i_mean, d_i_ci, d_i_temp_ci, p_pos, wl
 
 class DTManager:
     def __init__(self):
@@ -224,21 +201,21 @@ class DTManager:
             #messagebox.showinfo("RSI Information", f"{rsi[-1]:.2f}")
             #rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
             #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
-            rsi_range = [(int(rsi[-1] - 5), int(rsi[-1] + 5))] #opt to switch to automatic 
-            stop, gain, time, p_increase, ci_increase = self.data_manager.limit(ticker, rsi_range)
-            stop_l = (1 - stop / 100) * current_price
+            rsi_range = (int(rsi[-1] - 5), int(rsi[-1] + 5)) #opt to switch to automatic 
+            stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl = self.data_manager.limit(ticker, rsi_range)
+            stop_l = (1 - ci_decrease[0] / 100) * current_price
             stop = (1 + (ci_increase[0]/100)) * current_price # lower ci 
             limit = (1 + (p_increase/100)) * current_price # average
             print(f"Stop Loss: ${stop_l}")
             print(f"Stop: ${stop} Limit: ${limit}")
-            return rsi[-1], current_price, stop_l, gain, time, stop, limit
+            return rsi[-1], current_price, stop_l, gain, time, stop, limit, wl
             
         else:
             c_rsi = rsi[-1]
             if c_rsi < 65:
-                rsi_range = [(int(c_rsi- 5), int(c_rsi + 5))]
-                stop, gain, time, p_increase = self.data_manager.limit(ticker, rsi_range)
-                return rsi[-1], ticker, gain
+                rsi_range = (int(c_rsi- 5), int(c_rsi + 5))
+                stop, gain, time, p_increase, ci_increase, ci_decrease, p_pos, wl = self.data_manager.limit(ticker, rsi_range)
+                return c_rsi, ticker, gain, p_pos
             else:
                 pass
         
@@ -246,22 +223,23 @@ class DTManager:
     def find(self):
         with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
             stock_list = stock_file.read().split('\n')
-        
-        print(stock_list)
 
         def process_ticker(ticker):
-            print(ticker)
             try:
-                rsi, ticker, gain = self.main(ticker, range=False)
-                return (round(gain, 2), ticker, round(rsi, 0))
-            except:
+                rsi, ticker, gain, p_pos = self.main(ticker, range=False)
+                return round(gain, 2), f"Ticker: {ticker}", f"RSI: {round(rsi, 0)}", f"%: {round(p_pos, 2)}"
+            except Exception as e: #occurs for index and if ticker is above 65
                 return None
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             results = list(executor.map(process_ticker, stock_list))
 
-        full = [result for result in results if result is not None]
-        messagebox.showinfo(title="RSI", message=sorted(full))
+        # Filter out None values before sorting
+        results = [result for result in results if result is not None]
+
+        sorted_full = sorted(results)
+        messagebox.showinfo(title="RSI", message=sorted_full)
+        print(sorted_full)
 
 class DTViewer:
     def __init__(self, root):
@@ -275,10 +253,10 @@ class DTViewer:
         if task == '1':
             self.dt_manager.find()
         ticker = simpledialog.askstring("Input", "Ticker: ").strip()
-        rsi, current_price, stop_l, gain, time, stop, limit = self.dt_manager.main(ticker)
-        self.ResultFrame(rsi, current_price, stop_l, gain, time, stop, limit)
+        rsi, current_price, stop_l, gain, time, stop, limit, wl = self.dt_manager.main(ticker)
+        self.ResultFrame(rsi, current_price, stop_l, gain, time, stop, limit, wl)
 
-    def ResultFrame(self, rsi, current_price, stop_l, gain, time, stop, limit):
+    def ResultFrame(self, rsi, current_price, stop_l, gain, time, stop, limit, wl):
         frame = tk.Frame(self.root) 
         frame.pack(fill=tk.X, padx=10, pady=10)  
         canvas = tk.Canvas(frame, width=250, height=275, highlightthickness = 1, highlightbackground = 'black')
@@ -291,8 +269,6 @@ class DTViewer:
         y_pos += 25
         canvas.create_text(125, y_pos, text=f"Current Price: ${current_price:.2f}", anchor = "center")
         y_pos += 25
-        canvas.create_text(125, y_pos, text=f"RSI Calc Range: ({rsi - 5:.2f}, {rsi + 5:.2f})", anchor = "center")
-        y_pos += 25
         canvas.create_text(125, y_pos, text=f"Stop Loss: ${stop_l:.2f}", anchor = "center")
         y_pos += 25
         canvas.create_text(125, y_pos, text=f"Stop: ${stop:.2f} Limit: ${limit:.2f}")
@@ -300,4 +276,8 @@ class DTViewer:
         canvas.create_text(125, y_pos, text=f"Estimated Gain Per Day: {gain:.4f}%", anchor = "center")
         y_pos += 25
         canvas.create_text(125, y_pos, text=f"Estimated Turnover Time: {time:.0f} minutes", anchor = "center")
+        y_pos += 25
+        canvas.create_text(125, y_pos, text=f"RSI Calc Range: ({rsi - 5:.2f}, {rsi + 5:.2f})", anchor = "center")
+        y_pos += 25
+        canvas.create_text(125, y_pos, text=f"Win/Loss Percentage: {wl:.1f}%", anchor = "center")
 
