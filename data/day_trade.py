@@ -196,8 +196,8 @@ class DTManager:
         rsi, current_price, df = self.calc.rsi_base(ticker)
         
         if range == True:
-            print(f"Current RSI: {rsi[-1]:.2f}")
-            print(f"Current Price: ${current_price:.2f}")
+            #print(f"Current RSI: {rsi[-1]:.2f}")
+            #print(f"Current Price: ${current_price:.2f}")
             #messagebox.showinfo("RSI Information", f"{rsi[-1]:.2f}")
             #rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
             #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
@@ -206,8 +206,8 @@ class DTManager:
             stop_l = (1 - ci_decrease[0] / 100) * current_price
             stop = (1 + (ci_increase[0]/100)) * current_price # lower ci 
             limit = (1 + (p_increase/100)) * current_price # average
-            print(f"Stop Loss: ${stop_l}")
-            print(f"Stop: ${stop} Limit: ${limit}")
+            #print(f"Stop Loss: ${stop_l}")
+            #print(f"Stop: ${stop} Limit: ${limit}")
             return rsi[-1], current_price, stop_l, gain, time, stop, limit, wl
             
         else:
@@ -223,11 +223,12 @@ class DTManager:
     def find(self):
         with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
             stock_list = stock_file.read().split('\n')
-
+        
+        #stock_list = ["AAPL", "UNH", "CEG", "OXY", "WDC", "LLY", "WBD", "SNPS", "OKE", "NDAQ", "AMZN"]
         def process_ticker(ticker):
             try:
                 rsi, ticker, gain, p_pos = self.main(ticker, range=False)
-                return round(gain, 2), f"Ticker: {ticker}", f"RSI: {round(rsi, 0)}", f"%: {round(p_pos, 2)}"
+                return round(gain, 2), ticker, round(rsi, 0), round(p_pos, 2)
             except Exception as e: #occurs for index and if ticker is above 65
                 return None
 
@@ -238,8 +239,8 @@ class DTManager:
         results = [result for result in results if result is not None]
 
         sorted_full = sorted(results)
-        messagebox.showinfo(title="RSI", message=sorted_full)
-        print(sorted_full)
+        
+        return sorted_full
 
 class DTViewer:
     def __init__(self, root):
@@ -251,7 +252,9 @@ class DTViewer:
     def run(self):
         task = simpledialog.askstring("Input", "Find best stock (1) or Run (2)?: ").strip()
         if task == '1':
-            self.dt_manager.find()
+            results = self.dt_manager.find()
+            messagebox.showinfo(title="RSI", message=results)
+            print(results)
         ticker = simpledialog.askstring("Input", "Ticker: ").strip()
         rsi, current_price, stop_l, gain, time, stop, limit, wl = self.dt_manager.main(ticker)
         self.ResultFrame(rsi, current_price, stop_l, gain, time, stop, limit, wl)
