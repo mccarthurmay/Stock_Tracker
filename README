@@ -25,6 +25,15 @@ Todo:
     - currently working, low accuracy at more than "likelihood to reach before 10 days"
         - higher accuracy the lower the days
 
+9. Add automatic trading (paper for now) using Alpaca
+
+10. Separate modules in main.py (day trade and old experiment) for user choice
+
+11. Create a website to host instead of GUI - use django, learn off coursera
+
+
+
+
 
 Done:
 1. absolute low project 
@@ -46,14 +55,14 @@ Done:
 
 8. completely rework/organize code
 
-
+3. various bugs in main with code rework
 
 
 
 Bugs:
 1. main.py two windows when clicking "load"
 2. shortrate window not displaying correctly
-3. various bugs in main with code rework
+
 
 
 Notes:
