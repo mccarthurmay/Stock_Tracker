@@ -29,19 +29,29 @@ except:
 def process_entry(entry):
     #Set parameters
     ticker = entry[1]
-    current_price = yf.Ticker(ticker).info['currentPrice']
+    rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
     buy_stop = current_price * 1.001
+    equity = float(account.equity)
+    quantity = round((float(equity)/10) / current_price, 0) - 1
+    print(quantity)
+    stp = round(stop,2)
+    lmt = round(limit,2)
+    stp_l = round(stop_l,2)
 
     #Buy order
     buy_order = api.submit_order(   # buy
         symbol = ticker,
-        qty = 1,
+        qty = quantity,
         side = 'buy',
-        type = 'stop_limit',
-        stop_price = current_price,
-        limit_price = round(buy_stop,2),
+        type = 'market',
         time_in_force = 'gtc',
-    )
+        order_class = 'bracket',
+        take_profit={
+                #'stop_price': stp,
+                'limit_price': stp
+            },
+        stop_loss={'stop_price': stp_l}
+        ) 
 
     #Check if order was filled
     order_filled = False       # check if this is needed
@@ -58,38 +68,13 @@ def process_entry(entry):
 
     #When order is filled:       
     if order_filled:
-        #Set Parameters
-        rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
-        cash = account.cash
-        quantity = round((float(cash)/10) / current_price, 2)
-
-        stop = round(stop,2)
-        limit = round(limit,2)
-        stop_l = round(stop_l,2)
-
-        #Sell orders
-        api.submit_order(   # stop loss
-            symbol = ticker,
-            qty = 1,
-            side = 'sell',
-            type = 'stop',
-            stop_price = stop_l,
-            time_in_force = 'gtc'
-        )
-        api.submit_order(   # trailing stop
-            symbol = ticker,
-            qty = 1,
-            side = 'sell',
-            type = 'trailing_stop',
-            trail_price = stop,
-            limit_price = limit,
-            time_in_force = 'gtc'
-        )
+        pass
 
 def get_open_positions():
     positions = api.list_positions()
     return {position.symbol for position in positions}
 
+# Close orders once sold
 def close_all_orders(ticker):
     orders = api.list_orders(status='open', symbols=[ticker])
     for order in orders:
@@ -101,11 +86,14 @@ def close_all_orders(ticker):
 def monitor_position(ticker, position_queue):
     while True:
         try:
+            # Test if position exists
             position = api.get_position(ticker)
+            # If position dne, close all orders for ticker, add to queue
             if position is None:
                 close_all_orders(ticker)
                 position_queue.put(ticker)
-                break
+                break #runs until orders closed
+        #Error handling
         except Exception as e:
             if 'position does not exist' in str(e).lower():
                 close_all_orders(ticker)
@@ -124,10 +112,15 @@ def run():
         futures = {}
 
         while True:
+            # Runs when there are less than 10 positions
             while len(futures) < max_positions:
-                results = dt.find()
-                results.sort(key=lambda x: x[0], reverse=True)
-
+                # Runs results each time to make sure data is up to date
+                results = dt.find()  # Prevent 'unlisted' error
+                results.sort(key=lambda x: x[3], reverse=True)
+                print(results)
+                # Creates a two threads
+                    # - one for each ticker's order (wait until filled)
+                    # - one for portfolio to be monitored for the ticker (if )
                 for entry in results:
                     ticker = entry[1]
                     if ticker not in open_positions and ticker not in futures:
@@ -135,13 +128,16 @@ def run():
                         futures[ticker] = future
                         executor.submit(monitor_position, ticker, position_queue)
                         break
-
+            
+            # Runs when portfolio is full
+                # - Goes through queue and removes depreciated tickers from all threads
             closed_position = position_queue.get()
             if closed_position in futures:
                 del futures[closed_position]
             if closed_position in open_positions:
                 open_positions.remove(closed_position)
 
+            # Remove completed futures
             completed_futures = [ticker for ticker, future in futures.items() if future.done()]
             for ticker in completed_futures:
                 del futures[ticker]
