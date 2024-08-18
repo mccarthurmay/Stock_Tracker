@@ -11,9 +11,13 @@ Main.py is not currently updated to support automatic paper trading. Run "run.py
 
 Within "commands", "run (old)" is the original purpose of this application. 
 
+rsi_analysis.py analyzes % gain of stocks over the next year based on RSI ranges. 
+- lines 134 and 136
+   - line 134 is where you can set it to run on specific stocks (eg. comment out 133 + 134, add a line that says "stock_list = ['GM']"
+   - line 136 is where you can set your desired RSI range
 
-
-
+min_rsi.py is similar to rsi_analysis.py, except it was configured to run with day_trade.py / paper.py
+- lines 140, 150 
 
 
 
