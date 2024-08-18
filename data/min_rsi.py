@@ -1,7 +1,7 @@
 import yfinance as yf
 from datetime import date, timedelta
 from data.database import open_file, close_file
-from data.analysis import rsi_calc, sell, rsi_base
+from data.analysis import RSIManager
 import os
 import pandas as pd
 import concurrent.futures
@@ -13,7 +13,9 @@ from scipy import stats
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-def rsi_base(ticker, period='7d', interval='1m'):
+
+
+def rsi_base(ticker, period='5d', interval='1m'):
     ticker = yf.Ticker(ticker)
     df = ticker.history(interval=interval, period=period)
     
@@ -142,8 +144,10 @@ class ab_lowManager:
         return results
 
     def limit(self, tick, rsi_range):
+        #with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
+        #    stock_list = stock_file.read().split('\n')
         stock_list = tick
-        ltr_list = rsi_range
+        ltr_list = [(40, 50)]
         #ltr_list = [(65, 70), (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
         ht = 70
 

@@ -132,6 +132,7 @@ class ab_lowManager:
     def limit(self):
         with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
             stock_list = stock_file.read().split('\n')
+        #stock_list = ['GM']
         ltr_list = [(65, 70), (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
         #ltr_list = [(45, 47.5), (47.5, 50)]
         ht = 70
