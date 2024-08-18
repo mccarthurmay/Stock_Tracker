@@ -101,19 +101,19 @@ class CommandsWindow(GlobalInit):
         self.root.title = "Commands"
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text="Run (old)", command = self.run).pack(pady=5)
-        tk.Label(root, text="Check settings, update portfolios, update databases, run short and winrate experiments.", font = ("Arial", 10)).pack(pady=0)
+        tk.Label(self.root, text="Check settings, update portfolios, update databases, run short and winrate experiments.", font = ("Arial", 10)).pack(pady=0)
         tk.Button(self.root, text="Update", command=self.update).pack(pady=5)
-        tk.Label(root, text="Choose a database to update.", font = ("Arial", 10)).pack(pady=0)
+        tk.Label(self.root, text="Choose a database to update.", font = ("Arial", 10)).pack(pady=0)
         tk.Button(self.root, text="Update W/S", command=self.winshort).pack(pady=5)
-        tk.Label(root, text="Update winrate/shortrate experiment.", font = ("Arial", 10)).pack(pady=0)
+        tk.Label(self.root, text="Update winrate/shortrate experiment.", font = ("Arial", 10)).pack(pady=0)
         tk.Button(self.root, text="RSI", command=self.rsi).pack(pady=5)
-        tk.Label(root, text="Find historical/current RSI of any ticker.", font = ("Arial", 10)).pack(pady=0)
+        tk.Label(self.root, text="Find historical/current RSI of any ticker.", font = ("Arial", 10)).pack(pady=0)
         tk.Button(self.root, text="RSI Accuracy", command=self.rsi_acc).pack(pady=5)
-        tk.Label(root, text="Check how well RSI fits with stock trend (not proven to be effective for analysis).", font = ("Arial", 10)).pack(pady=0)
+        tk.Label(self.root, text="Check how well RSI fits with stock trend (not proven to be effective for analysis).", font = ("Arial", 10)).pack(pady=0)
         tk.Button(self.root, text="RSI Turnover", command=self.rsi_turn).pack(pady=5)
-        tk.Label(root, text="Find average turnover rate (time from 30 rsi to 70 rsi).", font = ("Arial", 10)).pack(pady=0)
+        tk.Label(self.root, text="Find average turnover rate (time from 30 rsi to 70 rsi).", font = ("Arial", 10)).pack(pady=0)
         tk.Button(self.root, text="Moving Average", command = self.MovingAverage).pack(pady=5)
-        tk.Label(root, text="Show moving averages of stock (20 day / 50 day).", font = ("Arial", 10)).pack(pady=0)
+        tk.Label(self.root, text="Show moving averages of stock (20 day / 50 day).", font = ("Arial", 10)).pack(pady=0)
         tk.Button(self.root, text="Machine Learning Prediction", command = self.MachineLearning).pack(pady=5)
         tk.Label(root, text="Not currently working.", font = ("Arial", 10)).pack(pady=0)
         tk.Button(self.root, text="Back", command=self.back).pack(pady=10)
@@ -122,6 +122,7 @@ class CommandsWindow(GlobalInit):
 
     def run(self):
         #Run settings/winrate/shortrate
+        print("pressed")
         self.settings_manager.checkSettings()
         self.winrate_manager.checkWinrate()
         self.shortrate_manager.checkShortrate()
@@ -190,8 +191,6 @@ class CommandsWindow(GlobalInit):
     def back(self):
         self.root.destroy()
 
-    def run(self):
-        self.root.mainloop()
         
 class ManageDatabases(GlobalInit):
     def __init__(self, root):

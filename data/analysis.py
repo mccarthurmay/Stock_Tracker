@@ -74,7 +74,7 @@ class AnalysisManager:
 
 
     #BUY/SELL BOOL
-    def buy(rsi, percent_under):
+    def buy(self, rsi, percent_under):
         if percent_under > -1 and rsi < 31:
             return True
         else:
@@ -85,19 +85,19 @@ class AnalysisManager:
                 
                 
 
-    def short(rsi, percent_over):
+    def short(self, rsi, percent_over):
         if percent_over > -1 and rsi > 79:
             return True
         else:
             return False
 
-    def sell(rsi):
+    def sell(self, rsi):
         if rsi > 69:
             return True
         else:
             return False
 
-    def short_sell(rsi): #should switch to something else
+    def short_sell(self, rsi): #should switch to something else
         if rsi < 31:
             return True
         else:
@@ -165,9 +165,9 @@ class RSIManager:
     def __init__(self):
         self.CI = CIManager()
 
-    def rsi_base(self, ticker, time):
+    def rsi_base(self, ticker, time, interval = "1d"):
         ticker = yf.Ticker(ticker)
-        df = ticker.history(interval="1d", period= time)
+        df = ticker.history(interval=interval, period= time)
 
         change = df['Close'].diff()
         change.dropna(inplace=True)
@@ -195,7 +195,8 @@ class RSIManager:
         elif date != None:
             return (round(rsi[date]))
         else:
-            return (round(rsi[-1]))
+            rsi = round(rsi[-1])
+            return rsi
         
 
     def rsi_accuracy(self, ticker):
