@@ -4,23 +4,20 @@ from data.paper import run
 from alpaca.data.historical import CryptoHistoricalDataClient
 from alpaca.data.requests import CryptoBarsRequest
 from alpaca_trade_api.rest import REST, TimeFrame
-from data.min_rsi import ab_lowManager as ab_lowM
-from data.rsi_analysis import ab_lowManager as ab_low
 import os
 from config import *
-from data.day_trade import DTManager
+from data.day_trade import DTManager, DTCalc, DTData
 import time as tm
 import yfinance as yf
 import concurrent.futures
 import keyboard
 from queue import Queue
-dt = DTManager()
-ab_min = ab_lowM()
-ab = ab_low()
+dt = DTData()
+tick = "ANSS"
+range = (40,50)
+dt.limit(tick, range)
+#run()
 
-run()
-#ab_min.limit()  #Runs min_rsi analysis
-#ab.limit() #Runs rsi_analysis analysis
 
 
 
@@ -31,4 +28,8 @@ run()
 #restart with win rate at 98072
 
 
-#restart 97276, -335 for td
+from data.min_rsi import ab_lowManager
+range = [(40,50)]
+ab = ab_lowManager()
+
+ab.limit(tick, range)
