@@ -7,11 +7,12 @@ from data.day_trade import DTManager, DTCalc
 import time as tm
 import yfinance as yf
 import concurrent.futures
+from data.analysis import RSIManager
 import keyboard
 from queue import Queue
 dt = DTManager()
 dtc = DTCalc()
-
+rsim = RSIManager()
 
 
         
@@ -148,7 +149,7 @@ def run():
 
             if num_position < max_positions:
                 results = dt.find()
-                results.sort(key=lambda x: x[1], reverse=True)
+                results.sort(key=lambda x: x[0], reverse=True)
                 limit_results = results[30:]
                 print(limit_results)
 
@@ -166,7 +167,8 @@ def run():
                     ticker = entry[1]
                     i += 1
                     print(entry[3], entry[2], ticker, i)
-                    if ticker not in open_positions and len(futures) < max_positions and ticker not in futures:
+                    ma, _, cnvrg = rsim.MA(ticker, graph = False, input_interval = "1m", input_period = "7d")
+                    if ticker not in open_positions and len(futures) < max_positions and ticker not in futures and ma == "BULL" and cnvrg == False:
                         future = executor.submit(process_entry, entry)
                         futures[ticker] = future
                         print(len(futures), "futures")
