@@ -146,12 +146,7 @@ def run():
                 open_positions, num_position = get_open_positions()
                 print(f"Waiting for sell signal. Position # = {num_position}")
                 tm.sleep(30)
-
-            if num_position < max_positions:
-                results = dt.find()
-                results.sort(key=lambda x: x[0], reverse=True)
-                limit_results = results[30:]
-                print(limit_results)
+                
 
 
             # Runs when there are less than 10 positions
@@ -162,13 +157,45 @@ def run():
                 i = 0
                 open_positions, num_position = get_open_positions()
 
+                results = dt.find()
+                results.sort(key=lambda x: x[0], reverse=True)
+                limit_results = results
+                print(limit_results)
 
                 for entry in limit_results:
                     ticker = entry[1]
                     i += 1
                     print(entry[3], entry[2], ticker, i)
-                    ma, _, cnvrg = rsim.MA(ticker, graph = False, input_interval = "1m", input_period = "7d")
-                    if ticker not in open_positions and len(futures) < max_positions and ticker not in futures and ma == "BULL" and cnvrg == False:
+                    try:
+                        ma_l, _, cnvrg_l = rsim.MA(ticker, 
+                                                   graph = False, 
+                                                   input_interval = "1m", 
+                                                   input_period = "7d",
+                                                   span1 = 50,
+                                                   span2 = 200
+                                                   )
+                        ma_s, _, cnvrg_s = rsim.MA(ticker, 
+                                                   graph = False, 
+                                                   input_interval = "1m", 
+                                                   input_period = "7d",
+                                                   span1 = 20,
+                                                   span2 = 50
+                                                   )
+                        print(ma, cnvrg) 
+                    except:
+                        ma = "None"
+                        cnvrg = None
+
+                    conditions = [
+                        ticker not in open_positions,
+                        len(futures) < max_positions,
+                        ticker not in futures,
+                        ma_l == "BULL",
+                        cnvrg_l == False,
+                        ma_s == "BULL",
+                        cnvrg_s == False
+                        ]
+                    if all(conditions):
                         future = executor.submit(process_entry, entry)
                         futures[ticker] = future
                         print(len(futures), "futures")
@@ -176,8 +203,9 @@ def run():
                         tm.sleep(5)
                         open_positions, num_position = get_open_positions()
                         print(f"Inner loop, num = {num_position}")
+                    if num_position > max_positions:
                         break
-
+                    
 
 
 
