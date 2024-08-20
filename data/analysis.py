@@ -279,11 +279,11 @@ class RSIManager:
         plt.show()
 
 
-    def MA(self, ticker, graph):
-        df = yf.Ticker(ticker).history(period="2y")
+    def MA(self, ticker, graph, input_interval = "1d", input_period = "2y", span1 = 20, span2 = 50 ):
+        df = yf.Ticker(ticker).history(interval = input_interval, period= input_period)
         MA = pd.DataFrame()
-        MA['ST'] = df['Close'].ewm(span=20, adjust=False).mean() 
-        MA['LT'] = df['Close'].ewm(span=50, adjust=False).mean()
+        MA['ST'] = df['Close'].ewm(span=span1, adjust=False).mean() 
+        MA['LT'] = df['Close'].ewm(span=span2, adjust=False).mean()
         MA.dropna(inplace=True)
         converging = False
         latest_date = []
