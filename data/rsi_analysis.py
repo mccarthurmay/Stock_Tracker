@@ -1,7 +1,7 @@
 import yfinance as yf
 from datetime import date, timedelta
 from data.database import open_file, close_file
-from data.analysis import rsi_calc, sell, rsi_base
+from data.analysis import RSIManager
 import os
 import pandas as pd
 import concurrent.futures
@@ -43,6 +43,7 @@ def calculate_ci(data):
 
 class ab_lowManager:
     def __init__(self):
+        rsi = RSIManager()
         pass
     #Finds 
     def find_lows_and_highs(self, rsi, df, ltr=(20, 30), ht=70):
@@ -99,7 +100,7 @@ class ab_lowManager:
         }
         
         # Calculate RSI, retrieve entire dataframe
-        rsi, _, df = rsi_base(ticker, '2y') 
+        rsi, _, df = rsi.rsi_base(ticker, '2y') 
 
         lows_and_highs = self.find_lows_and_highs(rsi, df, ltr, ht)
         
