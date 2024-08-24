@@ -18,10 +18,60 @@ import random
 
 
 class DTCalc:
+    def alpha(self, ticker):
+        import requests
+        import pandas as pd
+        from datetime import datetime, time, timedelta
+        import pytz
+
+        API_KEY = os.getenv("ALPHA_API_KEY_ID")
+        SYMBOL = ticker
+        INTERVAL = '1min'
+
+        url = f'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={SYMBOL}&interval={INTERVAL}&outputsize=full&apikey={API_KEY}'
+
+        response = requests.get(url)
+        data = response.json()
+
+
+        time_series = data.get(f'Time Series ({INTERVAL})', {})
+
+
+        df_data = []
+        eastern_tz = pytz.timezone('US/Eastern')
+        market_open = time(9, 30)
+        market_close = time(16, 0)
+        trading_period= datetime.now(eastern_tz) - timedelta(days=360) 
+
+
+
+        for timestamp, values in time_series.items():
+            dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+            dt_eastern = eastern_tz.localize(dt)
+            
+            # Check if the time is within market hours and within the last 10 trading days
+            if market_open <= dt_eastern.time() < market_close and dt_eastern > trading_period:
+                df_data.append({
+                    'Datetime': dt_eastern,
+                    'Close': float(values['4. close']),
+                    'Volume': int(values['5. volume'])
+                })
+
+        # Copy yFinance Dataframe
+        df = pd.DataFrame(df_data)
+
+        # Set Datetime as index
+        df.set_index('Datetime', inplace=True)
+        df.sort_index(ascending=True, inplace=True)
+        print(df)
+        return df
+
     def rsi_base(self, ticker, period='7d', interval='1m'):
-        ticker = yf.Ticker(ticker)
-        df = ticker.history(interval=interval, period=period)
-        
+        #ticker = yf.Ticker(ticker)
+        #df = ticker.history(interval=interval, period=period)
+        df = self.alpha(ticker)
+
+
         change = df['Close'].diff()
         change_up = change.copy()
         change_down = change.copy()
@@ -211,8 +261,8 @@ class DTManager:
             #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
             rsi_range = (int(rsi[-1] - 5), int(rsi[-1] + 5)) #opt to switch to automatic 
             stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
-            #stop_l = (1 - ci_decrease[0] / 100) * current_price
-            stop_l = (1 + avg_decrease/100) * current_price
+            stop_l = (1 - ci_decrease[1] / 100) * current_price #lower ci of decrease
+            #stop_l = (1 + avg_decrease/100) * current_price #average decrease
             stop = (1 + (ci_increase[0]/100)) * current_price # lower ci 
             limit = (1 + (p_increase/100)) * current_price # average
             #print(f"Stop Loss: ${stop_l}")

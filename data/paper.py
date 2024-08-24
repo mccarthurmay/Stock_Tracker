@@ -38,8 +38,8 @@ def process_entry(entry):
     stp = round(stop,2)
     #stp = round((current_price * 1.002), 2)
     lmt = round(limit,2)
-    #stp_l = round(stop_l,2)
-    stp_l = round((current_price * .99),2)
+    stp_l = round(stop_l,2) #trading based on statistics
+    #stp_l = round((current_price * .99),2) #trading based on win rate
     print(current_price)
     print((stp_l - current_price) / current_price, "stpl")
     #Buy order
@@ -51,7 +51,7 @@ def process_entry(entry):
         time_in_force = 'gtc',
   #WAS CAUSING PROBLEMS PREVIOUSLY
         ) 
-    stop_order = api.submit_order(
+    stop_loss_order = api.submit_order(
         symbol=ticker,
         qty= quantity,
         side='sell',
@@ -59,13 +59,27 @@ def process_entry(entry):
         time_in_force='gtc',
         stop_price= stp_l
         )
+    
+    sell_order = api.submit_order(
+        symbol=ticker,
+        qty = quantity,
+        side = 'sell',
+        type = 'limit',
+        stop_price = stp,
+        time_in_force = 'gtc'
+    )
+    
+
+
+    
+
     #Check if order was filled
     order_filled = False       # check if this is needed
     print(f"Waiting for {ticker} to be filled.")
     while not order_filled:
         order = api.get_order(buy_order.id)
         stop_order = api.get_order(stop_order.id)
-        if order.status == 'filled' and stop_order.status == 'filled':
+        if order.status == 'filled' and stop_loss_order.status == 'filled' and sell_order == 'filled':
             order_filled = True
             fill_price = order.filled_avg_price
             print(f"{ticker} has filled.")
@@ -96,20 +110,25 @@ def monitor_position(ticker):
             # Test if position exists
             position = api.get_position(ticker)
             ###GRAB RSI, if RSI > 70, sell
-            quantity = position.qty
-            rsi, _, df = dtc.rsi_base(ticker, "7d", "1m")
-            print(ticker, rsi[-1])
-            if rsi[-1] > 70:
-                order = api.submit_order(   # buy
-                symbol = ticker,
-                qty = quantity,
-                side = 'sell',
-                type = 'market',
-                time_in_force = 'gtc',
-                )
-                print(f"{ticker} has been sold!!! Order ID: {order.id}")
-            else:
-                tm.sleep(30)
+            #quantity = position.qty
+            #rsi, _, df = dtc.rsi_base(ticker, "7d", "1m")
+            #print(ticker, rsi[-1])
+            #if rsi[-1] > 70:
+            #    close_all_orders(ticker)
+            #    order = api.submit_order(   # buy
+            #    symbol = ticker,
+            #    qty = quantity,
+            #    side = 'sell',
+            #    type = 'market',
+            #    time_in_force = 'gtc',
+            #    )
+            #    print(f"{ticker} has been sold!!! Order ID: {order.id}")
+            
+
+
+            #else:
+            #    tm.sleep(30)
+            tm.sleep(30)
             # If position dne, close all orders for ticker, add to queue
             if position is None:
                 close_all_orders(ticker)

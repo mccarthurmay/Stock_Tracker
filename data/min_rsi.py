@@ -14,11 +14,63 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 
+def alpha(ticker):
+    import requests
+    import pandas as pd
+    from datetime import datetime, time, timedelta
+    import pytz
+
+    API_KEY = os.getenv("ALPHA_API_KEY_ID")
+    SYMBOL = ticker
+    INTERVAL = '1min'
+
+    url = f'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={SYMBOL}&interval={INTERVAL}&outputsize=full&apikey={API_KEY}'
+
+    response = requests.get(url)
+    data = response.json()
+
+
+    time_series = data.get(f'Time Series ({INTERVAL})', {})
+
+
+    df_data = []
+    eastern_tz = pytz.timezone('US/Eastern')
+    market_open = time(9, 30)
+    market_close = time(16, 0)
+    trading_period= datetime.now(eastern_tz) - timedelta(days=360) 
+
+
+
+    for timestamp, values in time_series.items():
+        dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+        dt_eastern = eastern_tz.localize(dt)
+        
+        # Check if the time is within market hours and within the last 10 trading days
+        if market_open <= dt_eastern.time() < market_close and dt_eastern > trading_period:
+            df_data.append({
+                'Datetime': dt_eastern,
+                'Close': float(values['4. close']),
+                'Volume': int(values['5. volume'])
+            })
+
+    # Copy yFinance Dataframe
+    df = pd.DataFrame(df_data)
+
+    # Set Datetime as index
+    df.set_index('Datetime', inplace=True)
+    df.sort_index(ascending=True, inplace=True)
+    print(df)
+    return df
+
+
+
+
 
 def rsi_base(ticker, period='5d', interval='1m'):
-    ticker = yf.Ticker(ticker)
-    df = ticker.history(interval=interval, period=period)
-    
+    #ticker = yf.Ticker(ticker)
+    #df = ticker.history(interval=interval, period=period)
+    df = alpha("GM")
+    print(df)
     change = df['Close'].diff()
     change_up = change.copy()
     change_down = change.copy()
@@ -143,7 +195,7 @@ class ab_lowManager:
 
         return results
 
-    def limit(self, tick, rsi_range):
+    def limit(self, tick):
         #with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
         #    stock_list = stock_file.read().split('\n')
         stock_list = tick
@@ -198,7 +250,7 @@ class ab_lowManager:
             turnover_mean, turnover_ci = calculate_ci(all_results['avg_turnover']) if all_results['avg_turnover'] else None
 
             print("Decrease vs Increase")
-            print(f"{len(all_results['d_d'])} vs {len(all_results['d_i']) + len(all_results['n_d'])}")
+            print(f"{len(all_results['d_d'])} vs {len(all_results['d_i'])} + {len(all_results['n_d'])}")
             print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
             print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
             print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
