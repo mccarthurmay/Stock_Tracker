@@ -33,22 +33,15 @@ yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
 
 
 Todo:
-2. winrate project
-    - find signals on why DDOG and ADBE kept rising above 70 rsi
-
 4. ML that reads minute by minute data to predict the next half an hour                                                                                            
 
 6. Redo ml.py to predict if a stock is likely to reach 70rsi
     - currently working, low accuracy at more than "likelihood to reach before 10 days"
         - higher accuracy the lower the days
 
-9. Add automatic trading (paper for now) using Alpaca
-
-10. Separate modules in main.py (day trade and old experiment) for user choice
-
 11. Create a website to host instead of GUI - use django, learn off coursera
 
-12. Fix bug that doesn't allow for paper.py to run permanently 
+13. MORE DATA - can't accurately "predict" anything if I only have 30 points of data. alpha vantage?
 
 
 
@@ -75,6 +68,11 @@ Done:
 
 3. various bugs in main with code rework
 
+12. Fix bug that doesn't allow for paper.py to run permanently
+
+9. Add automatic trading (paper for now) using Alpaca
+
+10. Separate modules in main.py (day trade and old experiment) for user choice
 
 
 Bugs:
@@ -101,3 +99,5 @@ Depreciated Ideas:
 
 5. Probability to gain in month? (test.py, p_test2.pk)
 
+2. winrate project
+    - find signals on why DDOG and ADBE kept rising above 70 rsi
