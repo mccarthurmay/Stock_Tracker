@@ -19,7 +19,7 @@ ab_min = ab_lowM()
 ab = ab_low()
 
 run()
-#ab_min.limit()  #Runs min_rsi analysis
+#ab_min.limit("GM")  #Runs min_rsi analysis
 #ab.limit() #Runs rsi_analysis analysis
 
 
