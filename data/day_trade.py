@@ -63,7 +63,7 @@ class DTCalc:
         # Set Datetime as index
         df.set_index('Datetime', inplace=True)
         df.sort_index(ascending=True, inplace=True)
-        print(df)
+        #print(df)
         return df
 
     def rsi_base(self, ticker, period='7d', interval='1m'):

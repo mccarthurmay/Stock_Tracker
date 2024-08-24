@@ -59,7 +59,7 @@ def alpha(ticker):
     # Set Datetime as index
     df.set_index('Datetime', inplace=True)
     df.sort_index(ascending=True, inplace=True)
-    print(df)
+    #print(df)
     return df
 
 
