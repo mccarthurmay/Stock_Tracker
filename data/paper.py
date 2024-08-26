@@ -65,7 +65,7 @@ def process_entry(entry):
         qty = quantity,
         side = 'sell',
         type = 'limit',
-        stop_price = stp,
+        limit_price = stp,
         time_in_force = 'gtc'
     )
     
@@ -146,7 +146,7 @@ def monitor_position(ticker):
 
 def run():
     open_positions, num_position = get_open_positions()
-    max_positions = 10 
+    max_positions = 10
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
 
@@ -177,9 +177,10 @@ def run():
                 open_positions, num_position = get_open_positions()
 
                 results = dt.find()
+                print("Results Finished, not sort")
                 results.sort(key=lambda x: x[0], reverse=True)
                 limit_results = results
-                print(limit_results)
+                print(f"resuiltsd (% gain, ticker, rsi, % win): {limit_results} ")
 
                 for entry in limit_results:
                     ticker = entry[1]
@@ -200,10 +201,11 @@ def run():
                                                    span1 = 20,
                                                    span2 = 50
                                                    )
-                        print(ma, cnvrg) 
-                    except:
+                        print(ma_l, ma_s, cnvrg_l, cnvrg_s) 
+                    except Exception as e:
                         ma = "None"
                         cnvrg = None
+                        print("MA NOT WORK", e)
 
                     conditions = [
                         ticker not in open_positions,

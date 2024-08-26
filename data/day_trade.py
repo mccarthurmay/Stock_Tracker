@@ -1,13 +1,9 @@
 import yfinance as yf
-from datetime import date, timedelta
 from data.database import open_file, close_file
 from data.analysis import RSIManager, AnalysisManager
 import os
-
-import pandas as pd
 import concurrent.futures
 from functools import partial
-from datetime import datetime, timedelta
 import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
@@ -15,14 +11,14 @@ import matplotlib.dates as mdates
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 import random
-
+import requests
+import pandas as pd
+from datetime import datetime, time, timedelta
+import pytz
 
 class DTCalc:
     def alpha(self, ticker):
-        import requests
-        import pandas as pd
-        from datetime import datetime, time, timedelta
-        import pytz
+
 
         API_KEY = os.getenv("ALPHA_API_KEY_ID")
         SYMBOL = ticker
@@ -32,7 +28,7 @@ class DTCalc:
 
         response = requests.get(url)
         data = response.json()
-
+        print(data)
 
         time_series = data.get(f'Time Series ({INTERVAL})', {})
 
@@ -63,13 +59,50 @@ class DTCalc:
         # Set Datetime as index
         df.set_index('Datetime', inplace=True)
         df.sort_index(ascending=True, inplace=True)
-        #print(df)
+        
+        return df
+    
+    def tiingo(self, ticker):
+        API_KEY = os.getenv("TIINGO_API_KEY_ID")
+        SYMBOL = ticker
+        start_date = "2022-01-01"
+        end_date = datetime.now().strftime('%Y-%m-%d')
+
+        url = f'https://api.tiingo.com/iex/{SYMBOL}/prices?startDate={start_date}&resampleFreq=5min&columns=close,volume&token={API_KEY}'
+
+        headers = {
+            'Content-Type': 'application/json'
+        }
+        response = requests.get(url, headers=headers)
+        data = response.json()
+
+        df_data = []
+        eastern_tz = pytz.timezone('US/Eastern')
+
+        for entry in data:
+            dt = datetime.strptime(entry['date'], '%Y-%m-%dT%H:%M:%S.%fZ')
+            dt_eastern = dt.astimezone(eastern_tz)
+
+            df_data.append({
+                'Datetime': dt_eastern,
+                'Close': float(entry['close']),
+                'Volume': int(entry['volume']) if 'volume' in entry else None
+            })
+
+        # Convert to DataFrame
+        df = pd.DataFrame(df_data)
+
+        # Set Datetime as index
+        df.set_index('Datetime', inplace=True)
+        df.sort_index(ascending=True, inplace=True)
+
         return df
 
+
     def rsi_base(self, ticker, period='7d', interval='1m'):
-        #ticker = yf.Ticker(ticker)
+        yfticker = yf.Ticker(ticker)
         #df = ticker.history(interval=interval, period=period)
-        df = self.alpha(ticker)
+        df = self.tiingo(ticker)
 
 
         change = df['Close'].diff()
@@ -94,7 +127,7 @@ class DTCalc:
         
         df = df.dropna(subset=['RSI', 'Avg_Volume', 'RSI_MA', 'Volatility'])
         
-        current_price = ticker.info['currentPrice']
+        current_price = yfticker.info['currentPrice']
         return df['RSI'].values, current_price, df
 
     def calculate_ci(self, data):
@@ -226,7 +259,7 @@ class DTData:
         d_d_temp_mean, d_d_temp_ci = self.data_calc.calculate_ci(d_d_temp)
         
         turnover_mean, turnover_ci = self.data_calc.calculate_ci(results['avg_turnover']) if results['avg_turnover'] else None
-        if (len(results['d_d'])+len(results['d_i']) + len(results['n_d'])) > 30:
+        if (len(results['d_i']) + len(results['n_d'])) > 30 and len(results['d_d']) > 30:
 
             
             gain, p_pos, wl = self.data_calc.calc(len(results['d_d']), (len(results['d_i']) + len(results['n_d'])), d_i_temp_ci[0], d_i_mean , turnover_mean) #changed d_i_temp_mean for d_i_temp_ci[0]
@@ -236,7 +269,7 @@ class DTData:
             wl = None
         
         #print("Decrease vs Increase")
-        #print(f"{len(results['d_d'])} vs {len(results['d_i']) + len(results['n_d'])}")
+        print(f"{len(results['d_d'])} vs {len(results['d_i']) + len(results['n_d'])}")
         #print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
         #print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
         #print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
@@ -251,44 +284,51 @@ class DTManager:
         self.calc = DTCalc()
     
     def main(self, ticker, range = True):
-        rsi, current_price, df = self.calc.rsi_base(ticker)
-        
-        if range == True:
-            #print(f"Current RSI: {rsi[-1]:.2f}")
-            #print(f"Current Price: ${current_price:.2f}")
-            #messagebox.showinfo("RSI Information", f"{rsi[-1]:.2f}")
-            #rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
-            #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
-            rsi_range = (int(rsi[-1] - 5), int(rsi[-1] + 5)) #opt to switch to automatic 
-            stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
-            stop_l = (1 - ci_decrease[1] / 100) * current_price #lower ci of decrease
-            #stop_l = (1 + avg_decrease/100) * current_price #average decrease
-            stop = (1 + (ci_increase[0]/100)) * current_price # lower ci 
-            limit = (1 + (p_increase/100)) * current_price # average
-            #print(f"Stop Loss: ${stop_l}")
-            #print(f"Stop: ${stop} Limit: ${limit}")
-            return rsi[-1], current_price, stop_l, gain, time, stop, limit, wl
+        try:
+            rsi, current_price, df = self.calc.rsi_base(ticker)
             
-        else:
-            c_rsi = rsi[-1]
-            if c_rsi < 65:
-                rsi_range = (int(c_rsi- 5), int(c_rsi + 5))
-                stop, gain, time, p_increase, ci_increase, ci_decrease, p_pos, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
-                return c_rsi, ticker, gain, p_pos
+            if range == True:
+                #print(f"Current RSI: {rsi[-1]:.2f}")
+                #print(f"Current Price: ${current_price:.2f}")
+                #messagebox.showinfo("RSI Information", f"{rsi[-1]:.2f}")
+                #rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
+                #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
+                rsi_range = (int(rsi[-1] - 5), int(rsi[-1] + 5)) #opt to switch to automatic 
+                stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
+                stop_l = (1 - ci_decrease[1] / 100) * current_price #lower ci of decrease
+                #stop_l = (1 + avg_decrease/100) * current_price #average decrease
+                stop = (1 + (ci_increase[0]/100)) * current_price # lower ci 
+                limit = (1 + (p_increase/100)) * current_price # average
+                #print(f"Stop Loss: ${stop_l}")
+                #print(f"Stop: ${stop} Limit: ${limit}")
+                
+                return rsi[-1], current_price, stop_l, gain, time, stop, limit, wl
+                
             else:
-                pass
-        
+                c_rsi = rsi[-1]
+                #print(c_rsi)
+                if c_rsi < 65:
+                    rsi_range = (int(c_rsi- 5), int(c_rsi + 5))
+                    stop, gain, time, p_increase, ci_increase, ci_decrease, p_pos, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
+                    #print(c_rsi, ticker, gain, p_pos)
+                    return c_rsi, ticker, gain, p_pos
+                else:
+                    pass
+        except Exception as e:
+            print(f"Error in main(), {e}")
      
     def find(self):
         with open("C:/Users/Max/Desktop/Stock_Tracker/storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
             stock_list = stock_file.read().split('\n')
         
         #stock_list = ["AAPL", "UNH", "CEG", "OXY", "WDC", "LLY", "WBD", "SNPS", "OKE", "NDAQ", "AMZN"]
+        #stock_list = ["WBD"]
         def process_ticker(ticker):
             try:
                 rsi, ticker, gain, p_pos = self.main(ticker, range=False)
                 return round(gain, 2), ticker, round(rsi, 0), round(p_pos, 2) # { (predicted % gain), (ticker), (current RSI), (% of times sold for a positive value) }
             except Exception as e: #occurs for index and if ticker is above 65
+                print(f"Error in find()", {e})
                 return None
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
