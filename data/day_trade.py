@@ -17,51 +17,6 @@ from datetime import datetime, time, timedelta
 import pytz
 
 class DTCalc:
-    def alpha(self, ticker):
-
-
-        API_KEY = os.getenv("ALPHA_API_KEY_ID")
-        SYMBOL = ticker
-        INTERVAL = '1min'
-
-        url = f'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={SYMBOL}&interval={INTERVAL}&outputsize=full&apikey={API_KEY}'
-
-        response = requests.get(url)
-        data = response.json()
-        print(data)
-
-        time_series = data.get(f'Time Series ({INTERVAL})', {})
-
-
-        df_data = []
-        eastern_tz = pytz.timezone('US/Eastern')
-        market_open = time(9, 30)
-        market_close = time(16, 0)
-        trading_period= datetime.now(eastern_tz) - timedelta(days=360) 
-
-
-
-        for timestamp, values in time_series.items():
-            dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-            dt_eastern = eastern_tz.localize(dt)
-            
-            # Check if the time is within market hours and within the last 10 trading days
-            if market_open <= dt_eastern.time() < market_close and dt_eastern > trading_period:
-                df_data.append({
-                    'Datetime': dt_eastern,
-                    'Close': float(values['4. close']),
-                    'Volume': int(values['5. volume'])
-                })
-
-        # Copy yFinance Dataframe
-        df = pd.DataFrame(df_data)
-
-        # Set Datetime as index
-        df.set_index('Datetime', inplace=True)
-        df.sort_index(ascending=True, inplace=True)
-        
-        return df
-    
     def tiingo(self, ticker):
         API_KEY = os.getenv("TIINGO_API_KEY_ID")
         SYMBOL = ticker
@@ -318,7 +273,7 @@ class DTManager:
             print(f"Error in main(), {e}")
      
     def find(self):
-        with open("C:/Users/Max/Desktop/Stock_Tracker/storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
+        with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
             stock_list = stock_file.read().split('\n')
         
         #stock_list = ["AAPL", "UNH", "CEG", "OXY", "WDC", "LLY", "WBD", "SNPS", "OKE", "NDAQ", "AMZN"]
