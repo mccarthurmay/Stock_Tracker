@@ -12,7 +12,7 @@ import yfinance as yf
 import concurrent.futures
 import keyboard
 from queue import Queue
-#dt = DTData()
+dt = DTManager()
 #tick = "ANSS"
 #range = (40,50)
 #dt.limit(tick, range)
@@ -33,50 +33,57 @@ from queue import Queue
 #ab = ab_lowManager()
 
 #ab.limit(tick, range)
-
-import requests
-import pandas as pd
-from datetime import datetime, time, timedelta
-import pytz
-
-API_KEY = os.getenv("ALPHA_API_KEY_ID")
-SYMBOL = 'IBM'
-INTERVAL = '1min'
-
-url = f'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={SYMBOL}&interval={INTERVAL}&outputsize=full&apikey={API_KEY}'
-
-response = requests.get(url)
-data = response.json()
-
-
-time_series = data.get(f'Time Series ({INTERVAL})', {})
-
-
-df_data = []
-eastern_tz = pytz.timezone('US/Eastern')
-market_open = time(9, 30)
-market_close = time(16, 0)
-trading_period= datetime.now(eastern_tz) - timedelta(days=30) 
+try:
+    api = REST(
+    key_id=os.getenv("APCA_API_KEY_ID"),
+    secret_key=os.getenv("APCA_API_SECRET_KEY"),
+    base_url="https://paper-api.alpaca.markets"
+    )
+    account = api.get_account()
+except:
+    print("API Environment not set up. Please refer to 'config.py' or 'README'.")
 
 
 
-for timestamp, values in time_series.items():
-    dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-    dt_eastern = eastern_tz.localize(dt)
+def process_entry(entry):
+    #Set parameters
+    ticker = entry[1]
+    rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
+    equity = float(account.equity)
+    quantity = round((float(equity)/10) / current_price, 0) - 1
+    print(quantity)
+    stp = round(stop,2)
+    #stp = round((current_price * 1.002), 2)
+    lmt = round(limit,2)
+    stp_l = round(stop_l,2) #trading based on statistics
+    #stp_l = round((current_price * .99),2) #trading based on win rate
+    print(current_price)
+    print((stp_l - current_price) / current_price, "stpl")
+    #Buy order
+    buy_order = api.submit_order(   # buy
+        symbol = ticker,
+        qty = quantity,
+        side = 'buy',
+        type = 'market',
+        time_in_force = 'gtc',
+  #WAS CAUSING PROBLEMS PREVIOUSLY
+        ) 
+    stop_loss_order = api.submit_order(
+        symbol=ticker,
+        qty= quantity,
+        side='sell',
+        type='stop',
+        time_in_force='gtc',
+        stop_price= stp_l
+        )
     
-    # Check if the time is within market hours and within the last 10 trading days
-    if market_open <= dt_eastern.time() < market_close and dt_eastern > trading_period:
-        df_data.append({
-            'Datetime': dt_eastern,
-            'Close': float(values['4. close']),
-            'Volume': int(values['5. volume'])
-        })
+    sell_order = api.submit_order(
+        symbol=ticker,
+        qty = quantity,
+        side = 'sell',
+        type = 'limit',
+        limit_price = stp,
+        time_in_force = 'gtc'
+    )
 
-# Copy yFinance Dataframe
-df = pd.DataFrame(df_data)
-
-# Set Datetime as index
-df.set_index('Datetime', inplace=True)
-df.sort_index(ascending=True, inplace=True)
-
-print(df)
+process_entry("GM")
