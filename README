@@ -30,7 +30,7 @@ yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
 *must begin all databases containing tickers with "t_", "tickers_", or "ticker_" to be properly updated
 *must begin all portfolios with "p_" or "portfolio_" to be properly updated
 
-
+15.
 
 Todo:
 4. ML that reads minute by minute data to predict the next half an hour                                                                                            
@@ -41,9 +41,17 @@ Todo:
 
 11. Create a website to host instead of GUI - use django, learn off coursera
 
-13. MORE DATA - can't accurately "predict" anything if I only have 30 points of data. alpha vantage?
+14. Test multiple strategies, optimize income
+    - increase number of datapoints
+    - adjust ranking system (instead of % gain, winrate?)
+    - adjust moving averages
 
+15. Optimize optimize optimize
+    - scanning for stocks is incredibly slow
+        - likely api's fault, but will have to test if it's the massive calculations
+    - many overlaps with yfinance now that an api is working
 
+16. Will likely have to switch to a different trading api.
 
 
 Done:
@@ -74,6 +82,8 @@ Done:
 
 10. Separate modules in main.py (day trade and old experiment) for user choice
 
+13. MORE DATA - can't accurately "predict" anything if I only have 30 points of data. alpha vantage?
+            - using tiingo
 
 Bugs:
 1. main.py two windows when clicking "load"
