@@ -175,21 +175,23 @@ def run():
                         ma_l, _, cnvrg_l = rsim.MA(ticker, 
                                                    graph = False, 
                                                    input_interval = "1m", 
-                                                   input_period = "7d",
+                                                   input_period = "5d",
                                                    span1 = 50,
                                                    span2 = 200
                                                    )
                         ma_s, _, cnvrg_s = rsim.MA(ticker, 
                                                    graph = False, 
                                                    input_interval = "1m", 
-                                                   input_period = "7d",
+                                                   input_period = "5d",
                                                    span1 = 20,
                                                    span2 = 50
                                                    )
                         print(ma_l, ma_s, cnvrg_l, cnvrg_s) 
                     except Exception as e:
-                        ma = "None"
-                        cnvrg = None
+                        ma_l = "None"
+                        ma_s = "None"
+                        cnvrg_l = True
+                        cnvrg_s = True
                         print("MA NOT WORK", e)
 
                     conditions = [
