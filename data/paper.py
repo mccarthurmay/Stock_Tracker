@@ -48,27 +48,12 @@ def process_entry(entry):
         qty = quantity,
         side = 'buy',
         type = 'market',
+        order_class='bracket',  # Bracket order
+        stop_loss={'stop_price': stp_l},  # Stop-loss order
+        take_profit={'limit_price': stp},  # Take-profit order
         time_in_force = 'gtc',
   #WAS CAUSING PROBLEMS PREVIOUSLY
         ) 
-    stop_loss_order = api.submit_order(
-        symbol=ticker,
-        qty= quantity,
-        side='sell',
-        type='stop',
-        time_in_force='gtc',
-        stop_price= stp_l
-        )
-    
-    sell_order = api.submit_order(
-        symbol=ticker,
-        qty = quantity,
-        side = 'sell',
-        type = 'limit',
-        limit_price = stp,
-        time_in_force = 'gtc'
-    )
-    
 
 
     
@@ -79,7 +64,7 @@ def process_entry(entry):
     while not order_filled:
         order = api.get_order(buy_order.id)
         stop_order = api.get_order(stop_order.id)
-        if order.status == 'filled' and stop_loss_order.status == 'filled' and sell_order == 'filled':
+        if order.status == 'filled':
             order_filled = True
             fill_price = order.filled_avg_price
             print(f"{ticker} has filled.")
