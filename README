@@ -87,7 +87,7 @@ Done:
 
 Bugs:
 1. main.py two windows when clicking "load"
-2. shortrate window not displaying correctly
+2. paper.py runs through all ma calculations regardless of position nyumber
 
 
 
