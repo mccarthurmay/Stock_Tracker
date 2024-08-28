@@ -89,6 +89,9 @@ def close_all_orders(ticker):
         except Exception as e:
             print(f"Error cancelling order for {ticker}: {str(e)}")
 
+#def check_smp():
+
+
 def monitor_position(ticker):
     while True:
         try:
@@ -160,7 +163,11 @@ def run():
                     # - one for portfolio to be monitored for the ticker
                 i = 0
                 open_positions, num_position = get_open_positions()
-
+                #sort by follow smp or fall smp
+                #create 2 datasets; 1 that follows better and 1 that does not
+                #if in in the last hour, smp is negative, then go to dataset 2. If positive, go to dataset 2.
+                #run monitor smp function every time a stock is sold
+                #maybe do some analysis; on days that smp is good, does dataset 1 do better than dataset 2? 
                 results = dt.find()
                 print("Results Finished, not sort")
                 results.sort(key=lambda x: x[0], reverse=True)
@@ -215,7 +222,7 @@ def run():
                         break
                     
 
-
+                    
 
         
 

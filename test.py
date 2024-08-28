@@ -11,6 +11,7 @@ import time as tm
 import yfinance as yf
 import concurrent.futures
 import keyboard
+from datetime import datetime, timedelta
 from queue import Queue
 dt = DTManager()
 #tick = "ANSS"
@@ -33,57 +34,25 @@ dt = DTManager()
 #ab = ab_lowManager()
 
 #ab.limit(tick, range)
-try:
-    api = REST(
-    key_id=os.getenv("APCA_API_KEY_ID"),
-    secret_key=os.getenv("APCA_API_SECRET_KEY"),
-    base_url="https://paper-api.alpaca.markets"
-    )
-    account = api.get_account()
-except:
-    print("API Environment not set up. Please refer to 'config.py' or 'README'.")
+#df_temp = df["Datetime"] < datetime.today and df["Datetime"] > range
+#print(df_temp)
 
+ticker = "^GSPC"
+smp = yf.Ticker(ticker)
+end_time = datetime.now()
+start_time = end_time - timedelta(hours=1)
+data = smp.history(start=start_time, end=end_time, interval="1m")
+close = data["Close"]
 
+#A better one would be a simple moving average - take form analysis. if moving average is positive in smp,
+# follow smp. If not, use stocks that contrast
 
-def process_entry(entry):
-    #Set parameters
-    ticker = entry[1]
-    rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
-    equity = float(account.equity)
-    quantity = round((float(equity)/10) / current_price, 0) - 1
-    print(quantity)
-    stp = round(stop,2)
-    #stp = round((current_price * 1.002), 2)
-    lmt = round(limit,2)
-    stp_l = round(stop_l,2) #trading based on statistics
-    #stp_l = round((current_price * .99),2) #trading based on win rate
-    print(current_price)
-    print((stp_l - current_price) / current_price, "stpl")
-    #Buy order
-    buy_order = api.submit_order(   # buy
-        symbol = ticker,
-        qty = quantity,
-        side = 'buy',
-        type = 'market',
-        time_in_force = 'gtc',
-  #WAS CAUSING PROBLEMS PREVIOUSLY
-        ) 
-    stop_loss_order = api.submit_order(
-        symbol=ticker,
-        qty= quantity,
-        side='sell',
-        type='stop',
-        time_in_force='gtc',
-        stop_price= stp_l
-        )
-    
-    sell_order = api.submit_order(
-        symbol=ticker,
-        qty = quantity,
-        side = 'sell',
-        type = 'limit',
-        limit_price = stp,
-        time_in_force = 'gtc'
-    )
+# big movers cause drop... maybe separate by sector. one sector may increase as another decrease
 
-process_entry("GM")
+if close.iloc[-1] > close.iloc[0]:
+    print ("increase")
+else:
+    print("dc")
+    print(close.iloc[-1], close.iloc[0])
+
+    #
