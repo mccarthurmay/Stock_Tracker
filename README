@@ -45,6 +45,8 @@ Todo:
     - increase number of datapoints
     - adjust ranking system (instead of % gain, winrate?)
     - adjust moving averages
+    - buy stock categories; do an analysis on all categories 
+        - choose category with highest open
 
 15. Optimize optimize optimize
     - scanning for stocks is incredibly slow
@@ -87,7 +89,7 @@ Done:
 
 Bugs:
 1. main.py two windows when clicking "load"
-2. paper.py runs through all ma calculations regardless of position nyumber
+2. paper.py runs through all ma calculations regardless of position number on first start
 
 
 
