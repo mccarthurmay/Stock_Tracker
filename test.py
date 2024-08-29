@@ -7,12 +7,16 @@ from alpaca_trade_api.rest import REST, TimeFrame
 import os
 from config import *
 from data.day_trade import DTManager, DTCalc, DTData
+from data.analysis import RSIManager
 import time as tm
 import yfinance as yf
 import concurrent.futures
 import keyboard
 from queue import Queue
+import pandas as pd
+from datetime import datetime, timedelta
 dt = DTManager()
+rsim = RSIManager()
 #tick = "ANSS"
 #range = (40,50)
 #dt.limit(tick, range)
@@ -33,57 +37,57 @@ dt = DTManager()
 #ab = ab_lowManager()
 
 #ab.limit(tick, range)
-try:
-    api = REST(
-    key_id=os.getenv("APCA_API_KEY_ID"),
-    secret_key=os.getenv("APCA_API_SECRET_KEY"),
-    base_url="https://paper-api.alpaca.markets"
-    )
-    account = api.get_account()
-except:
-    print("API Environment not set up. Please refer to 'config.py' or 'README'.")
 
+def sector_sort():
+    # List of major sector ETFs
+    sector_etfs = {
+        "XLK": "Technology",
+        "XLF": "Financials",
+        "XLV": "Healthcare",
+        "XLE": "Energy",
+        "XLY": "Consumer Discretionary",
+        "XLP": "Consumer Staples",
+        "XLI": "Industrials",
+        "XLB": "Materials",
+        "XLU": "Utilities",
+        "XLRE": "Real Estate"
+    }
 
+    today = datetime.now().strftime('%Y-%m-%d')
+    data = yf.download(list(sector_etfs.keys()), start=today, end=None, interval='1d')
 
-def process_entry(entry):
-    #Set parameters
-    ticker = entry[1]
-    rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
-    equity = float(account.equity)
-    quantity = round((float(equity)/10) / current_price, 0) - 1
-    print(quantity)
-    stp = round(stop,2)
-    #stp = round((current_price * 1.002), 2)
-    lmt = round(limit,2)
-    stp_l = round(stop_l,2) #trading based on statistics
-    #stp_l = round((current_price * .99),2) #trading based on win rate
-    print(current_price)
-    print((stp_l - current_price) / current_price, "stpl")
-    #Buy order
-    buy_order = api.submit_order(   # buy
-        symbol = ticker,
-        qty = quantity,
-        side = 'buy',
-        type = 'market',
-        time_in_force = 'gtc',
-  #WAS CAUSING PROBLEMS PREVIOUSLY
-        ) 
-    stop_loss_order = api.submit_order(
-        symbol=ticker,
-        qty= quantity,
-        side='sell',
-        type='stop',
-        time_in_force='gtc',
-        stop_price= stp_l
-        )
+    if data.empty:
+        print("No data available for today. The market may not have opened yet.")
+        return pd.DataFrame(columns=['Sector', 'Change'])
+
+    # Calculate today
+    changes = ((data['Close'] - data['Open']) / data['Open'] * 100).iloc[0]
     
-    sell_order = api.submit_order(
-        symbol=ticker,
-        qty = quantity,
-        side = 'sell',
-        type = 'limit',
-        limit_price = stp,
-        time_in_force = 'gtc'
-    )
+    # Create a dataframe 
+    sector_performance = pd.DataFrame({
+        'Sector': changes.index,
+        'Change': changes.values
+    })
+    # Sort sectors by change 
+    sector_performance.sort_values('Change', ascending=False)
 
-process_entry("GM")
+    if not sector_performance.empty:
+        #print("Today's Sector Performance:")
+        #print(sector_performance)
+        
+        #print("\nIncreasing Sectors:")
+        increasing = sector_performance[sector_performance['Change'] > 0]
+        #print(increasing if not increasing.empty else "No sectors are currently increasing.")
+        
+        #print("\nDecreasing Sectors:")
+        #decreasing = sector_performance[sector_performance['Change'] < 0]
+        #print(decreasing if not decreasing.empty else "No sectors are currently decreasing.")
+    else:
+        print("No sector data available for today.")
+    sector_list = []
+    for sector in increasing['Sector']:
+        sector_list.append(sector)
+
+    return sector_list
+sector_list = sector_sort()
+print(sector_list)
