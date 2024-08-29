@@ -279,20 +279,30 @@ class RSIManager:
         plt.show()
 
 
-    def MA(self, ticker, graph, input_interval = "1d", input_period = "2y", span1 = 20, span2 = 50 ):
-        df = yf.Ticker(ticker).history(interval = input_interval, period= input_period)
+
+    def MA(self, ticker, graph, input_interval="1d", input_period="2y", span1=20, span2=50, standardize=False):
+        df = yf.Ticker(ticker).history(interval=input_interval, period=input_period)
+        
+        if standardize:
+            mean = df['Close'].mean()
+            std = df['Close'].std()
+            close_data = (df['Close'] - mean) / std
+        else:
+            close_data = df['Close']
+        
         MA = pd.DataFrame()
-        MA['ST'] = df['Close'].ewm(span=span1, adjust=False).mean() 
-        MA['LT'] = df['Close'].ewm(span=span2, adjust=False).mean()
+        MA['ST'] = close_data.ewm(span=span1, adjust=False).mean() 
+        MA['LT'] = close_data.ewm(span=span2, adjust=False).mean()
         MA.dropna(inplace=True)
+        
         converging = False
-        latest_date = []
+        latest_date = None
         converging_li = []    
         latest_market = None
+        
         for i in reversed(range(len(MA))):
             date = MA.index[i] 
             if i > 0:
-
                 if MA['LT'].iloc[i-1] > MA['ST'].iloc[i-1] and MA['LT'].iloc[i] < MA['ST'].iloc[i]:
                     latest_date = date
                     latest_market = "BULL"
@@ -302,33 +312,32 @@ class RSIManager:
                     latest_market = "BEAR"
                     break 
                 converging_li.append(abs(MA['LT'].iloc[i] - MA['ST'].iloc[i]))
-                
+        
         converging_li.reverse()
         if len(converging_li) >= 5 and converging_li[-1] < converging_li[-2] < converging_li[-3] < converging_li[-4] < converging_li[-5]:
-            #total_change = 0
-            #for i in range(4):
-            #    percent_change = abs((converging_li[-(i+1)] - converging_li[-(i+2)]) / converging_li[-(i+2)] ) * 100
-            #    total_change += percent_change
-            #average_change = total_change / 4
-            #if average_change > 1:
             converging = True
-            #    print(converging_li)
-            #    print(ticker, 'TRUE')
-            #    print(average_change)        
-
         
-        if graph == True:
-            plt.plot(df['Close'].rolling(window=20).mean(), label = "short")
-            plt.plot(df['Close'].rolling(window=50).mean())
+        if standardize:
+            MA['ST'] = (MA['ST'] * std) + mean
+            MA['LT'] = (MA['LT'] * std) + mean
+        
+        if graph:
+            plt.figure(figsize=(12, 6))
+            plt.plot(df.index, df['Close'].rolling(window=span1).mean(), label=f"MA{span1}")
+            plt.plot(df.index, df['Close'].rolling(window=span2).mean(), label=f"MA{span2}")
+            plt.plot(df.index, df['Close'], label="Close Price", alpha=0.5)
+            plt.title(f"{ticker} Moving Averages")
+            plt.xlabel("Date")
+            plt.ylabel("Price")
             plt.legend()
             plt.show()
         
         if latest_date:
-            latest_date = latest_date.strftime('%m-%d')
-            #print(f"Most recent {latest_market} market detected on {latest_date}. Approaching cross: {warning}")
-            return latest_market, latest_date, converging
+            latest_date_str = latest_date.strftime('%m-%d')
+            return latest_market, latest_date_str, converging
         else:
             print("No recent crossing detected")
+            return None, None, converging
 
     
     
