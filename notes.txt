@@ -1,0 +1,21 @@
+day 1:
+.5 % return
+smp steady
+
+
+day 2: 
+-1.6 % return
+
+notes:
+smp drop, negative tech news
+double MA does not guarantee increase. Need more analysis.
+
+
+day 3:
+
+
+edit:
+increase analysis date by 1 year
+removed short-term moving average constraint, decreased sensitivity of long-term moving average (harder to achieve)
+switched to sort by winrate
+buying by sectors
