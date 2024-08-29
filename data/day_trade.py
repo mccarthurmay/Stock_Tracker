@@ -15,12 +15,14 @@ import requests
 import pandas as pd
 from datetime import datetime, time, timedelta
 import pytz
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 class DTCalc:
     def tiingo(self, ticker):
         API_KEY = os.getenv("TIINGO_API_KEY_ID")
         SYMBOL = ticker
-        start_date = "2022-01-01"
+        start_date = "2021-01-01"
         end_date = datetime.now().strftime('%Y-%m-%d')
 
         url = f'https://api.tiingo.com/iex/{SYMBOL}/prices?startDate={start_date}&resampleFreq=5min&columns=close,volume&token={API_KEY}'
@@ -231,7 +233,61 @@ class DTData:
         #print(f"Turnover CI: {turnover_mean:.2f} minutes (CI: {turnover_ci})")
         #print(f"Gain: {gain:.4f}%")
         #print("\n" + "="*200 + "\n")
-        return d_i_temp_mean, gain, turnover_mean, d_i_mean, d_i_ci, d_i_temp_ci, p_pos, wl, d_d_mean
+        return d_i_temp_mean, gain, turnover_mean, d_i_mean, d_i_ci, d_i_temp_ci, p_pos, wl, d_d_mean #stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease
+
+
+    def sector_sort(self):
+        # List of major sector ETFs
+        sector_etfs = {
+            "XLK": "Technology",
+            "XLF": "Financials",
+            "XLV": "Healthcare",
+            "XLE": "Energy",
+            "XLY": "Consumer Discretionary",
+            "XLP": "Consumer Staples",
+            "XLI": "Industrials",
+            "XLB": "Materials",
+            "XLU": "Utilities",
+            "XLRE": "Real Estate"
+        }
+
+        today = datetime.now().strftime('%Y-%m-%d')
+        data = yf.download(list(sector_etfs.keys()), start=today, end=None, interval='1d')
+
+        if data.empty:
+            print("No data available for today. The market may not have opened yet.")
+            return pd.DataFrame(columns=['Sector', 'Change'])
+
+        # Calculate today
+        changes = ((data['Close'] - data['Open']) / data['Open'] * 100).iloc[0]
+        
+        # Create a dataframe 
+        sector_performance = pd.DataFrame({
+            'Sector': changes.index,
+            'Change': changes.values
+        })
+        # Sort sectors by change 
+        sector_performance.sort_values('Change', ascending=False)
+
+        if not sector_performance.empty:
+            #print("Today's Sector Performance:")
+            #print(sector_performance)
+            
+            #print("\nIncreasing Sectors:")
+            increasing = sector_performance[sector_performance['Change'] > 0]
+            print(increasing if not increasing.empty else "No sectors are currently increasing.")
+            
+            #print("\nDecreasing Sectors:")
+            #decreasing = sector_performance[sector_performance['Change'] < 0]
+            #print(decreasing if not decreasing.empty else "No sectors are currently decreasing.")
+        else:
+            print("No sector data available for today.")
+        sector_list = []
+        for sector in increasing['Sector']:
+            sector_list.append(sector.lower())
+        #print(sector_list)
+        return sector_list
+
 
 class DTManager:
     def __init__(self):
@@ -250,10 +306,10 @@ class DTManager:
                 #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
                 rsi_range = (int(rsi[-1] - 5), int(rsi[-1] + 5)) #opt to switch to automatic 
                 stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
-                stop_l = (1 - ci_decrease[1] / 100) * current_price #lower ci of decrease
-                #stop_l = (1 + avg_decrease/100) * current_price #average decrease
-                stop = (1 + (ci_increase[0]/100)) * current_price # lower ci 
-                limit = (1 + (p_increase/100)) * current_price # average
+                stop_l = (1 - ci_decrease[1] / 100) * current_price # lower ci of decrease increase
+                #stop_l = (1 + avg_decrease/100) * current_price # average decrease
+                stop = (1 + (ci_increase[0]/100)) * current_price # lower ci of increase (di)
+                limit = (1 + (p_increase/100)) * current_price # mean of increase (di)
                 #print(f"Stop Loss: ${stop_l}")
                 #print(f"Stop: ${stop} Limit: ${limit}")
                 
@@ -273,8 +329,17 @@ class DTManager:
             print(f"Error in main(), {e}")
      
     def find(self):
-        with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
-            stock_list = stock_file.read().split('\n')
+        sector_list = self.data_manager.sector_sort()
+        stock_list = []
+
+        for file in sector_list:
+            print(file)
+            with open(f"./storage/ticker_lists/sectors/{file}.txt", "r") as stock_file:
+                stocks = stock_file.read().splitlines()  # Use splitlines() to avoid empty strings
+                stock_list.extend(stocks)  # Extend the list with the new stocks
+
+        #with open("./storage/ticker_lists/sectors/{}.txt", "r") as stock_file:
+        #    stock_list = stock_file.read().split('\n')
         
         #stock_list = ["AAPL", "UNH", "CEG", "OXY", "WDC", "LLY", "WBD", "SNPS", "OKE", "NDAQ", "AMZN"]
         #stock_list = ["WBD"]
