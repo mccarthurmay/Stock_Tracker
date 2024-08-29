@@ -12,6 +12,7 @@ import time as tm
 import yfinance as yf
 import concurrent.futures
 import keyboard
+from datetime import datetime, timedelta
 from queue import Queue
 import pandas as pd
 from datetime import datetime, timedelta
