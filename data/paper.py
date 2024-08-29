@@ -33,15 +33,13 @@ def process_entry(entry):
     ticker = entry[1]
     rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
     equity = float(account.equity)
-    quantity = round((float(equity)/10) / current_price, 0) - 1
-    print(quantity)
-    stp = round(stop,2)
-    #stp = round((current_price * 1.002), 2)
-    lmt = round(limit,2)
-    stp_l = round(stop_l,2) #trading based on statistics
+    quantity = round((float(equity)/5) / current_price, 0) - 1
+    stp = round(stop,2) # lower confidence interval of decrease increase gain
+    lmt = round(limit,2) # mean of decrease increase
+    stp_l = round(stop_l,2) # lower confidence interval of decrease increase range
     #stp_l = round((current_price * .99),2) #trading based on win rate
-    print(current_price)
-    print((stp_l - current_price) / current_price, "stpl")
+    print(f"Buy: {current_price}, Sell: {stp}, Stop Loss: {stp_l}, Quantity: {quantity}")
+
     #Buy order
     buy_order = api.submit_order(   # buy
         symbol = ticker,
@@ -129,9 +127,10 @@ def monitor_position(ticker):
                 print(f"Error monitoring position for {ticker}: {str(e)}")
         tm.sleep(5)
 
+
 def run():
     open_positions, num_position = get_open_positions()
-    max_positions = 10
+    max_positions = 5
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
 
@@ -163,7 +162,7 @@ def run():
 
                 results = dt.find()
                 print("Results Finished, not sort")
-                results.sort(key=lambda x: x[0], reverse=True)
+                results.sort(key=lambda x: x[3], reverse=True)
                 limit_results = results
                 print(f"resuiltsd (% gain, ticker, rsi, % win): {limit_results} ")
 
@@ -177,16 +176,17 @@ def run():
                                                    input_interval = "1m", 
                                                    input_period = "5d",
                                                    span1 = 50,
-                                                   span2 = 200
-                                                   )
-                        ma_s, _, cnvrg_s = rsim.MA(ticker, 
-                                                   graph = False, 
-                                                   input_interval = "1m", 
-                                                   input_period = "5d",
-                                                   span1 = 20,
-                                                   span2 = 50
-                                                   )
-                        print(ma_l, ma_s, cnvrg_l, cnvrg_s) 
+                                                   span2 = 250,
+                                                   standardize= True
+                                                    )
+                        #ma_s, _, cnvrg_s = rsim.MA(ticker, 
+                                                   #graph = False, 
+                                                   #input_interval = "1m", 
+                                                   #input_period = "2d",
+                                                   #span1 = 20,
+                                                   #span2 = 50
+                                                   #)
+                        #print(ma_l, ma_s, cnvrg_l, cnvrg_s) 
                     except Exception as e:
                         ma_l = "None"
                         ma_s = "None"
@@ -200,8 +200,8 @@ def run():
                         ticker not in futures,
                         ma_l == "BULL",
                         cnvrg_l == False,
-                        ma_s == "BULL",
-                        cnvrg_s == False
+                        #ma_s == "BULL",
+                        #cnvrg_s == False
                         ]
                     if all(conditions):
                         future = executor.submit(process_entry, entry)
