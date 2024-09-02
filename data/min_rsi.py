@@ -9,10 +9,10 @@ from functools import partial
 from datetime import datetime, timedelta
 import numpy as np
 from scipy import stats
-
+from data.day_trade import DTCalc
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-
+dt = DTCalc()
 
 def alpha(ticker):
     import requests
@@ -69,7 +69,8 @@ def alpha(ticker):
 def rsi_base(ticker, period='5d', interval='1m'):
     #ticker = yf.Ticker(ticker)
     #df = ticker.history(interval=interval, period=period)
-    df = alpha("GM")
+    #df = alpha("GM")
+    df = dt.tiingo(ticker)
     print(df)
     change = df['Close'].diff()
     change_up = change.copy()
@@ -158,16 +159,52 @@ class ab_lowManager:
 
     def Average_Time(self, lst): 
         return (sum(td.total_seconds() for td in lst) / len(lst)) / 60  # Changed to minutes
-
+    def MA(self, ticker, low_date, high_date, span1=20, span2= 50, standardize=False):
+        df = dt.tiingo(ticker)
+        if standardize:
+            mean = df['Close'].mean()
+            std = df['Close'].std()
+            close_data = (df['Close'] - mean) / std
+        else:
+            close_data = df['Close']
+        
+        MA = pd.DataFrame()
+        MA['ST'] = close_data.ewm(span=span1, adjust=False).mean() 
+        MA['LT'] = close_data.ewm(span=span2, adjust=False).mean()
+        MA.dropna(inplace=True)
+        # I want to return the cvrging value and market for low date, high date
+        converging = False
+        converging_li = []    
+        # find i for date
+        for i in reversed(range(len(MA))):
+            if i > 0:
+                if MA['LT'].iloc[i-1] > MA['ST'].iloc[i-1] and MA['LT'].iloc[i] < MA['ST'].iloc[i]:
+                    market = "BULL"
+                    break  
+                elif MA['LT'].iloc[i-1] < MA['ST'].iloc[i-1] and MA['LT'].iloc[i] > MA['ST'].iloc[i]:
+                    market = "BEAR"
+                    break 
+                converging_li.append(abs(MA['LT'].iloc[i] - MA['ST'].iloc[i]))
+        
+        converging_li.reverse()
+        if len(converging_li) >= 5 and converging_li[i-1] < converging_li[i-2] < converging_li[i-3] < converging_li[i-4] < converging_li[i-5]:
+            converging = True
+        
+        if standardize:
+            MA['ST'] = (MA['ST'] * std) + mean
+            MA['LT'] = (MA['LT'] * std) + mean
+        
+        return market, converging
+    
     def process_ticker(self, ticker, ltr, ht):
         results = {
             'n_d': [], 'd_i': [], 'd_d': [],
             'd_d_value': [], 'd_i_value': [], 'n_d_value': [],
-            'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': []
+            'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': [], 'MA': []
         }
         
         # Calculate RSI, retrieve entire dataframe for 7 days with 1-minute intervals
-        rsi, _, df = rsi_base(ticker, '7d', '1m')
+        rsi, _, df = rsi_base(ticker)
 
         lows_and_highs = self.find_lows_and_highs(rsi, df, ltr, ht)
         
@@ -176,7 +213,8 @@ class ab_lowManager:
             rsi_price = stock_data.iloc[0]
             lowest_price = stock_data.min()
             sell_price = stock_data.iloc[-1]
-            
+            ma_l =self.MA(ticker, low_date, high_date, span1 = 50, span2 = 200)
+            ma_s =self.MA(ticker, low_date, high_date, span1 = 20, span2 = 50)
             p_decrease = (rsi_price - lowest_price) / rsi_price * 100
             p_increase = (sell_price - rsi_price) / rsi_price * 100
 
@@ -192,14 +230,16 @@ class ab_lowManager:
                 results['d_d_value'].append(round(p_increase, 2))
                 results['d_d_temp'].append(round(p_decrease, 2))
             results['avg_turnover'].append((high_date - low_date).total_seconds() / 60)  # Convert to minutes
-
+            results['MA'].append()  #append [MA long, short, malcnvg, mascnvg]. count each time one pattern happens
         return results
-
+    
+    
+        
     def limit(self, tick):
         #with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
         #    stock_list = stock_file.read().split('\n')
         stock_list = tick
-        ltr_list = [(40, 50)]
+        ltr_list = [(30,40)]
         #ltr_list = [(65, 70), (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
         ht = 70
 
