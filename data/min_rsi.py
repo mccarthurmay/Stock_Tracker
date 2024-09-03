@@ -14,55 +14,6 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 dt = DTCalc()
 
-def alpha(ticker):
-    import requests
-    import pandas as pd
-    from datetime import datetime, time, timedelta
-    import pytz
-
-    API_KEY = os.getenv("ALPHA_API_KEY_ID")
-    SYMBOL = ticker
-    INTERVAL = '1min'
-
-    url = f'https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={SYMBOL}&interval={INTERVAL}&outputsize=full&apikey={API_KEY}'
-
-    response = requests.get(url)
-    data = response.json()
-
-
-    time_series = data.get(f'Time Series ({INTERVAL})', {})
-
-
-    df_data = []
-    eastern_tz = pytz.timezone('US/Eastern')
-    market_open = time(9, 30)
-    market_close = time(16, 0)
-    trading_period= datetime.now(eastern_tz) - timedelta(days=360) 
-
-
-
-    for timestamp, values in time_series.items():
-        dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-        dt_eastern = eastern_tz.localize(dt)
-        
-        # Check if the time is within market hours and within the last 10 trading days
-        if market_open <= dt_eastern.time() < market_close and dt_eastern > trading_period:
-            df_data.append({
-                'Datetime': dt_eastern,
-                'Close': float(values['4. close']),
-                'Volume': int(values['5. volume'])
-            })
-
-    # Copy yFinance Dataframe
-    df = pd.DataFrame(df_data)
-
-    # Set Datetime as index
-    df.set_index('Datetime', inplace=True)
-    df.sort_index(ascending=True, inplace=True)
-    #print(df)
-    return df
-
-
 
 
 
@@ -70,8 +21,8 @@ def rsi_base(ticker, period='5d', interval='1m'):
     #ticker = yf.Ticker(ticker)
     #df = ticker.history(interval=interval, period=period)
     #df = alpha("GM")
-    df = dt.tiingo(ticker)
-    print(df)
+    df = dt.tiingo(ticker, frequency = "1min", start_date = "2022-07-30")
+    #print(df)
     change = df['Close'].diff()
     change_up = change.copy()
     change_down = change.copy()
@@ -124,7 +75,12 @@ def calculate_ci(data):
 
 class ab_lowManager:
     def __init__(self):
-        pass
+        self.reset_counters()
+
+    def reset_counters(self):
+        self.combined_ma_counter = {}
+        self.combined_ma_dd = {}
+
 
     def find_lows_and_highs(self, rsi, df, ltr=(20, 30), ht=70):
         results = []
@@ -159,8 +115,15 @@ class ab_lowManager:
 
     def Average_Time(self, lst): 
         return (sum(td.total_seconds() for td in lst) / len(lst)) / 60  # Changed to minutes
-    def MA(self, ticker, low_date, high_date, span1=20, span2= 50, standardize=False):
-        df = dt.tiingo(ticker)
+    
+    def MA(self, ticker, low_date, high_date, span1=20, span2=50, standardize=False):
+        # Get data from the ticker
+        df = dt.tiingo(ticker, frequency="1min", start_date="2022-07-30")
+        
+        # Extend the date range to include enough previous data for moving averages
+        extended_low_date = pd.to_datetime(low_date) - pd.Timedelta(days=max(span1, span2) * 2)
+        df = df[df.index >= extended_low_date]
+        
         if standardize:
             mean = df['Close'].mean()
             std = df['Close'].std()
@@ -172,40 +135,48 @@ class ab_lowManager:
         MA['ST'] = close_data.ewm(span=span1, adjust=False).mean() 
         MA['LT'] = close_data.ewm(span=span2, adjust=False).mean()
         MA.dropna(inplace=True)
-        # I want to return the cvrging value and market for low date, high date
-        converging = False
-        converging_li = []    
-        # find i for date
-        for i in reversed(range(len(MA))):
-            if i > 0:
-                if MA['LT'].iloc[i-1] > MA['ST'].iloc[i-1] and MA['LT'].iloc[i] < MA['ST'].iloc[i]:
-                    market = "BULL"
-                    break  
-                elif MA['LT'].iloc[i-1] < MA['ST'].iloc[i-1] and MA['LT'].iloc[i] > MA['ST'].iloc[i]:
-                    market = "BEAR"
-                    break 
-                converging_li.append(abs(MA['LT'].iloc[i] - MA['ST'].iloc[i]))
         
-        converging_li.reverse()
-        if len(converging_li) >= 5 and converging_li[i-1] < converging_li[i-2] < converging_li[i-3] < converging_li[i-4] < converging_li[i-5]:
-            converging = True
+        def determine_market(ma_data):
+            if ma_data['ST'].iloc[-1] > ma_data['LT'].iloc[-1]:
+                return "BULL"
+            else:
+                return "BEAR"
         
-        if standardize:
-            MA['ST'] = (MA['ST'] * std) + mean
-            MA['LT'] = (MA['LT'] * std) + mean
+        low_market = determine_market(MA.loc[:low_date])
+        high_market = determine_market(MA.loc[:high_date])
         
-        return market, converging
-    
+        # Check for convergence
+        low_converging = self.is_converging(MA.loc[:low_date])
+        high_converging = self.is_converging(MA.loc[:high_date])
+
+        return {"low_date": {"market": low_market, "converging": low_converging},
+                "high_date": {"market": high_market, "converging": high_converging}}
+
+    def is_converging(self, ma_data, window=20):
+        diff = abs(ma_data['ST'] - ma_data['LT'])
+        return diff.iloc[-window:].is_monotonic_decreasing
+        
+    def update_ma_counter(self, ma_l, ma_s, is_dd, dd_value):
+        ma_l_key = f"MA_L {ma_l['low_date']['market']},{ma_l['low_date']['converging']},{ma_l['high_date']['market']},{ma_l['high_date']['converging']}"
+        ma_s_key = f"MA_S {ma_s['low_date']['market']},{ma_s['low_date']['converging']},{ma_s['high_date']['market']},{ma_s['high_date']['converging']}"
+        combined_key = f"{ma_l_key} + {ma_s_key}"
+        
+        self.combined_ma_counter[combined_key] = self.combined_ma_counter.get(combined_key, 0) + 1
+        
+        if is_dd:
+            if combined_key not in self.combined_ma_dd:
+                self.combined_ma_dd[combined_key] = {'count': 0, 'total': 0}
+            self.combined_ma_dd[combined_key]['count'] += 1
+            self.combined_ma_dd[combined_key]['total'] += dd_value
+
     def process_ticker(self, ticker, ltr, ht):
         results = {
             'n_d': [], 'd_i': [], 'd_d': [],
             'd_d_value': [], 'd_i_value': [], 'n_d_value': [],
-            'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': [], 'MA': []
+            'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': [], 'ma_l': [], 'ma_s': []
         }
         
-        # Calculate RSI, retrieve entire dataframe for 7 days with 1-minute intervals
         rsi, _, df = rsi_base(ticker)
-
         lows_and_highs = self.find_lows_and_highs(rsi, df, ltr, ht)
         
         for low_date, low_value, high_date, high_value in lows_and_highs:
@@ -213,10 +184,13 @@ class ab_lowManager:
             rsi_price = stock_data.iloc[0]
             lowest_price = stock_data.min()
             sell_price = stock_data.iloc[-1]
-            ma_l =self.MA(ticker, low_date, high_date, span1 = 50, span2 = 200)
-            ma_s =self.MA(ticker, low_date, high_date, span1 = 20, span2 = 50)
+            ma_l = self.MA(ticker, low_date, high_date, span1=50, span2=200)
+            ma_s = self.MA(ticker, low_date, high_date, span1=20, span2=50)
             p_decrease = (rsi_price - lowest_price) / rsi_price * 100
             p_increase = (sell_price - rsi_price) / rsi_price * 100
+
+            # Update the MA combinations counter and track d_d occurrences
+            self.update_ma_counter(ma_l, ma_s, p_decrease > 0 and p_increase < 0, p_increase)
 
             if p_decrease == 0 and p_increase > 0:
                 results['n_d'].append(round(low_value, 2))
@@ -229,31 +203,28 @@ class ab_lowManager:
                 results['d_d'].append(round(low_value, 2))
                 results['d_d_value'].append(round(p_increase, 2))
                 results['d_d_temp'].append(round(p_decrease, 2))
-            results['avg_turnover'].append((high_date - low_date).total_seconds() / 60)  # Convert to minutes
-            results['MA'].append()  #append [MA long, short, malcnvg, mascnvg]. count each time one pattern happens
+            results['avg_turnover'].append((high_date - low_date).total_seconds() / 60)
+            results['ma_l'].append(ma_l)
+            results['ma_s'].append(ma_s)
+
         return results
     
     
         
     def limit(self, tick):
-        #with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
-        #    stock_list = stock_file.read().split('\n')
         stock_list = tick
-        ltr_list = [(30,40)]
-        #ltr_list = [(65, 70), (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
+        ltr_list = [(40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
+        # (65, 70), (60, 65), (55, 60), (50, 55), (45, 50), 
         ht = 70
 
         for ltr in ltr_list:
+            # Reset counters for each RSI range
+            self.reset_counters()
+
             all_results = {
-                'n_d': [],  # No decrease across the board
-                'd_i': [],  # Decrease after RSI, Increase at the end of the interval
-                'd_d': [],  # Decrease after RSI, Decrease at the end of the interval
-                'd_d_value': [], #Amount of decrease if both decrease
-                'd_i_value': [], #Amount of increase if decrease after RSI but increase at end
-                'n_d_value': [], #Amount of increase if no decrease
-                'avg_turnover': [], #Time between buy/sell
-                'd_i_temp': [], #Amount of temporary decrease in the (decrease, increase)
-                'd_d_temp': [] #Amount of temporary decrease in the (decrease, decrease)
+                'n_d': [], 'd_i': [], 'd_d': [],
+                'd_d_value': [], 'd_i_value': [], 'n_d_value': [],
+                'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': [], 'ma_l': [], 'ma_s': []
             }
             
             process_ticker_partial = partial(self.process_ticker, ltr=ltr, ht=ht)
@@ -269,36 +240,39 @@ class ab_lowManager:
                     except Exception as e:
                         print(f'{ticker} generated an exception: {e}')
 
-            print(ltr)
-            d_d = all_results['d_d']
-            d_d_value = all_results['d_d_value']
-            d_i = all_results['d_i']
-            d_i_value= all_results['d_i_value']
-            n_d = all_results['n_d']
-            n_d_value =  all_results['n_d_value']
-            avg_turnover = all_results['avg_turnover']
-            d_i_temp = all_results['d_i_temp']
-            d_d_temp = all_results['d_d_temp']
+            # Calculate statistics
+            d_d_mean, d_d_ci = calculate_ci(all_results['d_d_value'])
+            d_i_mean, d_i_ci = calculate_ci(all_results['d_i_value'])
+            n_d_mean, n_d_ci = calculate_ci(all_results['n_d_value'])
+            d_i_temp_mean, d_i_temp_ci = calculate_ci(all_results['d_i_temp'])
+            d_d_temp_mean, d_d_temp_ci = calculate_ci(all_results['d_d_temp'])
+            turnover_mean, turnover_ci = calculate_ci(all_results['avg_turnover']) if all_results['avg_turnover'] else (None, None)
 
-            d_d_mean, d_d_ci = calculate_ci(d_d_value)
-            d_i_mean, d_i_ci = calculate_ci(d_i_value)
-            n_d_mean, n_d_ci = calculate_ci(n_d_value)
-            d_i_temp_mean, d_i_temp_ci = calculate_ci(d_i_temp)
-            d_d_temp_mean, d_d_temp_ci = calculate_ci(d_d_temp)
-            
-            # Calculate CI for turnover times
-            turnover_mean, turnover_ci = calculate_ci(all_results['avg_turnover']) if all_results['avg_turnover'] else None
-
+            print(f"\nResults for RSI range {ltr}:")
             print("Decrease vs Increase")
             print(f"{len(all_results['d_d'])} vs {len(all_results['d_i'])} + {len(all_results['n_d'])}")
             print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
             print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
             print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
-            print(f"Turnover CI: {turnover_mean:.2f} minutes (CI: {turnover_ci})")
-            gain = self.calc(len(all_results['d_d']), (len(all_results['d_i']) + len(all_results['n_d'])), d_i_temp_mean, d_i_mean , turnover_mean)
+            if turnover_mean and turnover_ci:
+                print(f"Turnover CI: {turnover_mean:.2f} minutes (CI: {turnover_ci})")
+            gain = self.calc(len(all_results['d_d']), (len(all_results['d_i']) + len(all_results['n_d'])), d_i_temp_mean, d_i_mean, turnover_mean)
             print(f"Gain: {gain:.4f}%")
+            
+            print("\nCombined MA Analysis (ordered by frequency):")
+            sorted_combinations = sorted(self.combined_ma_counter.items(), key=lambda x: x[1], reverse=True)
+            for combined_key, count in sorted_combinations:
+                print(f"{combined_key}: {count}")
+                if combined_key in self.combined_ma_dd:
+                    dd_count = self.combined_ma_dd[combined_key]['count']
+                    dd_avg = self.combined_ma_dd[combined_key]['total'] / dd_count if dd_count > 0 else 0
+                    dd_percentage = (dd_count / count) * 100
+                    print(f"  d_d occurrences: {dd_count} ({dd_percentage:.2f}%)")
+                    print(f"  Average d_d value: {dd_avg:.2f}%")
+                else:
+                    print("  No d_d occurrences")
+            
             print("\n" + "="*200 + "\n")
-            return d_i_temp_mean
 
     def calc(self, lenloss, lengain, d, i, turnover):
         p_loss = lenloss / (lenloss + lengain)
