@@ -33,7 +33,7 @@ def process_entry(entry):
     ticker = entry[1]
     rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
     equity = float(account.equity)
-    quantity = round((float(equity)/5) / current_price, 0) - 1
+    quantity = round((float(equity)/10) / current_price, 0) - 1
     stp = round(stop,2) # lower confidence interval of decrease increase gain
     lmt = round(limit,2) # mean of decrease increase
     stp_l = round(stop_l,2) # lower confidence interval of decrease increase range
@@ -48,7 +48,7 @@ def process_entry(entry):
         type = 'market',
         order_class='bracket',  # Bracket order
         stop_loss={'stop_price': stp_l},  # Stop-loss order
-        take_profit={'limit_price': stp},  # Take-profit order
+        #take_profit={'limit_price': stp},  # Take-profit order
         time_in_force = 'gtc',
   #WAS CAUSING PROBLEMS PREVIOUSLY
         ) 
@@ -93,22 +93,20 @@ def monitor_position(ticker):
             # Test if position exists
             position = api.get_position(ticker)
             ###GRAB RSI, if RSI > 70, sell
-            #quantity = position.qty
-            #rsi, _, df = dtc.rsi_base(ticker, "7d", "1m")
+            quantity = position.qty
+            rsi, _, df = dtc.rsi_base(ticker, "7d", "1m")
             #print(ticker, rsi[-1])
-            #if rsi[-1] > 70:
-            #    close_all_orders(ticker)
-            #    order = api.submit_order(   # buy
-            #    symbol = ticker,
-            #    qty = quantity,
-            #    side = 'sell',
-            #    type = 'market',
-            #    time_in_force = 'gtc',
-            #    )
-            #    print(f"{ticker} has been sold!!! Order ID: {order.id}")
-            
-
-
+            if rsi[-1] > 70:
+                close_all_orders(ticker)
+                order = api.submit_order(   # buy
+                symbol = ticker,
+                qty = quantity,
+                side = 'sell',
+                type = 'market',
+                time_in_force = 'gtc',
+                )
+                print(f"{ticker} has been sold!!! Order ID: {order.id}")
+        
             #else:
             #    tm.sleep(30)
             tm.sleep(30)
@@ -128,9 +126,40 @@ def monitor_position(ticker):
         tm.sleep(5)
 
 
+
+
+def run_ma(ticker): 
+    try:
+        ma_l, _, cnvrg_l = rsim.MA(ticker, 
+                                    graph = False, 
+                                    input_interval = "1m", 
+                                    input_period = "5d",
+                                    span1 = 50,
+                                    span2 = 250,
+                                    standardize= True
+                                    )
+        ma_s, _, cnvrg_s = rsim.MA(ticker, 
+                                    graph = False, 
+                                    input_interval = "1m", 
+                                    input_period = "1d",
+                                    span1 = 20,
+                                    span2 = 50
+                                    )
+        print(ma_l, ma_s, cnvrg_l, cnvrg_s) 
+    except Exception as e:
+        ma_l = "None"
+        ma_s = "None"
+        cnvrg_l = True
+        cnvrg_s = True
+        print("MA NOT WORK", e)
+    return ma_l, ma_s, cnvrg_l, cnvrg_s
+
+
+
+
 def run():
     open_positions, num_position = get_open_positions()
-    max_positions = 5
+    max_positions = 10
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
 
@@ -170,39 +199,19 @@ def run():
                     ticker = entry[1]
                     i += 1
                     print(entry[3], entry[2], ticker, i)
-                    try:
-                        ma_l, _, cnvrg_l = rsim.MA(ticker, 
-                                                   graph = False, 
-                                                   input_interval = "1m", 
-                                                   input_period = "5d",
-                                                   span1 = 50,
-                                                   span2 = 250,
-                                                   standardize= True
-                                                    )
-                        #ma_s, _, cnvrg_s = rsim.MA(ticker, 
-                                                   #graph = False, 
-                                                   #input_interval = "1m", 
-                                                   #input_period = "2d",
-                                                   #span1 = 20,
-                                                   #span2 = 50
-                                                   #)
-                        #print(ma_l, ma_s, cnvrg_l, cnvrg_s) 
-                    except Exception as e:
-                        ma_l = "None"
-                        ma_s = "None"
-                        cnvrg_l = True
-                        cnvrg_s = True
-                        print("MA NOT WORK", e)
-
+                    ma_l, ma_s, cnvrg_l, cnvrg_s = run_ma(ticker)
+                    rsi, _, df = dtc.rsi_base(ticker, "7d", "1m")
                     conditions = [
                         ticker not in open_positions,
                         len(futures) < max_positions,
                         ticker not in futures,
-                        ma_l == "BULL",
-                        cnvrg_l == False,
-                        #ma_s == "BULL",
-                        #cnvrg_s == False
+                        rsi < 45,
+                        ma_l == "BEAR",
+                        cnvrg_l == True,
+                        ma_s == "BULL",
+                        cnvrg_s == False
                         ]
+                    
                     if all(conditions):
                         future = executor.submit(process_entry, entry)
                         futures[ticker] = future
@@ -211,6 +220,7 @@ def run():
                         tm.sleep(5)
                         open_positions, num_position = get_open_positions()
                         print(f"Inner loop, num = {num_position}")
+
                     if num_position > max_positions:
                         break
                     
