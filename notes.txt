@@ -12,10 +12,51 @@ double MA does not guarantee increase. Need more analysis.
 
 
 day 3:
-
+-.5% return
 
 edit:
 increase analysis date by 1 year
 removed short-term moving average constraint, decreased sensitivity of long-term moving average (harder to achieve)
 switched to sort by winrate
 buying by sectors
+reduce to 10 positions
+
+notes:
+highly variable; goes up and down real bad
+may be beneficial to buy based on rsi70 again... next week
+
+day 4:
+-.8%
+
+edit:
+add short-term constraint back in
+return to 10 positions
+
+
+day 5:
+
+
+edit:
+short term input period MA is set to 1d
+move back to RSI selling
+change data analysis to read by 20 minutes to get more data, maxed out at 10,000
+only buy on RSI < 45 + MAL = Bear, True and MAS = Bull, False
+
+notes:
+Try a bear converge approach; look into making "approach" stronger to prevent a 180 
+Mark when a volume is more significant that usual and buy
+
+
+BIG DEVELOPMENT!!!!!!
+Need to find way to predict if it will continue in "bull bull" or will drop from "bull f to bear f", however converge rate may change this. 
+
+Notes for development:
+
+Only worked on 65-70 (never reset count for rest)
+Main lookats: Bull F Bull F and Bull F Bear (Bear F and Bear F is hard to predict)
+      - did not look at MA_L + MA_S combos
+        - eg. MAL Bull F Bull F + MAS Bull F Bull 
+        - MAL Bull F Bull F + MAS Bear F Bear F 
+      - only looked at converge rate at 30 consecutive, meaning it was hard to hit this statistic\
+
+!!! Found that BEAR T BULL F may be the best combination. More work to be done, only analyzed AAPL since data is slow. Also recorded by hand, so may have missed something.
