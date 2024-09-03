@@ -19,13 +19,12 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 class DTCalc:
-    def tiingo(self, ticker):
+    def tiingo(self, ticker, frequency = "20min", start_date = "2021-01-01"):
         API_KEY = os.getenv("TIINGO_API_KEY_ID")
         SYMBOL = ticker
-        start_date = "2021-01-01"
         end_date = datetime.now().strftime('%Y-%m-%d')
 
-        url = f'https://api.tiingo.com/iex/{SYMBOL}/prices?startDate={start_date}&resampleFreq=5min&columns=close,volume&token={API_KEY}'
+        url = f'https://api.tiingo.com/iex/{SYMBOL}/prices?startDate={start_date}&resampleFreq={frequency}&columns=close,volume&token={API_KEY}'
 
         headers = {
             'Content-Type': 'application/json'
@@ -56,10 +55,9 @@ class DTCalc:
         return df
 
 
-    def rsi_base(self, ticker, period='7d', interval='1m'):
+    def rsi_base(self, ticker, frequency = "20min", start_date = "2021-01-01"):
         yfticker = yf.Ticker(ticker)
-        #df = ticker.history(interval=interval, period=period)
-        df = self.tiingo(ticker)
+        df = self.tiingo(ticker, frequency, start_date)
 
 
         change = df['Close'].diff()
@@ -87,7 +85,7 @@ class DTCalc:
         current_price = yfticker.info['currentPrice']
         return df['RSI'].values, current_price, df
 
-    def calculate_ci(self, data):
+    def calculate_ci(self, data, confidence_level = 0.95):
         if not data or len(data) < 2:  # We need at least 2 data points to calculate CI
             return "None", "None"
         
@@ -107,7 +105,7 @@ class DTCalc:
             return round(mean, 2), (round(min(data), 2), round(max(data), 2))
         
         try:
-            ci = stats.t.interval(confidence=0.99, df=len(data)-1, loc=mean, scale=stats.sem(data))
+            ci = stats.t.interval(confidence=confidence_level, df=len(data)-1, loc=mean, scale=stats.sem(data))
             return round(mean, 2), (round(ci[0], 2), round(ci[1], 2))
         except Exception as e:
             print(f"Error calculating CI: {e}")
@@ -171,11 +169,11 @@ class DTData:
             'n_d': [], 'd_i': [], 'd_d': [],
             'd_d_value': [], 'd_i_value': [], 'n_d_value': [],
             'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': []
-        }
+        } 
         
             
         # Calculate RSI, retrieve entire dataframe for 5 days with 1-minute intervals
-        rsi, _, df = self.data_calc.rsi_base(tick, '7d', '1m')
+        rsi, _, df = self.data_calc.rsi_base(tick)
         lows_and_highs = self.find_lows_and_highs(rsi, df, rsi_range, ht)
         for low_date, low_value, high_date, high_value in lows_and_highs:
             stock_data = df['Close'].loc[low_date:high_date]
@@ -297,26 +295,30 @@ class DTManager:
     def main(self, ticker, range = True):
         try:
             rsi, current_price, df = self.calc.rsi_base(ticker)
-            
+            c_rsi = self.calc.rsi_base(ticker, frequency = "1m", start_date = "2024-8-25") #change to today - 7
+            c_rsi = c_rsi[-1]
             if range == True:
                 #print(f"Current RSI: {rsi[-1]:.2f}")
                 #print(f"Current Price: ${current_price:.2f}")
                 #messagebox.showinfo("RSI Information", f"{rsi[-1]:.2f}")
                 #rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
                 #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
-                rsi_range = (int(rsi[-1] - 5), int(rsi[-1] + 5)) #opt to switch to automatic 
+                rsi_range = (int(c_rsi - 5), int(c_rsi + 5)) #opt to switch to automatic 
                 stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
                 stop_l = (1 - ci_decrease[1] / 100) * current_price # lower ci of decrease increase
                 #stop_l = (1 + avg_decrease/100) * current_price # average decrease
                 stop = (1 + (ci_increase[0]/100)) * current_price # lower ci of increase (di)
                 limit = (1 + (p_increase/100)) * current_price # mean of increase (di)
+                 
+                
                 #print(f"Stop Loss: ${stop_l}")
                 #print(f"Stop: ${stop} Limit: ${limit}")
                 
-                return rsi[-1], current_price, stop_l, gain, time, stop, limit, wl
+                return c_rsi, current_price, stop_l, gain, time, stop, limit, wl
                 
             else:
-                c_rsi = rsi[-1]
+                c_rsi = self.calc.rsi_base(ticker, frequency = "1m", start_date = "2024-8-25") #change to today - 7
+                c_rsi = c_rsi[-1]
                 #print(c_rsi)
                 if c_rsi < 65:
                     rsi_range = (int(c_rsi- 5), int(c_rsi + 5))
