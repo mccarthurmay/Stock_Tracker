@@ -16,15 +16,18 @@ from datetime import datetime, timedelta
 from queue import Queue
 import pandas as pd
 from datetime import datetime, timedelta
+from r_analysis.data_download import run_download
+
 dt = DTManager()
 rsim = RSIManager()
+dtc = DTCalc()
 #tick = "ANSS"
 #range = (40,50)
 #dt.limit(tick, range)
 #run()
 
 
-
+#run_download()
 
 
 #98,314 for win rate
@@ -33,62 +36,31 @@ rsim = RSIManager()
 #restart with win rate at 98072
 
 
-#from data.min_rsi import ab_lowManager
-#range = [(40,50)]
-#ab = ab_lowManager()
+from data.min_rsi import ab_lowManager
+range = [(40,50)]
+ab = ab_lowManager()
+tick = "AAPL"
+ab.limit(tick)
 
-#ab.limit(tick, range)
+#def check_volume(ticker):
+    # find confidence interval of volume of stock , probably 80%
+        # download freq 20 and some data to find interval
+        # download current volume data with yfinance and if statement it
+#    df = dtc.tiingo(ticker, frequency = "20min", start_date = "2024-08-20")
+#    print(df)
+#    volume = df['Volume'].tolist()
+#    print(volume[-1])
+#    mean, cf_range = dtc.calculate_ci(volume, confidence_level = 0.80)
 
-def sector_sort():
-    # List of major sector ETFs
-    sector_etfs = {
-        "XLK": "Technology",
-        "XLF": "Financials",
-        "XLV": "Healthcare",
-        "XLE": "Energy",
-        "XLY": "Consumer Discretionary",
-        "XLP": "Consumer Staples",
-        "XLI": "Industrials",
-        "XLB": "Materials",
-        "XLU": "Utilities",
-        "XLRE": "Real Estate"
-    }
+#    ticker = yf.Ticker(ticker)
+#    intraday_data = ticker.history(interval='1m', period='1d')
+#    print(intraday_data['Volume'])
+#    print(mean, cf_range, current_volume)
 
-    today = datetime.now().strftime('%Y-%m-%d')
-    data = yf.download(list(sector_etfs.keys()), start=today, end=None, interval='1d')
+#check_volume("AAPL")
+    # if volume is over interval, send signal (add later to conditions; if volume is high use a trailing sell; ride the wave)
 
-    if data.empty:
-        print("No data available for today. The market may not have opened yet.")
-        return pd.DataFrame(columns=['Sector', 'Change'])
 
-    # Calculate today
-    changes = ((data['Close'] - data['Open']) / data['Open'] * 100).iloc[0]
-    
-    # Create a dataframe 
-    sector_performance = pd.DataFrame({
-        'Sector': changes.index,
-        'Change': changes.values
-    })
-    # Sort sectors by change 
-    sector_performance.sort_values('Change', ascending=False)
 
-    if not sector_performance.empty:
-        #print("Today's Sector Performance:")
-        #print(sector_performance)
-        
-        #print("\nIncreasing Sectors:")
-        increasing = sector_performance[sector_performance['Change'] > 0]
-        #print(increasing if not increasing.empty else "No sectors are currently increasing.")
-        
-        #print("\nDecreasing Sectors:")
-        #decreasing = sector_performance[sector_performance['Change'] < 0]
-        #print(decreasing if not decreasing.empty else "No sectors are currently decreasing.")
-    else:
-        print("No sector data available for today.")
-    sector_list = []
-    for sector in increasing['Sector']:
-        sector_list.append(sector)
 
-    return sector_list
-sector_list = sector_sort()
-print(sector_list)
+# TEST HOW MUCH CONFIDENCE INTERVAL OF DATA INCREASES OR DECREASES WITH TIME (in main paper.py for those calculations)
