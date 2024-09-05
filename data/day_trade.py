@@ -23,6 +23,8 @@ class DTCalc:
         API_KEY = os.getenv("TIINGO_API_KEY_ID")
         SYMBOL = ticker
         end_date = datetime.now().strftime('%Y-%m-%d')
+        if start_date == "today":
+            start_date = datetime.now().strftime('%Y-%m-%d')
 
         url = f'https://api.tiingo.com/iex/{SYMBOL}/prices?startDate={start_date}&resampleFreq={frequency}&columns=close,volume&token={API_KEY}'
 
@@ -36,6 +38,7 @@ class DTCalc:
         eastern_tz = pytz.timezone('US/Eastern')
 
         for entry in data:
+            
             dt = datetime.strptime(entry['date'], '%Y-%m-%dT%H:%M:%S.%fZ')
             dt_eastern = dt.astimezone(eastern_tz)
 
@@ -44,6 +47,7 @@ class DTCalc:
                 'Close': float(entry['close']),
                 'Volume': int(entry['volume']) if 'volume' in entry else None
             })
+
 
         # Convert to DataFrame
         df = pd.DataFrame(df_data)
@@ -55,8 +59,7 @@ class DTCalc:
         return df
 
 
-    def rsi_base(self, ticker, frequency = "20min", start_date = "2021-01-01"):
-        yfticker = yf.Ticker(ticker)
+    def rsi_base(self, ticker, frequency = "1min", start_date = "2021-01-01"):
         df = self.tiingo(ticker, frequency, start_date)
 
 
@@ -82,7 +85,9 @@ class DTCalc:
         
         df = df.dropna(subset=['RSI', 'Avg_Volume', 'RSI_MA', 'Volatility'])
         
-        current_price = yfticker.info['currentPrice']
+        current_price = self.tiingo(ticker, "1min", "2024-08-30")
+        current_price = current_price['Close'][-1]
+
         return df['RSI'].values, current_price, df
 
     def calculate_ci(self, data, confidence_level = 0.95):
@@ -293,55 +298,51 @@ class DTManager:
         self.calc = DTCalc()
     
     def main(self, ticker, range = True):
-        try:
-            rsi, current_price, df = self.calc.rsi_base(ticker)
-            c_rsi = self.calc.rsi_base(ticker, frequency = "1m", start_date = "2024-8-25") #change to today - 7
-            c_rsi = c_rsi[-1]
-            if range == True:
-                #print(f"Current RSI: {rsi[-1]:.2f}")
-                #print(f"Current Price: ${current_price:.2f}")
-                #messagebox.showinfo("RSI Information", f"{rsi[-1]:.2f}")
-                #rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
-                #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
-                rsi_range = (int(c_rsi - 5), int(c_rsi + 5)) #opt to switch to automatic 
-                stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
-                stop_l = (1 - ci_decrease[1] / 100) * current_price # lower ci of decrease increase
-                #stop_l = (1 + avg_decrease/100) * current_price # average decrease
-                stop = (1 + (ci_increase[0]/100)) * current_price # lower ci of increase (di)
-                limit = (1 + (p_increase/100)) * current_price # mean of increase (di)
-                 
+    #try:
+        rsi, current_price, df = self.calc.rsi_base(ticker, "1min", "2024-08-30")
+        c_rsi = rsi[-1]
+        if range == True:
+            #print(f"Current RSI: {rsi[-1]:.2f}")
+            #print(f"Current Price: ${current_price:.2f}")
+            #messagebox.showinfo("RSI Information", f"{rsi[-1]:.2f}")
+            #rsi1= simpledialog.askstring("Input", "Range for analysis (#1): ").strip()
+            #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
+            rsi_range = (int(c_rsi - 5), int(c_rsi + 5)) #opt to switch to automatic 
+            stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
+            stop_l = (1 - ci_decrease[1] / 100) * current_price # lower ci of decrease increase
+            #stop_l = (1 + avg_decrease/100) * current_price # average decrease
+            stop = (1 + (ci_increase[0]/100)) * current_price # lower ci of increase (di)
+            limit = (1 + (p_increase/100)) * current_price # mean of increase (di)
                 
-                #print(f"Stop Loss: ${stop_l}")
-                #print(f"Stop: ${stop} Limit: ${limit}")
-                
-                return c_rsi, current_price, stop_l, gain, time, stop, limit, wl
-                
+            
+            #print(f"Stop Loss: ${stop_l}")
+            #print(f"Stop: ${stop} Limit: ${limit}")
+            
+            return c_rsi, current_price, stop_l, gain, time, stop, limit, wl
+            
+        else:
+            if c_rsi < 65:
+                rsi_range = (int(c_rsi- 5), int(c_rsi + 5))
+                stop, gain, time, p_increase, ci_increase, ci_decrease, p_pos, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
+                #print(c_rsi, ticker, gain, p_pos)
+                return c_rsi, ticker, gain, p_pos
             else:
-                c_rsi = self.calc.rsi_base(ticker, frequency = "1m", start_date = "2024-8-25") #change to today - 7
-                c_rsi = c_rsi[-1]
-                #print(c_rsi)
-                if c_rsi < 65:
-                    rsi_range = (int(c_rsi- 5), int(c_rsi + 5))
-                    stop, gain, time, p_increase, ci_increase, ci_decrease, p_pos, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
-                    #print(c_rsi, ticker, gain, p_pos)
-                    return c_rsi, ticker, gain, p_pos
-                else:
-                    pass
-        except Exception as e:
-            print(f"Error in main(), {e}")
+                pass
+    #except Exception as e:
+    #    print(f"Error in main(), {e}")
      
     def find(self):
         sector_list = self.data_manager.sector_sort()
         stock_list = []
 
-        for file in sector_list:
-            print(file)
-            with open(f"./storage/ticker_lists/sectors/{file}.txt", "r") as stock_file:
-                stocks = stock_file.read().splitlines()  # Use splitlines() to avoid empty strings
-                stock_list.extend(stocks)  # Extend the list with the new stocks
+        #for file in sector_list:
+        #    print(file)
+        #    with open(f"./storage/ticker_lists/sectors/{file}.txt", "r") as stock_file:
+        #        stocks = stock_file.read().splitlines()  # Use splitlines() to avoid empty strings
+        #        stock_list.extend(stocks)  # Extend the list with the new stocks
 
-        #with open("./storage/ticker_lists/sectors/{}.txt", "r") as stock_file:
-        #    stock_list = stock_file.read().split('\n')
+        with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
+            stock_list = stock_file.read().split('\n')
         
         #stock_list = ["AAPL", "UNH", "CEG", "OXY", "WDC", "LLY", "WBD", "SNPS", "OKE", "NDAQ", "AMZN"]
         #stock_list = ["WBD"]
