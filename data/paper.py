@@ -218,7 +218,7 @@ def run():
                         ]
                     
                     if all(conditions):
-                        run_ma(ticker, graph = True )
+                        run_ma(ticker, graph = False)
                         future = executor.submit(process_entry, entry)
                         futures[ticker] = future
                         print(len(futures), "futures")
