@@ -34,7 +34,7 @@ return to 10 positions
 
 
 day 5:
-
+- a lot
 
 edit:
 short term input period MA is set to 1d
@@ -57,6 +57,24 @@ Main lookats: Bull F Bull F and Bull F Bear (Bear F and Bear F is hard to predic
       - did not look at MA_L + MA_S combos
         - eg. MAL Bull F Bull F + MAS Bull F Bull 
         - MAL Bull F Bull F + MAS Bear F Bear F 
-      - only looked at converge rate at 30 consecutive, meaning it was hard to hit this statistic\
+      - only looked at converge rate at 30 consecutive, meaning it was hard to hit this statistic
 
 !!! Found that BEAR T BULL F may be the best combination. More work to be done, only analyzed AAPL since data is slow. Also recorded by hand, so may have missed something.
+
+
+day 6:
+
+
+edits:
+switched back to smp500
+changed MA values to match that of the analysis 
+moved down to 5 tickers at 10:42, took effect later on (quantity and max positions) # minimize the loss at buy
+switched back to 1min analysis instead of 20 min
+
+notes:
+could make trailing stop on top of rsi 70
+MORE analysis - only look at ma start for mal and mas with Bear True Bull false pattern and see if that always results in gain
+analysis on 20 min - wait a minute do we really need an anaylsis? currently buying on ma pattern 
+eventually should make automatic sell at 200 min away. 
+found that guaranteed loss; short next time
+FORGOT TO CHANGE MA ANALYSIS RANGE
