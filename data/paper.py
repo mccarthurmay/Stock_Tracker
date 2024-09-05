@@ -8,6 +8,7 @@ import time as tm
 import yfinance as yf
 import concurrent.futures
 from data.analysis import RSIManager
+import matplotlib.pyplot as plt
 import keyboard
 from queue import Queue
 dt = DTManager()
@@ -33,26 +34,30 @@ def process_entry(entry):
     ticker = entry[1]
     rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
     equity = float(account.equity)
-    quantity = round((float(equity)/10) / current_price, 0) - 1
+    quantity = round((float(equity)/5) / current_price, 0) - 1
     stp = round(stop,2) # lower confidence interval of decrease increase gain
     lmt = round(limit,2) # mean of decrease increase
     stp_l = round(stop_l,2) # lower confidence interval of decrease increase range
     #stp_l = round((current_price * .99),2) #trading based on win rate
     print(f"Buy: {current_price}, Sell: {stp}, Stop Loss: {stp_l}, Quantity: {quantity}")
-
+    try:
     #Buy order
-    buy_order = api.submit_order(   # buy
-        symbol = ticker,
-        qty = quantity,
-        side = 'buy',
-        type = 'market',
-        order_class='bracket',  # Bracket order
-        stop_loss={'stop_price': stp_l},  # Stop-loss order
-        #take_profit={'limit_price': stp},  # Take-profit order
-        time_in_force = 'gtc',
-  #WAS CAUSING PROBLEMS PREVIOUSLY
-        ) 
+        buy_order = api.submit_order(   # buy
+            symbol = ticker,
+            qty = quantity,
+            side = 'buy',
+            type = 'market',
+            order_class='oto',
+            stop_loss = {'stop_price': stp_l},
+            #stop_price= stp_l,
+            #stop_loss={'stop_price': stp_l},  # Stop-loss order
+            #take_profit={'limit_price': stp},  # Take-profit order
+            time_in_force = 'gtc',
+    #WAS CAUSING PROBLEMS PREVIOUSLY
+            ) 
 
+    except Exception as e:
+        print(e, "Buy order not submitted")
 
     
 
@@ -94,7 +99,7 @@ def monitor_position(ticker):
             position = api.get_position(ticker)
             ###GRAB RSI, if RSI > 70, sell
             quantity = position.qty
-            rsi, _, df = dtc.rsi_base(ticker, "7d", "1m")
+            rsi, _, df = dtc.rsi_base(ticker, "1min", "2024-08-29")
             #print(ticker, rsi[-1])
             if rsi[-1] > 70:
                 close_all_orders(ticker)
@@ -128,20 +133,20 @@ def monitor_position(ticker):
 
 
 
-def run_ma(ticker): 
+def run_ma(ticker, graph = False): 
     try:
         ma_l, _, cnvrg_l = rsim.MA(ticker, 
-                                    graph = False, 
+                                    graph, 
                                     input_interval = "1m", 
                                     input_period = "5d",
                                     span1 = 50,
-                                    span2 = 250,
-                                    standardize= True
+                                    span2 = 200,
+                                    #standardize= True
                                     )
         ma_s, _, cnvrg_s = rsim.MA(ticker, 
-                                    graph = False, 
+                                    graph, 
                                     input_interval = "1m", 
-                                    input_period = "1d",
+                                    input_period = "5d",
                                     span1 = 20,
                                     span2 = 50
                                     )
@@ -159,7 +164,7 @@ def run_ma(ticker):
 
 def run():
     open_positions, num_position = get_open_positions()
-    max_positions = 10
+    max_positions = 5
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
 
@@ -200,19 +205,20 @@ def run():
                     i += 1
                     print(entry[3], entry[2], ticker, i)
                     ma_l, ma_s, cnvrg_l, cnvrg_s = run_ma(ticker)
-                    rsi, _, df = dtc.rsi_base(ticker, "7d", "1m")
+                    rsi, _, df = dtc.rsi_base(ticker, "1min", "today")
                     conditions = [
                         ticker not in open_positions,
                         len(futures) < max_positions,
                         ticker not in futures,
-                        rsi < 45,
-                        ma_l == "BEAR",
-                        cnvrg_l == True,
+                        rsi[-1] < 45,
+                        ma_l == "BULL",
+                        cnvrg_l == False,
                         ma_s == "BULL",
                         cnvrg_s == False
                         ]
                     
                     if all(conditions):
+                        run_ma(ticker, graph = True )
                         future = executor.submit(process_entry, entry)
                         futures[ticker] = future
                         print(len(futures), "futures")
