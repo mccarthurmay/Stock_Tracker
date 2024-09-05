@@ -303,18 +303,18 @@ class RSIManager:
         for i in reversed(range(len(MA))):
             date = MA.index[i] 
             if i > 0:
-                if MA['LT'].iloc[i-1] > MA['ST'].iloc[i-1] and MA['LT'].iloc[i] < MA['ST'].iloc[i]:
+                if MA['ST'].iloc[-1] > MA['LT'].iloc[-1]:
                     latest_date = date
                     latest_market = "BULL"
                     break  
-                elif MA['LT'].iloc[i-1] < MA['ST'].iloc[i-1] and MA['LT'].iloc[i] > MA['ST'].iloc[i]:
+                elif  MA['ST'].iloc[-1] < MA['LT'].iloc[-1]:
                     latest_date = date
                     latest_market = "BEAR"
                     break 
                 converging_li.append(abs(MA['LT'].iloc[i] - MA['ST'].iloc[i]))
         
         converging_li.reverse()
-        if len(converging_li) >= 5 and converging_li[-1] < converging_li[-2] < converging_li[-3] < converging_li[-4] < converging_li[-5]:
+        if len(converging_li) >= 20 and all(converging_li[i] < converging_li[i-1] for i in range(-1, -21, -1)):
             converging = True
         
         if standardize:
