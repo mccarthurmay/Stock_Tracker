@@ -93,42 +93,60 @@ def close_all_orders(ticker):
             print(f"Error cancelling order for {ticker}: {str(e)}")
 
 def monitor_position(ticker):
+    trailing_percent = 0.002  # .02% trailing stop
+    highest_price = 0
+    trailing_stop_active = False
+
     while True:
         try:
             # Test if position exists
             position = api.get_position(ticker)
-            ###GRAB RSI, if RSI > 70, sell
-            quantity = position.qty
-            rsi, _, df = dtc.rsi_base(ticker, "1min", "2024-08-29")
-            #print(ticker, rsi[-1])
-            if rsi[-1] > 70:
-                close_all_orders(ticker)
-                order = api.submit_order(   # buy
-                symbol = ticker,
-                qty = quantity,
-                side = 'sell',
-                type = 'market',
-                time_in_force = 'gtc',
-                )
-                print(f"{ticker} has been sold!!! Order ID: {order.id}")
-        
-            #else:
-            #    tm.sleep(30)
-            tm.sleep(30)
-            # If position dne, close all orders for ticker, add to queue
             if position is None:
                 close_all_orders(ticker)
-                break #runs until orders closed
-                
-        
-        #Error handling
-        except Exception as e:
-            if 'position does not exist' in str(e).lower():
-                close_all_orders(ticker)
+                print(f"No position for {ticker}. Exiting monitor.")
                 break
-            else:
-                print(f"Error monitoring position for {ticker}: {str(e)}")
-        tm.sleep(5)
+
+            quantity = float(position.qty)
+            current_price = float(position.current_price)
+
+            rsi, _, df = dtc.rsi_base(ticker, "1min", "2024-08-29")
+            current_rsi = rsi[-1]
+
+            if not trailing_stop_active:
+                if current_rsi > 70:
+                    trailing_stop_active = True
+                    highest_price = current_price
+                    print(f"RSI > 70 ({current_rsi:.2f}). Trailing stop activated for {ticker}.")
+                else:
+                    print(f"Waiting for RSI to exceed 70. Current RSI: {current_rsi:.2f}")
+                    tm.sleep(30)
+                    continue
+
+            # Update highest price seen if trailing stop is active
+            highest_price = max(highest_price, current_price)
+
+            # Calculate trailing stop price
+            stop_price = highest_price * (1 - trailing_percent)
+
+            if current_price <= stop_price:
+                close_all_orders(ticker)
+                order = api.submit_order(
+                    symbol=ticker,
+                    qty=quantity,
+                    side='sell',
+                    type='market',
+                    time_in_force='gtc',
+                )
+                print(f"{ticker} has been sold!!! Order ID: {order.id}")
+                print(f"Trailing stop triggered. Highest: ${highest_price:.2f}, Stop: ${stop_price:.2f}")
+                break  # Exit the loop after selling
+
+            print(f"Current: ${current_price:.2f}, Highest: ${highest_price:.2f}, Stop: ${stop_price:.2f}, RSI: {current_rsi:.2f}")
+            tm.sleep(30)
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            tm.sleep(30)
 
 
 
