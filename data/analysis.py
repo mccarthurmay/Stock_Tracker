@@ -280,8 +280,9 @@ class RSIManager:
 
 
 
-    def MA(self, ticker, graph, input_interval="1d", input_period="2y", span1=20, span2=50, standardize=False):
+    def MA(self, ticker, graph, input_interval="1m", input_period="5d", span1=50, span2=200, standardize=False):
         df = yf.Ticker(ticker).history(interval=input_interval, period=input_period)
+        df = df.between_time('09:30', '16:00')
         
         if standardize:
             mean = df['Close'].mean()
@@ -323,8 +324,8 @@ class RSIManager:
         
         if graph:
             plt.figure(figsize=(12, 6))
-            plt.plot(df.index, df['Close'].rolling(window=span1).mean(), label=f"MA{span1}")
-            plt.plot(df.index, df['Close'].rolling(window=span2).mean(), label=f"MA{span2}")
+            plt.plot(df.index, MA['ST'])
+            plt.plot(df.index, MA['LT'])
             plt.plot(df.index, df['Close'], label="Close Price", alpha=0.5)
             plt.title(f"{ticker} Moving Averages")
             plt.xlabel("Date")
