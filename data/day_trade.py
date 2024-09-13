@@ -16,10 +16,12 @@ import pandas as pd
 from datetime import datetime, time, timedelta
 import pytz
 import warnings
+from random import sample
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 class DTCalc:
     def tiingo(self, ticker, frequency = "20min", start_date = "2021-01-01"):
+        #print(ticker, "tiingo")
         API_KEY = os.getenv("TIINGO_API_KEY_ID")
         SYMBOL = ticker
         end_date = datetime.now().strftime('%Y-%m-%d')
@@ -62,7 +64,7 @@ class DTCalc:
     def rsi_base(self, ticker, frequency = "1min", start_date = "2021-01-01"):
         df = self.tiingo(ticker, frequency, start_date)
 
-
+        current_price = df['Close'][-1]
         change = df['Close'].diff()
         change_up = change.copy()
         change_down = change.copy()
@@ -84,13 +86,10 @@ class DTCalc:
         df['Volatility'] = df['Close'].rolling(14).std()
         
         df = df.dropna(subset=['RSI', 'Avg_Volume', 'RSI_MA', 'Volatility'])
-        
-        current_price = self.tiingo(ticker, "1min", "2024-08-30")
-        current_price = current_price['Close'][-1]
 
         return df['RSI'].values, current_price, df
 
-    def calculate_ci(self, data, confidence_level = 0.95):
+    def calculate_ci(self, data, confidence_level = 0.8):
         if not data or len(data) < 2:  # We need at least 2 data points to calculate CI
             return "None", "None"
         
@@ -236,8 +235,8 @@ class DTData:
         #print(f"Turnover CI: {turnover_mean:.2f} minutes (CI: {turnover_ci})")
         #print(f"Gain: {gain:.4f}%")
         #print("\n" + "="*200 + "\n")
-        return d_i_temp_mean, gain, turnover_mean, d_i_mean, d_i_ci, d_i_temp_ci, p_pos, wl, d_d_mean #stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease
-
+        return d_i_temp_mean, gain, turnover_mean, d_i_mean, d_i_ci, d_i_temp_mean, p_pos, wl, d_d_mean #stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease
+        # switched d_i_temp_ci to d_i_temp_mean
 
     def sector_sort(self):
         # List of major sector ETFs
@@ -309,7 +308,8 @@ class DTManager:
             #rsi2= simpledialog.askstring("Input", "Range for analysis (#2): ").strip()
             rsi_range = (int(c_rsi - 5), int(c_rsi + 5)) #opt to switch to automatic 
             stop, gain, time, p_increase, ci_increase, ci_decrease, p_gain, wl, avg_decrease = self.data_manager.limit(ticker, rsi_range)
-            stop_l = (1 - ci_decrease[1] / 100) * current_price # lower ci of decrease increase
+            #stop_l = (1 - ci_decrease[1] / 100) * current_price # lower ci of decrease increase 
+            stop_l = (1 - ci_decrease / 100) * current_price # mean decrease increase
             #stop_l = (1 + avg_decrease/100) * current_price # average decrease
             stop = (1 + (ci_increase[0]/100)) * current_price # lower ci of increase (di)
             limit = (1 + (p_increase/100)) * current_price # mean of increase (di)
@@ -332,7 +332,7 @@ class DTManager:
     #    print(f"Error in main(), {e}")
      
     def find(self):
-        sector_list = self.data_manager.sector_sort()
+        #sector_list = self.data_manager.sector_sort()
         stock_list = []
 
         #for file in sector_list:
@@ -343,6 +343,7 @@ class DTManager:
 
         with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
             stock_list = stock_file.read().split('\n')
+            stock_list = sample(stock_list, 50)
         
         #stock_list = ["AAPL", "UNH", "CEG", "OXY", "WDC", "LLY", "WBD", "SNPS", "OKE", "NDAQ", "AMZN"]
         #stock_list = ["WBD"]
