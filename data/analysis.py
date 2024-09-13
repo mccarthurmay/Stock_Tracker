@@ -4,7 +4,7 @@ import numpy as np
 from scipy.stats import linregress
 import matplotlib.pyplot as plt
 from sklearn.metrics.pairwise import cosine_similarity
-from datetime import datetime
+from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox
 
@@ -341,8 +341,30 @@ class RSIManager:
             return None, None, converging
 
     
-    
-    
+    def macd(self, symbol, interval='1m', fast_period=12, slow_period=26, signal_period=9):
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=5)
+        stock = yf.Ticker(symbol)
+        df = stock.history(start=start_date, end=end_date, interval=interval)
+        if df.empty:
+            return None
+
+
+        df['EMA_fast'] = df['Close'].ewm(span=fast_period, adjust=False).mean()
+        df['EMA_slow'] = df['Close'].ewm(span=slow_period, adjust=False).mean()
+
+        df['MACD'] = df['EMA_fast'] - df['EMA_slow']
+
+        df['Signal'] = df['MACD'].ewm(span=signal_period, adjust=False).mean()
+
+        current_data = df.iloc[-1]
+
+        if current_data['MACD'] > current_data['Signal']:
+            return "BULL"
+        else:
+            return "BEAR"
+        
 
 
 #possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
