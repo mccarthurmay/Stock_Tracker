@@ -63,7 +63,7 @@ Main lookats: Bull F Bull F and Bull F Bear (Bear F and Bear F is hard to predic
 
 
 day 6:
-
++.2
 
 edits:
 switched back to smp500
@@ -78,3 +78,13 @@ analysis on 20 min - wait a minute do we really need an anaylsis? currently buyi
 eventually should make automatic sell at 200 min away. 
 found that guaranteed loss; short next time
 FORGOT TO CHANGE MA ANALYSIS RANGE
+Randomize smp500 list, only do 50s
+
+day 7:
+
+notes:
+need to optimize stop loss
+optimize data calling; dig deep, maybe find moving average stuff while looking for stocks, since im random sampling i can prob just pick the first ones i find
+sometimes, I buy too far into the moving average; maybe calculate % chance the moving average will stop gaining after a certain point
+
+do another analysis on long term moving average - see if that has any effect
