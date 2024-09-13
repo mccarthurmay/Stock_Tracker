@@ -17,11 +17,11 @@ dt = DTCalc()
 
 
 
-def rsi_base(ticker, period='5d', interval='1m'):
+def rsi_base(ticker, df, period='5d', interval='1m'):
     #ticker = yf.Ticker(ticker)
     #df = ticker.history(interval=interval, period=period)
     #df = alpha("GM")
-    df = dt.tiingo(ticker, frequency = "1min", start_date = "2022-07-30")
+    #df = dt.tiingo(ticker, frequency = "1min", start_date = "2022-07-30")
     #print(df)
     change = df['Close'].diff()
     change_up = change.copy()
@@ -116,12 +116,9 @@ class ab_lowManager:
     def Average_Time(self, lst): 
         return (sum(td.total_seconds() for td in lst) / len(lst)) / 60  # Changed to minutes
     
-    def MA(self, ticker, low_date, high_date, span1=20, span2=50, standardize=False):
-        # Get data from the ticker
-        df = dt.tiingo(ticker, frequency="1min", start_date="2022-07-30")
-        
-        # Extend the date range to include enough previous data for moving averages
-        extended_low_date = pd.to_datetime(low_date) - pd.Timedelta(days=max(span1, span2) * 2)
+    def MA(self, ticker, df, low_date, high_date, span1=20, span2=50, standardize=False):
+        # Extend the date range to include enough previous data for moving averages and MACD
+        extended_low_date = pd.to_datetime(low_date) - pd.Timedelta(days=max(span1, span2, 26) * 2)
         df = df[df.index >= extended_low_date]
         
         if standardize:
@@ -134,7 +131,27 @@ class ab_lowManager:
         MA = pd.DataFrame()
         MA['ST'] = close_data.ewm(span=span1, adjust=False).mean() 
         MA['LT'] = close_data.ewm(span=span2, adjust=False).mean()
+        
+        # Calculate MACD
+        MA['EMA12'] = close_data.ewm(span=12, adjust=False).mean()
+        MA['EMA26'] = close_data.ewm(span=26, adjust=False).mean()
+        MA['MACD'] = MA['EMA12'] - MA['EMA26']
+        MA['Signal'] = MA['MACD'].ewm(span=9, adjust=False).mean()
+        MA['Histogram'] = MA['MACD'] - MA['Signal']
+        
         MA.dropna(inplace=True)
+        
+        # Fetch longer-term data using yfinance
+        yf_ticker = yf.Ticker(ticker)
+        end_date = pd.to_datetime(low_date)
+        start_date = end_date - pd.Timedelta(days=365)  # Get 1 year of data
+        long_term_data = yf_ticker.history(start=start_date, end=end_date)
+        
+        # Calculate longer-term moving averages
+        long_term_MA = pd.DataFrame()
+        long_term_MA['MA50'] = long_term_data['Close'].rolling(window=50).mean()
+        long_term_MA['MA100'] = long_term_data['Close'].rolling(window=100).mean()
+        long_term_MA['MA200'] = long_term_data['Close'].rolling(window=200).mean()
         
         def determine_market(ma_data):
             if ma_data['ST'].iloc[-1] > ma_data['LT'].iloc[-1]:
@@ -142,24 +159,59 @@ class ab_lowManager:
             else:
                 return "BEAR"
         
+        def determine_macd_trend(ma_data):
+            if ma_data['MACD'].iloc[-1] > ma_data['Signal'].iloc[-1]:
+                return "BULLISH"
+            else:
+                return "BEARISH"
+        
+        def determine_long_term_trend(lt_ma_data):
+            last_price = long_term_data['Close'].iloc[-1]
+            if last_price > lt_ma_data['MA50'].iloc[-1] > lt_ma_data['MA100'].iloc[-1] > lt_ma_data['MA200'].iloc[-1]:
+                return "STRONG_BULL"
+            elif last_price > lt_ma_data['MA200'].iloc[-1]:
+                return "BULL"
+            elif last_price < lt_ma_data['MA200'].iloc[-1]:
+                return "BEAR"
+            else:
+                return "NEUTRAL"
+        
         low_market = determine_market(MA.loc[:low_date])
-        high_market = determine_market(MA.loc[:high_date])
+        low_macd_trend = determine_macd_trend(MA.loc[:low_date])
         
         # Check for convergence
         low_converging = self.is_converging(MA.loc[:low_date])
-        high_converging = self.is_converging(MA.loc[:high_date])
-
-        return {"low_date": {"market": low_market, "converging": low_converging},
-                "high_date": {"market": high_market, "converging": high_converging}}
-
-    def is_converging(self, ma_data, window=20):
-        diff = abs(ma_data['ST'] - ma_data['LT'])
-        return diff.iloc[-window:].is_monotonic_decreasing
         
+        # Check for MACD convergence
+        low_macd_converging = self.is_converging(MA.loc[:low_date][['MACD', 'Signal']])
+        
+        # Determine long-term trend
+        long_term_trend = determine_long_term_trend(long_term_MA)
+        
+        return {
+            "low_date": {
+                "market": low_market,
+                "converging": low_converging,
+                "macd_trend": low_macd_trend,
+                "macd_converging": low_macd_converging,
+                "long_term_trend": long_term_trend
+            }
+        }
+    def is_converging(self, ma_data, window=20):
+        if 'ST' in ma_data.columns and 'LT' in ma_data.columns:
+            diff = abs(ma_data['ST'] - ma_data['LT'])
+        elif 'MACD' in ma_data.columns and 'Signal' in ma_data.columns:
+            diff = abs(ma_data['MACD'] - ma_data['Signal'])
+        else:
+            raise ValueError("Unexpected data format in is_converging")
+        return diff.iloc[-window:].is_monotonic_decreasing
+
     def update_ma_counter(self, ma_l, ma_s, is_dd, dd_value):
-        ma_l_key = f"MA_L {ma_l['low_date']['market']},{ma_l['low_date']['converging']},{ma_l['high_date']['market']},{ma_l['high_date']['converging']}"
-        ma_s_key = f"MA_S {ma_s['low_date']['market']},{ma_s['low_date']['converging']},{ma_s['high_date']['market']},{ma_s['high_date']['converging']}"
-        combined_key = f"{ma_l_key} + {ma_s_key}"
+        ma_l_key = f"MA_L {ma_l['low_date']['market']},{ma_l['low_date']['converging']}"
+        ma_s_key = f"MA_S {ma_s['low_date']['market']},{ma_s['low_date']['converging']}"
+        macd_key = f"MACD {ma_l['low_date']['macd_trend']},{ma_l['low_date']['macd_converging']}"
+        lt_key = f"LT {ma_l['low_date']['long_term_trend']}"
+        combined_key = f"{ma_l_key} + {ma_s_key} + {macd_key} + {lt_key}"
         
         self.combined_ma_counter[combined_key] = self.combined_ma_counter.get(combined_key, 0) + 1
         
@@ -175,8 +227,8 @@ class ab_lowManager:
             'd_d_value': [], 'd_i_value': [], 'n_d_value': [],
             'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': [], 'ma_l': [], 'ma_s': []
         }
-        
-        rsi, _, df = rsi_base(ticker)
+        df = dt.tiingo(ticker, frequency="1min", start_date="2019-07-30")
+        rsi, _, df = rsi_base(ticker, df)
         lows_and_highs = self.find_lows_and_highs(rsi, df, ltr, ht)
         
         for low_date, low_value, high_date, high_value in lows_and_highs:
@@ -184,8 +236,8 @@ class ab_lowManager:
             rsi_price = stock_data.iloc[0]
             lowest_price = stock_data.min()
             sell_price = stock_data.iloc[-1]
-            ma_l = self.MA(ticker, low_date, high_date, span1=50, span2=200)
-            ma_s = self.MA(ticker, low_date, high_date, span1=20, span2=50)
+            ma_l = self.MA(ticker, df, low_date, high_date, span1=50, span2=200)
+            ma_s = self.MA(ticker, df, low_date, high_date, span1=20, span2=50)
             p_decrease = (rsi_price - lowest_price) / rsi_price * 100
             p_increase = (sell_price - rsi_price) / rsi_price * 100
 
@@ -209,12 +261,14 @@ class ab_lowManager:
 
         return results
     
+    #182/51 28
+    #83/26 31
     
         
-    def limit(self, tick):
-        stock_list = tick
-        ltr_list = [(40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
-        # (65, 70), (60, 65), (55, 60), (50, 55), (45, 50), 
+    def limit(self, ticker_list):
+        ltr_list = [ (65, 70),  (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35)]
+
+        # (65, 70),  (60, 65), (55, 60), (50, 55), (45, 50), (40, 45), (35, 40), (30, 35), (25, 30), (20, 25), (15, 20), (10, 15), (5, 10), (0,5)] 
         ht = 70
 
         for ltr in ltr_list:
@@ -226,11 +280,9 @@ class ab_lowManager:
                 'd_d_value': [], 'd_i_value': [], 'n_d_value': [],
                 'avg_turnover': [], 'd_i_temp': [], 'd_d_temp': [], 'ma_l': [], 'ma_s': []
             }
-            
             process_ticker_partial = partial(self.process_ticker, ltr=ltr, ht=ht)
-            
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_ticker = {executor.submit(process_ticker_partial, ticker): ticker for ticker in stock_list}
+                future_to_ticker = {executor.submit(process_ticker_partial, ticker): ticker for ticker in ticker_list}
                 for future in concurrent.futures.as_completed(future_to_ticker):
                     ticker = future_to_ticker[future]
                     try:
@@ -239,7 +291,6 @@ class ab_lowManager:
                             all_results[key].extend(result[key])
                     except Exception as e:
                         print(f'{ticker} generated an exception: {e}')
-
             # Calculate statistics
             d_d_mean, d_d_ci = calculate_ci(all_results['d_d_value'])
             d_i_mean, d_i_ci = calculate_ci(all_results['d_i_value'])
@@ -249,11 +300,11 @@ class ab_lowManager:
             turnover_mean, turnover_ci = calculate_ci(all_results['avg_turnover']) if all_results['avg_turnover'] else (None, None)
 
             print(f"\nResults for RSI range {ltr}:")
-            print("Decrease vs Increase")
-            print(f"{len(all_results['d_d'])} vs {len(all_results['d_i'])} + {len(all_results['n_d'])}")
-            print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
-            print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
-            print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
+            #print("Decrease vs Increase")
+            #print(f"{len(all_results['d_d'])} vs {len(all_results['d_i'])} + {len(all_results['n_d'])}")
+            #print(f"Average Decrease %: {d_d_mean} (CI: {d_d_ci}) (limit {d_d_temp_mean}, CI: {d_d_temp_ci})")
+            #print(f"Average DI Increase %: {d_i_mean} (CI: {d_i_ci}) (limit {d_i_temp_mean}, CI: {d_i_temp_ci})")
+           # print(f"Average ND Increase %: {n_d_mean} (CI: {n_d_ci})")
             if turnover_mean and turnover_ci:
                 print(f"Turnover CI: {turnover_mean:.2f} minutes (CI: {turnover_ci})")
             gain = self.calc(len(all_results['d_d']), (len(all_results['d_i']) + len(all_results['n_d'])), d_i_temp_mean, d_i_mean, turnover_mean)
@@ -272,7 +323,7 @@ class ab_lowManager:
                 else:
                     print("  No d_d occurrences")
             
-            print("\n" + "="*200 + "\n")
+           # print("\n" + "="*200 + "\n")
 
     def calc(self, lenloss, lengain, d, i, turnover):
         p_loss = lenloss / (lenloss + lengain)
