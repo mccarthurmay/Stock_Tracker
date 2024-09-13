@@ -21,12 +21,16 @@ from r_analysis.data_download import run_download
 dt = DTManager()
 rsim = RSIManager()
 dtc = DTCalc()
+
+
+
 #tick = "ANSS"
 #range = (40,50)
 #dt.limit(tick, range)
-#run()
-
-
+run()
+#print("running")
+#print(rsim.macd("GM"))
+#print("what")
 #run_download()
 
 
@@ -39,8 +43,15 @@ dtc = DTCalc()
 from data.min_rsi import ab_lowManager
 range = [(40,50)]
 ab = ab_lowManager()
-tick = "AAPL"
-ab.limit(tick)
+#tick = ["AAPL", "GM", "AAA", "VZ", "IBM"]
+from random import sample
+#with open("./storage/ticker_lists/safe_tickers.txt", "r") as stock_file:
+#    stock_list = stock_file.read().split('\n')
+#stock_list = sample(stock_list,50)
+#ab.limit(stock_list)
+
+
+
 
 #def check_volume(ticker):
     # find confidence interval of volume of stock , probably 80%
@@ -59,8 +70,6 @@ ab.limit(tick)
 
 #check_volume("AAPL")
     # if volume is over interval, send signal (add later to conditions; if volume is high use a trailing sell; ride the wave)
-
-
 
 
 # TEST HOW MUCH CONFIDENCE INTERVAL OF DATA INCREASES OR DECREASES WITH TIME (in main paper.py for those calculations)
