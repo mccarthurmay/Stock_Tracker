@@ -35,7 +35,7 @@ def process_entry(entry):
     ticker = entry[1]
     rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
     equity = float(account.equity)
-    quantity = round((float(equity)/3) / current_price, 0) - 1
+    quantity = round((float(equity)/5) / current_price, 0) - 1
     stp = round(stop,2) # lower confidence interval of decrease increase gain
     lmt = round(limit,2) # mean of decrease increase
     #stp_l = round(stop_l,2) # lower confidence interval of decrease increase range
@@ -94,7 +94,7 @@ def close_all_orders(ticker):
             print(f"Error cancelling order for {ticker}: {str(e)}")
 
 def monitor_position(ticker):
-    trailing_percent = 0.0005  # .005% trailing stop
+    trailing_percent = 0.0005  # .05% trailing stop
     highest_price = 0
     trailing_stop_active = False
 
@@ -109,12 +109,13 @@ def monitor_position(ticker):
 
         quantity = float(position.qty)
         current_price = float(position.current_price)
+        buy_price = float(position.avg_entry_price)
 
         rsi, _, df = rsim.rsi_base(ticker, interval = "1m", time = "5d")
         current_rsi = rsi[-1]
 
         if not trailing_stop_active:
-            if current_rsi > 70:
+            if current_rsi > 70 and current_price > buy_price:
                 trailing_stop_active = True
                 highest_price = current_price
                 print(f"RSI > 70 ({current_rsi:.2f}). Trailing stop activated for {ticker}.")
@@ -203,78 +204,83 @@ def close_shop():
 
 def run():
     open_positions, num_position = get_open_positions()
-    max_positions = 3
-
+    max_positions = 5
     with concurrent.futures.ThreadPoolExecutor() as executor:
-
-        while True:
-            open_positions, num_position = get_open_positions()
-            futures = {}
-            futures_positions = {}
-            print(f"Outer loop, num = {num_position}")
-            # Runs results out of loop to make process faster
-            
-            while num_position >= max_positions:
-                for ticker in open_positions:
-                    if ticker not in futures_positions:
-                        futures_p = executor.submit(monitor_position, ticker)
-                        futures_positions[ticker] = futures_p
-                open_positions, num_position = get_open_positions()
-                print(f"Waiting for sell signal. Position # = {num_position}")
-                tm.sleep(30)
-            # If time is greater than 1:50
-            if datetime.now().time() > time(13,50):
-                close_shop()
-
-            # If time is less than 1:30  (13:30)
-            if datetime.now().time() < time(13,30):
-                # Runs when there are less than 10 positions
-                while num_position < max_positions:                
-                    # Creates a two threads
-                        # - one for each ticker's order (wait until filled)
-                        # - one for portfolio to be monitored for the ticker
-                    i = 0
+        
+            while True:
+                while datetime.now().time() > time(10,00) and datetime.now().time() < time(14,00):
                     open_positions, num_position = get_open_positions()
+                    futures = {}
+                    futures_positions = {}
+                    print(f"Outer loop, num = {num_position}")
+                    # Runs results out of loop to make process faster
+                    
+                    while num_position >= max_positions:
+                        for ticker in open_positions:
+                            if ticker not in futures_positions:
+                                futures_p = executor.submit(monitor_position, ticker)
+                                futures_positions[ticker] = futures_p
+                        open_positions, num_position = get_open_positions()
+                        print(f"Waiting for sell signal. Position # = {num_position}")
+                        tm.sleep(30)
+                    # If time is greater than 1:50
+                    if datetime.now().time() > time(13,50):
+                        close_shop()
 
-                    results = dt.find()
-                    print("Results Finished, not sort")
-                    results.sort(key=lambda x: x[3], reverse=True)
-                    limit_results = results
-                    print(f"resuiltsd (% gain, ticker, rsi, % win): {limit_results} ")
-
-                    for entry in limit_results:
-                        ticker = entry[1]
-                        i += 1
-                        print(entry[3], entry[2], ticker, i)
-                        ma_l, ma_s, cnvrg_l, cnvrg_s = run_ma(ticker)
-                        rsi, _, df = dtc.rsi_base(ticker, "1min", "today")
-                        macd = rsim.macd(ticker)
-                        conditions = [
-                            ticker not in open_positions,
-                            len(futures) < max_positions,
-                            ticker not in futures,
-                            rsi[-1] > 50,
-                            ma_l == "BULL",
-                            cnvrg_l == False,
-                            ma_s == "BULL",
-                            cnvrg_s == False,
-                            macd == "BULL"
-                            ]
-                        
-                        if all(conditions):
-                            future = executor.submit(process_entry, entry)
-                            futures[ticker] = future
-                            print(len(futures), "futures")
-                            executor.submit(monitor_position, ticker)
-                            tm.sleep(5)
+                    # If time is less than 1:30  (13:30)
+                    if datetime.now().time() < time(13,30):
+                        # Runs when there are less than 10 positions
+                        while num_position < max_positions:                
+                            # Creates a two threads
+                                # - one for each ticker's order (wait until filled)
+                                # - one for portfolio to be monitored for the ticker
+                            i = 0
                             open_positions, num_position = get_open_positions()
-                            print(f"Inner loop, num = {num_position}")
 
-                        if num_position > max_positions:
-                            break
+                            results = dt.find()
+                            print("Results Finished, not sort")
+                            results.sort(key=lambda x: x[3], reverse=True)
+                            limit_results = results
+                            print(f"resuiltsd (% gain, ticker, rsi, % win): {limit_results} ")
 
-                        if datetime.now().time() > time(13,30):
-                            break   
+                            for entry in limit_results:
+                                ticker = entry[1]
+                                i += 1
+                                print(entry[3], entry[2], ticker, i)
+                                ma_l, ma_s, cnvrg_l, cnvrg_s = run_ma(ticker)
+                                rsi, _, df = dtc.rsi_base(ticker, "1min", "today")
+                                #macd = rsim.macd(ticker)
+                                conditions = [
+                                    ticker not in open_positions,
+                                    len(futures) < max_positions,
+                                    ticker not in futures,
+                                    rsi[-1] > 50,
+                                    ma_l == "BULL",
+                                    cnvrg_l == False,
+                                    ma_s == "BULL",
+                                    cnvrg_s == False,
+                                    #macd == "BULL"
+                                    ]
+                                
+                                if all(conditions):
+                                    future = executor.submit(process_entry, entry)
+                                    futures[ticker] = future
+                                    print(len(futures), "futures")
+                                    executor.submit(monitor_position, ticker)
+                                    tm.sleep(5)
+                                    open_positions, num_position = get_open_positions()
+                                    print(f"Inner loop, num = {num_position}")
+
+                                if num_position > max_positions:
+                                    break
+
+                                if datetime.now().time() > time(13,30):
+                                    break 
+                        
+                else:
+                    print("waiting")
+                    tm.sleep(600)
+            
                         
 
 
