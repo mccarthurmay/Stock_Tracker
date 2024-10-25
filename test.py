@@ -22,12 +22,12 @@ dt = DTManager()
 rsim = RSIManager()
 dtc = DTCalc()
 
-
+run_download()
 
 #tick = "ANSS"
 #range = (40,50)
 #dt.limit(tick, range)
-run()
+############################run()
 #print("running")
 #print(rsim.macd("GM"))
 #print("what")
