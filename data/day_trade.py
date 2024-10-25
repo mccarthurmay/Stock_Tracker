@@ -20,7 +20,7 @@ from random import sample
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 class DTCalc:
-    def tiingo(self, ticker, frequency = "20min", start_date = "2021-01-01"):
+    def tiingo(self, ticker, frequency = "1min", start_date = "2021-01-01"):
         #print(ticker, "tiingo")
         API_KEY = os.getenv("TIINGO_API_KEY_ID")
         SYMBOL = ticker
