@@ -24,7 +24,7 @@ def calculate_rsi(prices, period=14):
 
 def run_download():
     # Download the data
-    df = dtc.tiingo("AAPL")
+    df = dtc.tiingo("NVDA")
     print(len(df))
     # Check if df is None or empty
     if df is None or df.empty:
@@ -39,6 +39,6 @@ def run_download():
     df['RSI'] = calculate_rsi(df['Close'])
 
     # Save the DataFrame to a CSV file
-    df.to_csv('data.csv', index=False)
+    df.to_csv('data3.csv', index=False)
     print(df)
     print(len(df))
