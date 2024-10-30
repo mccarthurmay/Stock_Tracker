@@ -1,9 +1,13 @@
 Hello, this is a WIP.
 
-trackerC2 - Recommended, newest working version
+main.py - Recommended, newest working version
 
 IMPORTANT!!!
- Run "trackerC2" to start the automated process. However, this is WIP and will likely cause a net loss. 
+Main.py is not currently updated to support automatic paper trading. Run "run.py" to start the automated process. However, this is WIP and will likely cause a net loss. 
+
+"Run" function in main.py is for manual trading. 
+ - 1. Finds and displays stocks sorted by predicted % gain. Prints { (percent gain), (stock ticker), (rsi), (percent of times sold for a positive value) }
+ - 2. Input a ticker and a full report will be presented. This includes stop loss, stop limit, estimated gain, and estimated turnover time. 
 
 Within "commands", "run (old)" is the original purpose of this application. 
 
