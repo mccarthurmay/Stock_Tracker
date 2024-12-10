@@ -7,11 +7,91 @@ from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import messagebox
+from functools import lru_cache
+import requests
+import pytz
+import os
 
+import sys
+sys.path.append('..')
+import config
+
+class TiingoDataManager:
+    def __init__(self):
+        self.api_key = config.TIINGO_API_KEY_ID
+        self._cache = {}  # Cache format: {ticker_timeframe: df}
+        
+    def get_data(self, ticker, days_back=5, timeframe="1min"):
+        """
+        Get stock data from Tiingo
+        timeframe options: "1min", "5min", "1hour", "1day"
+        """
+        cache_key = f"{ticker}_{timeframe}_{days_back}"
+        
+        # Return cached data if available
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+            
+        # Calculate start date
+        start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+        end_date = datetime.now().strftime('%Y-%m-%d')
+        
+        url = f'https://api.tiingo.com/iex/{ticker}/prices'
+        params = {
+            'startDate': start_date,
+            'endDate': end_date,
+            'resampleFreq': timeframe,
+            'columns': 'open,high,low,close,volume',
+            'token': self.api_key
+        }
+        
+        headers = {'Content-Type': 'application/json'}
+        response = requests.get(url, headers=headers, params=params)
+        data = response.json()
+        
+        df_data = []
+        eastern_tz = pytz.timezone('US/Eastern')
+        
+        for entry in data:
+            dt = datetime.strptime(entry['date'], '%Y-%m-%dT%H:%M:%S.%fZ')
+            dt_eastern = dt.astimezone(eastern_tz)
+            
+            df_data.append({
+                'Datetime': dt_eastern,
+                'Open': float(entry.get('open', entry['close'])),
+                'High': float(entry.get('high', entry['close'])),
+                'Low': float(entry.get('low', entry['close'])),
+                'Close': float(entry['close']),
+                'Volume': int(entry.get('volume', 0))
+            })
+        
+        df = pd.DataFrame(df_data)
+        df.set_index('Datetime', inplace=True)
+        df.sort_index(ascending=True, inplace=True)
+        
+        # Cache the data
+        self._cache[cache_key] = df
+        return df
+    
+    def clear_cache(self):
+        """Clear the entire cache"""
+        self._cache = {}
+        print("Cache cleared")
+
+    def get_cache_info(self):
+        """Print information about what's currently in cache"""
+        print("\nCurrent Cache Contents:")
+        for key in self._cache.keys():
+            df = self._cache[key]
+            print(f"Key: {key}")
+            print(f"Shape: {df.shape}")
+            print(f"Date Range: {df.index[0]} to {df.index[-1]}\n")
+    
 class AnalysisManager:
     def __init__(self):
         self.CI = CIManager()
         self.RSI = RSIManager()
+        self.data_manager = TiingoDataManager()
         
     def runall(self, ticker, db):
         percent_under = round(self.CI.under_confidence(ticker, db).iloc[0])
@@ -107,17 +187,19 @@ class AnalysisManager:
 
 
 class CIManager:
+    def __init__(self):
+        self.data_manager = TiingoDataManager()
+
     def under_confidence(self, ticker, dbname):
         # closing price of input stock
-        stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
+        df = self.data_manager.get_data(ticker, days_back=90, timeframe="1day")  # 3 months
+        df_close = pd.DataFrame(df['Close'])
 
-        stock_close = pd.DataFrame(stock_data['Close'])
-
-        if int(stock_close.iloc[-1]) > 5:
+        if int(df_close.iloc[-1]) > 5:
             # confidence interval of 95% = standard deviation of data * 2
-            ci = stock_close.std() * 2
+            ci = df_close.std() * 2
             # lower bound of 95%
-            lower_bound = stock_close.mean() - ci
+            lower_bound = df_close.mean() - ci
             try:
                 current_price = yf.Ticker(ticker).info['currentPrice']
                 # percent over the lower bound of 2 std deviations (95% confidence interval)
@@ -136,15 +218,15 @@ class CIManager:
     #CONFIDENCE - OVER
     def over_confidence(self, ticker, dbname):
         # closing price of input stock
-        stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
+        df = self.data_manager.get_data(ticker, days_back=90, timeframe="1day")  # 3 months
 
-        stock_close = pd.DataFrame(stock_data['Close'])
+        df_close = pd.DataFrame(df['Close'])
 
-        if int(stock_close.iloc[-1]) > 5:
+        if int(df_close.iloc[-1]) > 5:
             # confidence interval of 95% = standard deviation of data * 2
-            ci = stock_close.std() * 2
+            ci = df_close.std() * 2
             # upper bound of 95%
-            upper_bound = stock_close.mean() + ci
+            upper_bound = df_close.mean() + ci
             try:
                 current_price = yf.Ticker(ticker).info['currentPrice']
                 # percent over the upper bound of 2 std deviations (95% confidence interval)
@@ -164,10 +246,10 @@ class CIManager:
 class RSIManager:
     def __init__(self):
         self.CI = CIManager()
+        self.data_manager = TiingoDataManager()
 
-    def rsi_base(self, ticker, time, interval = "1d"):
-        ticker = yf.Ticker(ticker)
-        df = ticker.history(interval=interval, period= time)
+    def rsi_base(self, ticker, days_back, timeframe = "1d"):
+        df = self.data_manager.get_data(ticker, days_back, timeframe="1day")
 
         change = df['Close'].diff()
         change.dropna(inplace=True)
@@ -187,7 +269,7 @@ class RSIManager:
         return rsi, ticker, df
 
     def rsi_calc(self, ticker, graph, date):
-        rsi, ticker, df = self.rsi_base(ticker, '2y')
+        rsi, ticker, df = self.rsi_base(ticker, 720)
 
         #Graph
         if graph == True:
@@ -200,7 +282,7 @@ class RSIManager:
         
 
     def rsi_accuracy(self, ticker):
-        rsi, ticker, df = self.rsi_base(ticker, '2y')
+        rsi, ticker, df = self.rsi_base(ticker, 720)
         df = df['Close']
         #calculate mean + std of both datasets
         mean_df = np.mean(df)
@@ -228,7 +310,7 @@ class RSIManager:
         return cos_accuracy, msd_accuracy
 
     def rsi_turnover(self, ticker):
-        rsi, ticker, df = self.rsi_base(ticker, '2y')
+        rsi, ticker, df = self.rsi_base(ticker, 720)
     
         rsi_frame = rsi.iloc[13:]
         low_threshold = True
@@ -279,7 +361,7 @@ class RSIManager:
         plt.show()
 
 
-
+    # Only used for individual calls; remains on yFinance
     def MA(self, ticker, graph, input_interval="1m", input_period="5d", span1=50, span2=200, standardize=False):
         df = yf.Ticker(ticker).history(interval=input_interval, period=input_period)
         df = df.between_time('09:30', '16:00')
@@ -340,7 +422,7 @@ class RSIManager:
             print("No recent crossing detected")
             return None, None, converging
 
-    
+    # Only used on individual calls; remains on Yfinance
     def macd(self, symbol, interval='1m', fast_period=12, slow_period=26, signal_period=9):
 
         end_date = datetime.now()
@@ -388,6 +470,46 @@ def showinfo(ticker):
     print('\nStock Close:',stock_close,'\nCurrent Price:', stock_curr)
 
 
+  
+def main():
+    # Initialize the manager
+    manager = TiingoDataManager()
+    
+    # Test 1: Basic data fetch and caching
+    print("\nTest 1: Basic Fetch and Cache")
+    print("First fetch for AAPL:")
+    df1 = manager.get_data("AAPL",  days_back=1, timeframe="1min")
+    print(f"Got DataFrame with shape: {df1.shape}")
+    
+    print("\nSecond fetch for AAPL (should use cache):")
+    df2 = manager.get_data("AAPL", timeframe="1min", days_back=1)
+    print(f"Got DataFrame with shape: {df2.shape}")
+    
+    # Test 2: Different timeframes
+    print("\nTest 2: Different Timeframes")
+    print("Fetching 1-hour data for AAPL:")
+    df3 = manager.get_data("AAPL", timeframe="1hour", days_back=5)
+    print(f"Got hourly DataFrame with shape: {df3.shape}")
+    
+    # Test 3: Different symbol
+    print("\nTest 3: Different Symbol")
+    print("Fetching data for MSFT:")
+    df4 = manager.get_data("MSFT", timeframe="1min", days_back=1)
+    print(f"Got MSFT DataFrame with shape: {df4.shape}")
+    
+    # Test 4: Cache information
+    print("\nTest 4: Cache Information")
+    manager.get_cache_info()
+    
+    # Test 5: Clear cache and refetch
+    print("\nTest 5: Clear Cache and Refetch")
+    manager.clear_cache()
+    print("Fetching AAPL again after cache clear:")
+    df5 = manager.get_data("AAPL", timeframe="1min", days_back=1)
+    print(f"Got DataFrame with shape: {df5.shape}")
+
+if __name__ == "__main__":
+    main()
 
 
 ###CALLING yf.ticker.history for many functions... may be increasing time signfificantly
