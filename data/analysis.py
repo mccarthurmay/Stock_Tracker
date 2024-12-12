@@ -11,36 +11,69 @@ from functools import lru_cache
 import requests
 import pytz
 import os
-
-import sys
-sys.path.append('..')
 import config
+import sys
+
 
 class TiingoDataManager:
-    def __init__(self):
-        self.api_key = config.TIINGO_API_KEY_ID
-        self._cache = {}  # Cache format: {ticker_timeframe: df}
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.api_key = os.getenv('TIINGO_API_KEY_ID')
+            if not cls._instance.api_key:
+                raise ValueError("TIINGO_API_KEY_ID environment variable not set")
+            cls._instance._cache = {}
+            cls._instance.calls_remaining = 100  # Adjust based on your API limit
+        return cls._instance
         
-    def get_data(self, ticker, days_back=5, timeframe="1min"):
-        """
-        Get stock data from Tiingo
-        timeframe options: "1min", "5min", "1hour", "1day"
-        """
-        cache_key = f"{ticker}_{timeframe}_{days_back}"
+    def get_data(self, ticker, days_back=5, frequency="daily"):
+        """Get stock data from Tiingo with smart caching"""
+        cache_key = f"{ticker}_{frequency}_{days_back}"
         
-        # Return cached data if available
+        # Check if we already have this exact data cached
         if cache_key in self._cache:
             return self._cache[cache_key]
-            
-        # Calculate start date
-        start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
-        end_date = datetime.now().strftime('%Y-%m-%d')
         
-        url = f'https://api.tiingo.com/iex/{ticker}/prices'
+        # Look for a longer timeframe of the same ticker/frequency in cache
+        for key in self._cache:
+            ticker_cache, freq_cache, days_cache = key.split('_')
+            if ticker == ticker_cache and frequency == freq_cache:
+                if int(days_cache) >= days_back:
+                    # Return subset of existing cached data
+                    cached_df = self._cache[key]
+                    start_date = (datetime.now() - timedelta(days=days_back))
+                    filtered_df = cached_df[cached_df.index >= start_date]
+                    self._cache[cache_key] = filtered_df
+                    return filtered_df
+        
+        # Look for a shorter timeframe to extend
+        existing_df = None
+        for key in self._cache:
+            ticker_cache, freq_cache, days_cache = key.split('_')
+            if ticker == ticker_cache and frequency == freq_cache:
+                if int(days_cache) < days_back:
+                    existing_df = self._cache[key]
+                    # Remove shorter timeframe from cache since we'll be replacing it
+                    del self._cache[key]
+                    break
+        
+        # Calculate dates for API call
+        if existing_df is not None:
+            # Only fetch the additional days needed
+            start_date = (existing_df.index[0] - timedelta(days=days_back)).strftime('%Y-%m-%d')
+            end_date = existing_df.index[0].strftime('%Y-%m-%d')
+        else:
+            start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+            end_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # Make API call
+        url = f'https://api.tiingo.com/tiingo/daily/{ticker}/prices'
         params = {
             'startDate': start_date,
             'endDate': end_date,
-            'resampleFreq': timeframe,
+            'resampleFreq': frequency,
             'columns': 'open,high,low,close,volume',
             'token': self.api_key
         }
@@ -49,6 +82,7 @@ class TiingoDataManager:
         response = requests.get(url, headers=headers, params=params)
         data = response.json()
         
+        # Process the data
         df_data = []
         eastern_tz = pytz.timezone('US/Eastern')
         
@@ -65,11 +99,19 @@ class TiingoDataManager:
                 'Volume': int(entry.get('volume', 0))
             })
         
-        df = pd.DataFrame(df_data)
-        df.set_index('Datetime', inplace=True)
-        df.sort_index(ascending=True, inplace=True)
+        new_df = pd.DataFrame(df_data)
+        new_df.set_index('Datetime', inplace=True)
+        new_df.sort_index(ascending=True, inplace=True)
         
-        # Cache the data
+        # Combine with existing data if it exists
+        if existing_df is not None:
+            df = pd.concat([new_df, existing_df])
+            df = df[~df.index.duplicated(keep='first')]
+            df.sort_index(ascending=True, inplace=True)
+        else:
+            df = new_df
+        
+        # Cache the result
         self._cache[cache_key] = df
         return df
     
@@ -86,6 +128,21 @@ class TiingoDataManager:
             print(f"Key: {key}")
             print(f"Shape: {df.shape}")
             print(f"Date Range: {df.index[0]} to {df.index[-1]}\n")
+
+    def get_price(self, ticker):
+        """Get real-time last price using minimal data"""
+        url = f'https://api.tiingo.com/iex/{ticker}'
+        params = {
+            'token': self.api_key,
+            'columns': 'last'  # Request only the last price field
+        }
+        
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                return data[0]['last']
+        return None
     
 class AnalysisManager:
     def __init__(self):
@@ -192,7 +249,7 @@ class CIManager:
 
     def under_confidence(self, ticker, dbname):
         # closing price of input stock
-        df = self.data_manager.get_data(ticker, days_back=90, timeframe="1day")  # 3 months
+        df = self.data_manager.get_data(ticker, days_back=90, frequency="daily")  # 3 months
         df_close = pd.DataFrame(df['Close'])
 
         if int(df_close.iloc[-1]) > 5:
@@ -201,7 +258,7 @@ class CIManager:
             # lower bound of 95%
             lower_bound = df_close.mean() - ci
             try:
-                current_price = yf.Ticker(ticker).info['currentPrice']
+                current_price = self.data_manager.get_price(ticker)
                 # percent over the lower bound of 2 std deviations (95% confidence interval)
                 percent_under = (1 - current_price / lower_bound) * 100
                 return percent_under
@@ -218,7 +275,7 @@ class CIManager:
     #CONFIDENCE - OVER
     def over_confidence(self, ticker, dbname):
         # closing price of input stock
-        df = self.data_manager.get_data(ticker, days_back=90, timeframe="1day")  # 3 months
+        df = self.data_manager.get_data(ticker, days_back=90, frequency="daily")  # 3 months
 
         df_close = pd.DataFrame(df['Close'])
 
@@ -228,7 +285,7 @@ class CIManager:
             # upper bound of 95%
             upper_bound = df_close.mean() + ci
             try:
-                current_price = yf.Ticker(ticker).info['currentPrice']
+                current_price = self.data_manager.get_price(ticker)
                 # percent over the upper bound of 2 std deviations (95% confidence interval)
                 percent_under = (1 - upper_bound/current_price) * 100
                 return percent_under
@@ -248,8 +305,8 @@ class RSIManager:
         self.CI = CIManager()
         self.data_manager = TiingoDataManager()
 
-    def rsi_base(self, ticker, days_back, timeframe = "1d"):
-        df = self.data_manager.get_data(ticker, days_back, timeframe="1day")
+    def rsi_base(self, ticker, days_back, frequency = "daily"):
+        df = self.data_manager.get_data(ticker, days_back, frequency= frequency)
 
         change = df['Close'].diff()
         change.dropna(inplace=True)
@@ -333,38 +390,58 @@ class RSIManager:
 
 
     def plot_data(self, rsi, ticker, df):
-
         plt.style.use('fivethirtyeight')
-        #figure size
         plt.rcParams['figure.figsize'] = (15,10)
-        df = df.iloc[13:]
+        
+        # Prepare data and ensure alignment
+        df = df.iloc[13:]  # Remove first 13 rows from price data
+        rsi = rsi[13:]     # Remove first 13 rows from RSI
+        
+        # Make sure indexes match
+        common_index = df.index.intersection(rsi.index)
+        df = df.loc[common_index]
+        rsi = rsi.loc[common_index]
+        
+        # Calculate MAs
         s_df = {}
         l_df = {}
         s_df['MA'] = df['Close'].rolling(window=20).mean()
         l_df['MA'] = df['Close'].rolling(window=50).mean()
-        ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-        ax2 = plt.subplot2grid((10, 1), (5, 0), rowspan=4, colspan=1)
-
-        ax1.plot(df['Close'], linewidth = 3)
-        ax1.plot(s_df['MA'], label = 'Short-Term Moving Average', color = 'Red', linestyle = '--', linewidth = 2)
-        ax1.plot(l_df['MA'], label = 'Long-Term Moving Average', color = 'Purple', linestyle = '--', linewidth = 2)
-        ax1.set_title('Close prices')
-
-        ax2.set_title('Relative Strength Index')
-        ax2.plot(rsi, color = 'orange', linewidth = 1)
-
-        #Oversold
-        ax2.axhline(30, linestyle = '--', linewidth = 1.5, color = 'green')
-        #Overbought
-        ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
-        ax1.legend()
+        
+        # Create figure and primary axis
+        fig, ax1 = plt.subplots(figsize=(15,10))
+        
+        # Plot price data on primary axis
+        ax1.plot(df.index, df['Close'], linewidth=2, label='Price', color='blue')
+        ax1.plot(df.index, s_df['MA'], label='Short-Term MA', color='Red', linestyle='--', linewidth=2)
+        ax1.plot(df.index, l_df['MA'], label='Long-Term MA', color='Purple', linestyle='--', linewidth=2)
+        ax1.set_ylabel('Price', color='black')
+        ax1.tick_params(axis='y', labelcolor='black')
+        
+        # Create secondary axis for RSI
+        ax2 = ax1.twinx()
+        ax2.plot(df.index, rsi, color='orange', linewidth=1, label='RSI', alpha=0.7)
+        ax2.set_ylabel('RSI', color='orange')
+        ax2.tick_params(axis='y', labelcolor='orange')
+        
+        # Add RSI levels
+        ax2.axhline(30, linestyle='--', linewidth=1.5, color='green', alpha=0.5)
+        ax2.axhline(70, linestyle='--', linewidth=1.5, color='red', alpha=0.5)
+        ax2.set_ylim(0, 100)
+        
+        # Combine legends
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+        
+        plt.title(f'{ticker} Price and RSI')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
         plt.show()
 
-
     # Only used for individual calls; remains on yFinance
-    def MA(self, ticker, graph, input_interval="1m", input_period="5d", span1=50, span2=200, standardize=False):
-        df = yf.Ticker(ticker).history(interval=input_interval, period=input_period)
-        df = df.between_time('09:30', '16:00')
+    def MA(self, ticker, graph, frequency="daily", days_back = 60, span1=5, span2=20, standardize=False):
+        df = self.data_manager.get_data(ticker, days_back, frequency)
         
         if standardize:
             mean = df['Close'].mean()
@@ -406,13 +483,22 @@ class RSIManager:
         
         if graph:
             plt.figure(figsize=(12, 6))
-            plt.plot(df.index, MA['ST'])
-            plt.plot(df.index, MA['LT'])
-            plt.plot(df.index, df['Close'], label="Close Price", alpha=0.5)
-            plt.title(f"{ticker} Moving Averages")
+            plt.plot(df.index, MA['ST'], label=f'{span1}-day EMA', color='blue')
+            plt.plot(df.index, MA['LT'], label=f'{span2}-day EMA', color='red')
+            plt.plot(df.index, df['Close'], label="Close Price", alpha=0.5, color='gray')
+            plt.title(f"{ticker} Moving Averages Analysis\n{span1}-day vs {span2}-day EMA")
             plt.xlabel("Date")
-            plt.ylabel("Price")
-            plt.legend()
+            plt.ylabel(f"Price ({ticker})")
+            plt.grid(True, alpha=0.3)
+            plt.legend(loc='best')
+            
+            # Add market condition annotation if available
+            if latest_market and latest_date:
+                plt.figtext(0.02, 0.02, f'Market Condition: {latest_market}, {converging}', 
+                          bbox=dict(facecolor='white', alpha=0.8),
+                          fontsize=10)
+            
+            plt.tight_layout()
             plt.show()
         
         if latest_date:
@@ -422,13 +508,11 @@ class RSIManager:
             print("No recent crossing detected")
             return None, None, converging
 
-    # Only used on individual calls; remains on Yfinance
-    def macd(self, symbol, interval='1m', fast_period=12, slow_period=26, signal_period=9):
+    def macd(self, ticker, frequency = "daily", fast_period=12, slow_period=26, signal_period=9):
 
         end_date = datetime.now()
         start_date = end_date - timedelta(days=5)
-        stock = yf.Ticker(symbol)
-        df = stock.history(start=start_date, end=end_date, interval=interval)
+        df = self.data_manager.get_data(ticker, days_back = 60, frequency= frequency)
         if df.empty:
             return None
 
@@ -474,39 +558,33 @@ def showinfo(ticker):
 def main():
     # Initialize the manager
     manager = TiingoDataManager()
+    RM = RSIManager()
+    AM = AnalysisManager()
     
-    # Test 1: Basic data fetch and caching
-    print("\nTest 1: Basic Fetch and Cache")
-    print("First fetch for AAPL:")
-    df1 = manager.get_data("AAPL",  days_back=1, timeframe="1min")
-    print(f"Got DataFrame with shape: {df1.shape}")
+    # First get_data call will cache the data
+    print("First call - should fetch from API:")
+    macd_result = RM.macd(ticker="AAPL")
+    print(f"MACD Result: {macd_result}")
     
-    print("\nSecond fetch for AAPL (should use cache):")
-    df2 = manager.get_data("AAPL", timeframe="1min", days_back=1)
-    print(f"Got DataFrame with shape: {df2.shape}")
-    
-    # Test 2: Different timeframes
-    print("\nTest 2: Different Timeframes")
-    print("Fetching 1-hour data for AAPL:")
-    df3 = manager.get_data("AAPL", timeframe="1hour", days_back=5)
-    print(f"Got hourly DataFrame with shape: {df3.shape}")
-    
-    # Test 3: Different symbol
-    print("\nTest 3: Different Symbol")
-    print("Fetching data for MSFT:")
-    df4 = manager.get_data("MSFT", timeframe="1min", days_back=1)
-    print(f"Got MSFT DataFrame with shape: {df4.shape}")
-    
-    # Test 4: Cache information
-    print("\nTest 4: Cache Information")
+    # Check cache after first call
+    print("\nCache after first call:")
     manager.get_cache_info()
     
-    # Test 5: Clear cache and refetch
-    print("\nTest 5: Clear Cache and Refetch")
-    manager.clear_cache()
-    print("Fetching AAPL again after cache clear:")
-    df5 = manager.get_data("AAPL", timeframe="1min", days_back=1)
-    print(f"Got DataFrame with shape: {df5.shape}")
+    # Second call should use cached data
+    print("\nSecond call - should use cache:")
+    macd_result = RM.macd(ticker="NVDA")
+    print(f"MACD Result: {macd_result}")
+
+    # Check cache again
+    print("\nCache should be the same:")
+    manager.get_cache_info()
+    
+    print("\nSecond call - should use cache:")
+    macd_result = RM.macd(ticker="NVDA")
+    print(f"MACD Result: {macd_result}")
+    print("\nSecond call - should use cache:")
+    macd_result = RM.macd(ticker="NVDA")
+    print(f"MACD Result: {macd_result}")
 
 if __name__ == "__main__":
     main()
