@@ -14,7 +14,7 @@ import numpy as np
 from datetime import date
 
 from data.database import DBManager, Update, open_file, close_file
-from data.analysis import CIManager, RSIManager, AnalysisManager
+from data.analysis import CIManager, RSIManager, AnalysisManager, TiingoDataManager
 from data.day_trade import DTViewer
 from settings.settings_manager import SettingsManager
 from data.winrate import WinrateManager
@@ -22,6 +22,8 @@ from data.shortrate import ShortrateManager
 
 from applications.scraper import scraper
 from applications.converter import convert
+
+from config import *
 
 # Suppress warning
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -34,6 +36,7 @@ class GlobalInit:
         self.update_manager = Update()
         self.rsi_manager = RSIManager()
         self.db_manager = DBManager()
+        self.tiingo = TiingoDataManager()
 
 class StockTracker:
     def __init__(self, root):
@@ -306,15 +309,21 @@ class SettingsWindow(GlobalInit):       ##should make this resemble a settings s
         self.root.title("Settings")
         self.root.geometry("800x600+200+100")
         tk.Button(self.root, text="Startup", command = self.startup).pack(pady=5)
+        tk.Button(self.root, text="Check Cache", command = self.cache).pack(pady=5)
+        tk.Button(self.root, text="Clear Cache", command = self.clear_cache).pack(pady=5)
         tk.Button(self.root, text="Back", command = self.startup).pack(pady=5)
-
-
 
     def startup(self):
         self.settings_manager.loadSettings()
         database = simpledialog.askstring("Input", "Name of database:").strip()
         choice = messagebox.askyesno("Y/N", "Would you like this database to update on startup?")
         self.settings_manager.adjustSettings(database, choice)
+
+    def cache(self):
+        self.tiingo.get_cache_info()
+
+    def clear_cache(self):
+        self.tiingo.clear_cache
 
     def back(self):
         self.root.destroy()
