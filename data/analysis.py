@@ -31,6 +31,7 @@ class TiingoDataManager:
     def get_data(self, ticker, days_back=5, frequency="daily"):
         """Get stock data from Tiingo with smart caching"""
         cache_key = f"{ticker}_{frequency}_{days_back}"
+        eastern_tz = pytz.timezone('US/Eastern')
         
         # Check if we already have this exact data cached
         if cache_key in self._cache:
@@ -43,14 +44,14 @@ class TiingoDataManager:
                 if int(days_cache) >= days_back:
                     # Return subset of existing cached data
                     cached_df = self._cache[key]
-                    start_date = (datetime.now() - timedelta(days=days_back))
+                    start_date = datetime.now(eastern_tz) - timedelta(days=days_back)
                     filtered_df = cached_df[cached_df.index >= start_date]
                     self._cache[cache_key] = filtered_df
                     return filtered_df
         
         # Look for a shorter timeframe to extend
         existing_df = None
-        for key in self._cache:
+        for key in list(self._cache.keys()):  # Create list to avoid modification during iteration
             ticker_cache, freq_cache, days_cache = key.split('_')
             if ticker == ticker_cache and frequency == freq_cache:
                 if int(days_cache) < days_back:
@@ -62,7 +63,7 @@ class TiingoDataManager:
         # Calculate dates for API call
         if existing_df is not None:
             # Only fetch the additional days needed
-            start_date = (existing_df.index[0] - timedelta(days=days_back)).strftime('%Y-%m-%d')
+            start_date = (existing_df.index[0].replace(tzinfo=None) - timedelta(days=days_back)).strftime('%Y-%m-%d')
             end_date = existing_df.index[0].strftime('%Y-%m-%d')
         else:
             start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
@@ -79,12 +80,15 @@ class TiingoDataManager:
         }
         
         headers = {'Content-Type': 'application/json'}
-        response = requests.get(url, headers=headers, params=params)
-        data = response.json()
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            data = response.json()
+        except Exception as e:
+            print(f"There has been an error with {ticker}: {str(e)}")
+            return None
         
         # Process the data
         df_data = []
-        eastern_tz = pytz.timezone('US/Eastern')
         
         for entry in data:
             dt = datetime.strptime(entry['date'], '%Y-%m-%dT%H:%M:%S.%fZ')
