@@ -1,298 +1,218 @@
-from alpaca.data.historical import CryptoHistoricalDataClient
-from alpaca.data.requests import CryptoBarsRequest
 from alpaca_trade_api.rest import REST, TimeFrame
 import os
-from config import *
-from data.day_trade import DTManager, DTCalc
-import time as tm
-import yfinance as yf
-import concurrent.futures
-from data.analysis import RSIManager
 from datetime import datetime, time
-import matplotlib.pyplot as plt
-import keyboard
-from queue import Queue
-dt = DTManager()
-dtc = DTCalc()
-rsim = RSIManager()
+import pandas as pd
+import concurrent.futures
+import time as tm
 
-
-        
 try:
     api = REST(
-    key_id=os.getenv("APCA_API_KEY_ID"),
-    secret_key=os.getenv("APCA_API_SECRET_KEY"),
-    base_url="https://paper-api.alpaca.markets"
+        key_id=os.getenv("APCA_API_KEY_ID"),
+        secret_key=os.getenv("APCA_API_SECRET_KEY"),
+        base_url="https://paper-api.alpaca.markets"
     )
     account = api.get_account()
 except:
     print("API Environment not set up. Please refer to 'config.py' or 'README'.")
 
-
-
-def process_entry(entry):
-    #Set parameters
-    ticker = entry[1]
-    rsi, current_price, stop_l, gain, time, stop, limit, wl = dt.main(ticker)
-    equity = float(account.equity)
-    quantity = round((float(equity)/5) / current_price, 0) - 1
-    stp = round(stop,2) # lower confidence interval of decrease increase gain
-    lmt = round(limit,2) # mean of decrease increase
-    #stp_l = round(stop_l,2) # lower confidence interval of decrease increase range
-    stp_l = round((current_price * .998),2) #trading based on win rate
-    print(f"Buy: {current_price}, Sell: {stp}, Stop Loss: {stp_l}, Quantity: {quantity}")
-    try:
-    #Buy order
-        buy_order = api.submit_order(   # buy
-            symbol = ticker,
-            qty = quantity,
-            side = 'buy',
-            type = 'market',
-            order_class='oto',
-            stop_loss = {'stop_price': stp_l},
-            #stop_price= stp_l,
-            #stop_loss={'stop_price': stp_l},  # Stop-loss order
-            #take_profit={'limit_price': stp},  # Take-profit order
-            time_in_force = 'gtc',
-    #WAS CAUSING PROBLEMS PREVIOUSLY
-            ) 
-
-    except Exception as e:
-        print(e, "Buy order not submitted")
-
+def run_volume_analysis(ticker):
+    # Get VWAP data
+    minute_bars = api.get_bars(ticker, TimeFrame.Minute, start=datetime.now().date(), end=datetime.now().date()).df
+    minute_bars['vwap'] = (minute_bars['high'] + minute_bars['low'] + minute_bars['close']) / 3 * minute_bars['volume']
+    minute_bars['vwap'] = minute_bars['vwap'].cumsum() / minute_bars['volume'].cumsum()
     
+    # Volume Profile
+    volume_profile = minute_bars.groupby(pd.cut(minute_bars['close'], bins=10))['volume'].sum()
+    poc_price = volume_profile.idxmax().mid  # Point of Control
+    
+    # Market Profile (Value Area)
+    value_area_volume = volume_profile.sum() * 0.70  # 70% value area
+    cumsum = 0
+    value_area_high = poc_price
+    value_area_low = poc_price
+    
+    for price, volume in volume_profile.items():
+        cumsum += volume
+        if cumsum <= value_area_volume:
+            value_area_low = min(value_area_low, price.left)
+            value_area_high = max(value_area_high, price.right)
+    
+    current_price = minute_bars['close'].iloc[-1]
+    vwap = minute_bars['vwap'].iloc[-1]
+    volume_trend = minute_bars['volume'].tail(5).mean() > minute_bars['volume'].tail(20).mean()
+    
+    return {
+        'vwap': vwap,
+        'poc': poc_price,
+        'va_high': value_area_high,
+        'va_low': value_area_low,
+        'current_price': current_price,
+        'volume_trend': volume_trend
+    }
 
-    #Check if order was filled
-    order_filled = False       # check if this is needed
-    print(f"Waiting for {ticker} to be filled.")
-    while not order_filled:
-        order = api.get_order(buy_order.id)
-        stop_order = api.get_order(stop_order.id)
-        if order.status == 'filled':
-            order_filled = True
-            fill_price = order.filled_avg_price
-            print(f"{ticker} has filled.")
-        else:
-            tm.sleep(2)
+def scan_for_setups(symbols):
+    setups = []
+    for symbol in symbols:
+        try:
+            analysis = run_volume_analysis(symbol)
             
+            # Entry conditions:
+            # 1. Price is above VWAP
+            # 2. Price is near POC (within 0.2%)
+            # 3. Price is inside Value Area
+            # 4. Volume is increasing
+            
+            price = analysis['current_price']
+            if (price > analysis['vwap'] and
+                abs(price - analysis['poc']) / price < 0.002 and
+                analysis['va_low'] <= price <= analysis['va_high'] and
+                analysis['volume_trend']):
+                
+                setups.append(symbol)
+                
+        except Exception as e:
+            continue
+            
+    return setups
 
-    #When order is filled:       
-    if order_filled:
-        pass
+def calculate_position_size(equity, current_price, risk_percent=0.02):
+    risk_amount = equity * risk_percent
+    return int(risk_amount / current_price)
+
+def process_entry(ticker):
+    try:
+        vol_analysis = run_volume_analysis(ticker)
+        current_price = vol_analysis['current_price']
+        
+        # Risk management
+        equity = float(account.equity)
+        quantity = calculate_position_size(equity, current_price)
+        
+        # 1% risk per trade with 1.5:1 reward/risk
+        stop_loss_price = current_price * 0.99
+        take_profit_price = current_price * (1 + (0.01 * 1.5))
+        
+        # Place bracket order
+        buy_order = api.submit_order(
+            symbol=ticker,
+            qty=quantity,
+            side='buy',
+            type='market',
+            order_class='bracket',
+            take_profit={'limit_price': take_profit_price},
+            stop_loss={'stop_price': stop_loss_price},
+            time_in_force='gtc'
+        )
+        print(f"Order placed for {ticker}: Quantity={quantity}, Stop={stop_loss_price}, Target={take_profit_price}")
+        
+    except Exception as e:
+        print(f"Error placing order for {ticker}: {e}")
 
 def get_open_positions():
     positions = api.list_positions()
     return {position.symbol for position in positions}, len(positions)
 
-# Close orders once sold
-def close_all_orders(ticker):
-    orders = api.list_orders(status='open', symbols=[ticker])
-    for order in orders:
-        try:
-            api.cancel_order(order.id)
-        except Exception as e:
-            print(f"Error cancelling order for {ticker}: {str(e)}")
-
 def monitor_position(ticker):
-    trailing_percent = 0.0005  # .05% trailing stop
+    trailing_percent = 0.005  # 0.5% trailing stop
     highest_price = 0
     trailing_stop_active = False
 
     while True:
-        
-        # Test if position exists
-        position = api.get_position(ticker)
-        if position is None:
-            close_all_orders(ticker)
-            print(f"No position for {ticker}. Exiting monitor.")
-            break
+        try:
+            position = api.get_position(ticker)
+            if position is None:
+                break
 
-        quantity = float(position.qty)
-        current_price = float(position.current_price)
-        buy_price = float(position.avg_entry_price)
-
-        rsi, _, df = rsim.rsi_base(ticker, interval = "1m", time = "5d")
-        current_rsi = rsi[-1]
-
-        if not trailing_stop_active:
-            if current_rsi > 70 and current_price > buy_price:
+            current_price = float(position.current_price)
+            buy_price = float(position.avg_entry_price)
+            vol_analysis = run_volume_analysis(ticker)
+            
+            # Exit conditions:
+            # 1. Price drops below VWAP
+            # 2. Price moves outside Value Area
+            # 3. Trailing stop hit
+            
+            if (current_price < vol_analysis['vwap'] or 
+                current_price < vol_analysis['va_low'] or 
+                current_price > vol_analysis['va_high']):
+                api.submit_order(
+                    symbol=ticker,
+                    qty=position.qty,
+                    side='sell',
+                    type='market',
+                    time_in_force='gtc'
+                )
+                print(f"Exiting {ticker} - Outside valid range")
+                break
+                
+            if not trailing_stop_active and current_price > buy_price * 1.005:
                 trailing_stop_active = True
                 highest_price = current_price
-                print(f"RSI > 70 ({current_rsi:.2f}). Trailing stop activated for {ticker}.")
-            else:
-                print(f"Waiting for RSI to exceed 70. Current RSI: {current_rsi:.2f}")
-                tm.sleep(30)
-                continue
+            
+            if trailing_stop_active:
+                stop_price = highest_price * (1 - trailing_percent)
+                highest_price = max(highest_price, current_price)
+                
+                if current_price <= stop_price:
+                    api.submit_order(
+                        symbol=ticker,
+                        qty=position.qty,
+                        side='sell',
+                        type='market',
+                        time_in_force='gtc'
+                    )
+                    print(f"Trailing stop triggered for {ticker}")
+                    break
+            
+            print(f"{ticker} - Price: ${current_price:.2f}, VWAP: ${vol_analysis['vwap']:.2f}")
+            tm.sleep(5)
+            
+        except Exception as e:
+            print(f"Error monitoring {ticker}: {e}")
+            tm.sleep(5)
 
-        # Update highest price seen if trailing stop is active
-        highest_price = max(highest_price, current_price)
-
-        # Calculate trailing stop price
-        stop_price = highest_price * (1 - trailing_percent)
-
-        if current_price <= stop_price:
-            close_all_orders(ticker)
-            order = api.submit_order(
-                symbol=ticker,
-                qty=quantity,
-                side='sell',
-                type='market',
-                time_in_force='gtc',
-            )
-            print(f"{ticker} has been sold!!! Order ID: {order.id}")
-            print(f"Trailing stop triggered. Highest: ${highest_price:.2f}, Stop: ${stop_price:.2f}")
-            break  # Exit the loop after selling
-
-        print(f"Stock: {ticker}, Current: ${current_price:.2f}, Highest: ${highest_price:.2f}, Stop: ${stop_price:.2f}, RSI: {current_rsi:.2f}")
-        tm.sleep(5)
-
-
-
-
-
-
-def run_ma(ticker, graph = False): 
-    try:
-        ma_l, _, cnvrg_l = rsim.MA(ticker, 
-                                    graph, 
-                                    input_interval = "1m", 
-                                    input_period = "5d",
-                                    span1 = 50,
-                                    span2 = 200,
-                                    #standardize= True
-                                    )
-        ma_s, _, cnvrg_s = rsim.MA(ticker, 
-                                    graph, 
-                                    input_interval = "1m", 
-                                    input_period = "5d",
-                                    span1 = 20,
-                                    span2 = 50
-                                    )
-        print(ma_l, ma_s, cnvrg_l, cnvrg_s) 
-    except Exception as e:
-        ma_l = "None"
-        ma_s = "None"
-        cnvrg_l = True
-        cnvrg_s = True
-        print("MA NOT WORK", e)
-    return ma_l, ma_s, cnvrg_l, cnvrg_s
-
-
-def close_shop():
+def close_all_positions():
     positions = api.list_positions()
     for position in positions:
-        ticker = position.symbol
-        qty = position.qty
-        
-        # Submit a market order to sell the position
         api.submit_order(
-            symbol=ticker,
-            qty=qty,
+            symbol=position.symbol,
+            qty=position.qty,
             side='sell',
             type='market',
             time_in_force='gtc'
         )
-        orders = api.list_orders(status='open')
-
-        for order in orders:
-            order_id = order.id
-            
-            # Cancel the open order
-            api.cancel_order(order_id)
-        
-        print(f"Closed for the day!")
+    print("All positions closed")
 
 def run():
-    open_positions, num_position = get_open_positions()
     max_positions = 5
+    universe = api.list_assets(status='active', asset_class='us_equity')
+    tradeable_symbols = [asset.symbol for asset in universe if asset.tradable]
+    
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        
-            while True:
-                while datetime.now().time() > time(10,00) and datetime.now().time() < time(14,00):
-                    open_positions, num_position = get_open_positions()
-                    futures = {}
-                    futures_positions = {}
-                    print(f"Outer loop, num = {num_position}")
-                    # Runs results out of loop to make process faster
-                    
-                    while num_position >= max_positions:
-                        for ticker in open_positions:
-                            if ticker not in futures_positions:
-                                futures_p = executor.submit(monitor_position, ticker)
-                                futures_positions[ticker] = futures_p
-                        open_positions, num_position = get_open_positions()
-                        print(f"Waiting for sell signal. Position # = {num_position}")
-                        tm.sleep(30)
-                    # If time is greater than 1:50
-                    if datetime.now().time() > time(13,50):
-                        close_shop()
-
-                    # If time is less than 1:30  (13:30)
-                    if datetime.now().time() < time(13,30):
-                        # Runs when there are less than 10 positions
-                        while num_position < max_positions:                
-                            # Creates a two threads
-                                # - one for each ticker's order (wait until filled)
-                                # - one for portfolio to be monitored for the ticker
-                            i = 0
-                            open_positions, num_position = get_open_positions()
-
-                            results = dt.find()
-                            print("Results Finished, not sort")
-                            results.sort(key=lambda x: x[3], reverse=True)
-                            limit_results = results
-                            print(f"resuiltsd (% gain, ticker, rsi, % win): {limit_results} ")
-
-                            for entry in limit_results:
-                                ticker = entry[1]
-                                i += 1
-                                print(entry[3], entry[2], ticker, i)
-                                ma_l, ma_s, cnvrg_l, cnvrg_s = run_ma(ticker)
-                                rsi, _, df = dtc.rsi_base(ticker, "1min", "today")
-                                #macd = rsim.macd(ticker)
-                                conditions = [
-                                    ticker not in open_positions,
-                                    len(futures) < max_positions,
-                                    ticker not in futures,
-                                    rsi[-1] > 50,
-                                    ma_l == "BULL",
-                                    cnvrg_l == False,
-                                    ma_s == "BULL",
-                                    cnvrg_s == False,
-                                    #macd == "BULL"
-                                    ]
-                                
-                                if all(conditions):
-                                    future = executor.submit(process_entry, entry)
-                                    futures[ticker] = future
-                                    print(len(futures), "futures")
-                                    executor.submit(monitor_position, ticker)
-                                    tm.sleep(5)
-                                    open_positions, num_position = get_open_positions()
-                                    print(f"Inner loop, num = {num_position}")
-
-                                if num_position > max_positions:
-                                    break
-
-                                if datetime.now().time() > time(13,30):
-                                    break 
-                        
-                else:
-                    print("waiting")
-                    tm.sleep(600)
+        while True:
+            current_time = datetime.now().time()
             
-                        
-
-
-
+            if time(10,00) <= current_time <= time(14,00):
+                open_positions, num_positions = get_open_positions()
+                
+                # Monitor existing positions
+                for ticker in open_positions:
+                    executor.submit(monitor_position, ticker)
+                
+                # Look for new setups if we have capacity
+                if num_positions < max_positions and current_time < time(13,30):
+                    setups = scan_for_setups(tradeable_symbols)
+                    for ticker in setups[:max_positions - num_positions]:
+                        if ticker not in open_positions:
+                            executor.submit(process_entry, ticker)
+                            tm.sleep(5)  # Space out orders
+                
+                # Close all positions near end of day
+                if current_time > time(13,50):
+                    close_all_positions()
+                    tm.sleep(600)  # Wait 10 minutes before scanning again
             
+            tm.sleep(60)  # Main loop interval
 
-
-
-            
-    #if lose more than 1%, then sell
-        
-    #result[-1] --- 0 = % gain, 1 = ticker, 2 = rsi, 3 = win rate
-
-
-    #moving averages next
+if __name__ == "__main__":
+    run()
