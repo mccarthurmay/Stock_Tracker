@@ -1,0 +1,65 @@
+.app {
+  min-height: 100vh;
+  background-color: #f3f4f6;
+}
+
+.navbar {
+  background-color: white;
+  padding: 1rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.navbar h1 {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.main-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.menu-button {
+  background: white;
+  border: none;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.menu-button:hover {
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.menu-item h3 {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.menu-item p {
+  color: #666;
+}
+
+.back-button {
+  background: #e5e7eb;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.back-button:hover {
+  background: #d1d5db;
+}
