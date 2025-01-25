@@ -192,7 +192,7 @@ def run():
         while True:
             current_time = datetime.now().time()
             
-            if time(10,00) <= current_time <= time(14,00):
+            if time(10,00) <= current_time <= time(15,30):
                 open_positions, num_positions = get_open_positions()
                 
                 # Monitor existing positions
@@ -200,7 +200,7 @@ def run():
                     executor.submit(monitor_position, ticker)
                 
                 # Look for new setups if we have capacity
-                if num_positions < max_positions and current_time < time(13,30):
+                if num_positions < max_positions and current_time < time(15,30):
                     setups = scan_for_setups(tradeable_symbols)
                     for ticker in setups[:max_positions - num_positions]:
                         if ticker not in open_positions:
@@ -208,9 +208,9 @@ def run():
                             tm.sleep(5)  # Space out orders
                 
                 # Close all positions near end of day
-                if current_time > time(13,50):
+                if current_time > time(15,45):
                     close_all_positions()
-                    tm.sleep(600)  # Wait 10 minutes before scanning again
+                    tm.sleep(300)  # Wait 5 minutes before scanning again
             
             tm.sleep(60)  # Main loop interval
 
