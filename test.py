@@ -16,22 +16,13 @@ from datetime import datetime, timedelta
 from queue import Queue
 import pandas as pd
 from datetime import datetime, timedelta
-from r_analysis.data_download import download_data_recursive, process_data, read_file
+from r_analysis.data_download import run_download
+
 dt = DTManager()
 rsim = RSIManager()
 dtc = DTCalc()
 
-
-ticker = "AMZN"
-start_date = "2024-05-01"
-output_file = "amzn_data3.pkl"
-
-download_data_recursive(ticker, start_date, output_file)
-process_data(output_file)
-processed_data = read_file(output_file)
-if processed_data is not None:
-    print("Processed data:")
-    print(processed_data.tail())
+#run_download()
 
 #tick = "ANSS"
 #range = (40,50)
