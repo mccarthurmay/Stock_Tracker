@@ -1,65 +1,98 @@
 .app {
   min-height: 100vh;
-  background-color: #f3f4f6;
+  background: #1a1d23;
+  color: white;
 }
 
 .navbar {
-  background-color: white;
-  padding: 1rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background-color: #232730;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  border-bottom: 1px solid #2e3443;
 }
 
 .navbar h1 {
-  font-size: 1.5rem;
-  font-weight: bold;
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #4CAF50;
+  text-align: center;
 }
 
 .main-content {
   max-width: 1200px;
-  margin: 0 auto;
-  padding: 1.5rem;
+  margin: 2rem auto;
+  padding: 0 2rem;
 }
 
 .menu-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 1rem;
-  margin-top: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 1.5rem;
+  padding: 1rem;
 }
 
 .menu-button {
-  background: white;
-  border: none;
-  padding: 1.5rem;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background: #232730;
+  border: 1px solid #2e3443;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.2);
   cursor: pointer;
   width: 100%;
   text-align: left;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.menu-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: #4CAF50;
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .menu-button:hover {
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 12px rgba(0,0,0,0.3), 0 0 0 1px #4CAF50;
+}
+
+.menu-button:hover::before {
+  opacity: 1;
 }
 
 .menu-item h3 {
-  font-size: 1.25rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: #4CAF50;
 }
 
 .menu-item p {
-  color: #666;
+  color: #a0aec0;
+  line-height: 1.5;
 }
 
 .back-button {
-  background: #e5e7eb;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
+  background: #232730;
+  border: 1px solid #2e3443;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
   cursor: pointer;
-  margin-bottom: 1rem;
+  margin-bottom: 2rem;
+  font-weight: 500;
+  color: #4CAF50;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: all 0.2s ease;
 }
 
 .back-button:hover {
-  background: #d1d5db;
+  background: #2e3443;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
 }
