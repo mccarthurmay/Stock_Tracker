@@ -1,126 +1,183 @@
-Hello, this is a WIP.
+# Stock Analysis & Trading Platform
 
-main.py - Recommended, newest working version
+## Overview
+This is a comprehensive stock analysis and trading platform that combines technical analysis, automated trading strategies, and portfolio management capabilities. The platform uses various technical indicators including RSI (Relative Strength Index), moving averages, and confidence intervals to identify trading opportunities and manage risk.
 
-IMPORTANT!!!
-Main.py is not currently updated to support automatic paper trading. Run "run.py" to start the automated process. However, this is WIP and will likely cause a net loss. 
+## Features
 
-"Run" function in main.py is for manual trading. 
- - 1. Finds and displays stocks sorted by predicted % gain. Prints { (percent gain), (stock ticker), (rsi), (percent of times sold for a positive value) }
- - 2. Input a ticker and a full report will be presented. This includes stop loss, stop limit, estimated gain, and estimated turnover time. 
+### Core Analysis Tools
+- RSI (Relative Strength Index) analysis with customizable periods
+- Moving Average analysis (20-day and 50-day)
+- Confidence Interval calculations
+- MACD (Moving Average Convergence Divergence) indicators
+- Volume analysis and tracking
+- Win rate and risk analysis
 
-Within "commands", "run (old)" is the original purpose of this application. 
+### Trading Capabilities
+- Day trading module with real-time monitoring
+- Automated buy/sell signal generation
+- Portfolio tracking and management
+- Stop loss and take profit automation
+- Trading performance analytics
+- Paper trading integration via Alpaca API
 
-rsi_analysis.py analyzes % gain of stocks over the next year based on RSI ranges. 
-- lines 134 and 136
-   - line 134 is where you can set it to run on specific stocks (eg. comment out 133 + 134, add a line that says "stock_list = ['GM']"
-   - line 136 is where you can set your desired RSI range
+### Data Management
+- Multiple database support for different trading strategies
+- Automated data updates and maintenance
+- Historical data analysis and storage
+- Custom database creation and management
+- Win rate and short rate tracking
 
-min_rsi.py is similar to rsi_analysis.py, except it was configured to run with day_trade.py / paper.py
-- lines 140, 150 
+### User Interface
+- Tkinter-based GUI for easy interaction
+- Real-time data visualization
+- Portfolio management interface
+- Settings management system
+- Database management tools
 
-
-
-Requirements:
-yfinance, pandas, matplotlib, numpy, selenium, pyinstaller, tk
-
-
-
-
-*must begin all databases containing tickers with "t_", "tickers_", or "ticker_" to be properly updated
-*must begin all portfolios with "p_" or "portfolio_" to be properly updated
-
-15.
-
-Todo:
-4. ML that reads minute by minute data to predict the next half an hour                                                                                            
-
-6. Redo ml.py to predict if a stock is likely to reach 70rsi
-    - currently working, low accuracy at more than "likelihood to reach before 10 days"
-        - higher accuracy the lower the days
-
-11. Create a website to host instead of GUI - use django, learn off coursera
-
-14. Test multiple strategies, optimize income
-    - increase number of datapoints
-    - adjust ranking system (instead of % gain, winrate?)
-    - adjust moving averages
-    - buy stock categories; do an analysis on all categories 
-        - choose category with highest open
-
-15. Optimize optimize optimize
-    - scanning for stocks is incredibly slow
-        - likely api's fault, but will have to test if it's the massive calculations
-    - many overlaps with yfinance now that an api is working
-
-16. Will likely have to switch to a different trading api.
-
-
-Done:
-1. absolute low project 
-    - find how much holders fluctuate 
-    - use 10 rsi, 15 rsi, 20 rsi, and 30 rsi as buy signals
-    - collect all necessary information at purchase date
-        - date, volume, rsi, moving average (maybe a ratio)
-    - gives information on how to set limits
+### To Do
+- Reorganize modules in GUI.
+    - 95% module 
+        - Update All (make a choice on what to update)
+            1. Check settings
+            2. Update chosen databases
+            3. Update portfolios
+            4. Run shortrate/Winrate experiments
+        - Update Database
+        - Update Portfolio
+        - Update Shortrate/Winrate
+        - Show Databases Button
+            - Choose which option (databases, portfolio, shortrate/winrate)
+                - choose which exact database
+        - Calculations Button (new page)
+            - RSI, RSI accuracy, RSI turnover, Moving Average
+                - should update RSI accuracy to instead see if accuracy represents trend, not values
+    - Manage databases
+        - Create database based off file (give format)
+        - Add ticker to database
+        - Remove ticker 
+        - Reset database
+    - Application
+        - Scraper
+        - Converter (py to exe)
+    - Settings
+        - Change startup settings
+        - Check cache/Clear Cache
     
-3. rework portfolio system
-    - buy price is being overwritten
-    - (7/11 prices on test)
-    - show gain  
 
-7. complete a day trading module
-    - integrates absolute low project adjusted for minute by minute data
-    - provides stop loss and sell signals
-    - finds best stocks to purchase for any given day
+## Requirements
 
-8. completely rework/organize code
+### Python Dependencies
+```
+python >= 3.8
+yfinance
+pandas
+numpy
+scipy
+matplotlib
+tkinter
+requests
+pytz
+selenium
+alpaca-trade-api
+```
 
-3. various bugs in main with code rework
+### API Keys Required
+- Tiingo API Key (for market data)
+- Alpaca API Key (for paper trading)
 
-12. Fix bug that doesn't allow for paper.py to run permanently
+## Installation
 
-9. Add automatic trading (paper for now) using Alpaca
+1. Clone the repository:
+```bash
+git clone [repository-url]
+cd [repository-name]
+```
 
-10. Separate modules in main.py (day trade and old experiment) for user choice
+2. Install required packages:
+```bash
+pip install -r requirements.txt
+```
 
-13. MORE DATA - can't accurately "predict" anything if I only have 30 points of data. alpha vantage?
-            - using tiingo
+3. Set up your API keys in config.py:
+```python
+import os
+os.environ['TIINGO_API_KEY_ID'] = "your-tiingo-api-key"
+os.environ['APCA_API_KEY_ID'] = "your-alpaca-key-id"
+os.environ['APCA_API_SECRET_KEY'] = "your-alpaca-secret-key"
+```
 
-Bugs:
-1. main.py two windows when clicking "load"
-2. paper.py runs through all ma calculations regardless of position number on first start
+## Usage
 
+### Starting the Application
+Run the main application:
+```bash
+python main.py
+```
 
+### Main Menu Options
+1. **Run** - Launch the day trading module
+2. **Commands** - Execute individual analysis tasks
+3. **Manage Databases** - Handle database operations
+4. **Portfolio** - Access portfolio management
+5. **Applications** - Use external tools
+6. **Settings** - Configure application settings
 
-Notes:
-1. winrate project
-    - shows that 'most' stocks do not gain any more once above 70 rsi
-    - bought stocks showing 'bull' and 'MA Converging: False' or 'bear' and 'MA Converging: True' are very promising to be gainers
-    - absolute minimum may 'peak' at under 20 rsi
-2. shortrate project
-    - still waiting on rsi values to go under
-3. absolute low project
-    - recorded all information, found that the most optimal RSI is 45-50 (specifically 45-47.5)
-    - HOWEVER, found a flaw in my logic
-        - It only reads perfect situations, where rsi = 45 turning into rsi = 70 is guaranteed.
-        - NEED TO KNOW WHEN THIS OCCURS
+### Database Management
+- Store new ticker lists
+- Load existing databases
+- Add/remove individual tickers
+- Reset databases
+- Update data automatically
 
+### Trading Features
+- Set custom RSI thresholds
+- Configure moving average periods
+- Set stop loss and take profit levels
+- Monitor positions in real-time
+- View trading performance metrics
 
-Depreciated Ideas:
+## File Structure
+```
+├── main.py
+├── config.py
+├── data/
+│   ├── analysis.py
+│   ├── database.py
+│   ├── day_trade.py
+│   ├── paper.py
+│   ├── winrate.py
+│   └── shortrate.py
+├── settings/
+│   └── settings_manager.py
+├── applications/
+│   ├── converter.py
+│   └── scraper.py
+└── storage/
+    ├── databases/
+    ├── settings/
+    └── ticker_lists/
+```
 
-5. Probability to gain in month? (test.py, p_test2.pk)
+## Safety Features
+- Automated stop loss implementation
+- Risk management through position sizing
+- Paper trading environment for testing
+- Multiple validation checks before trades
+- Error handling and logging
 
-2. winrate project
-    - find signals on why DDOG and ADBE kept rising above 70 rsi
+## Notes
+- The platform is designed for educational and testing purposes
+- Always verify trading signals with multiple indicators
+- Paper trade extensively before using real money
+- Keep API keys secure and never share them
+- Regularly backup your databases
 
+## Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.
 
+## License
+[Include your license information here]
 
-    *** MOVE TO NOTES
-
-    day 7: 
-    figured that MA doesn't work until a certain time
-
-    adding trailing stop
-
-    maybe short before certain time? neeed to maximize time
+## Disclaimer
+This software is for educational purposes only. Always conduct your own research and never trade with money you cannot afford to lose. The creators are not responsible for any financial losses incurred while using this platform.
