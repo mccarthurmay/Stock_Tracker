@@ -18,9 +18,9 @@ def check_duplicates(ticker_symbol, filename):
 def scraper(index, choice, filename):
     ticker_list = []
 
-    filename = f'{filename}.txt'
+    filename = f'./storage/ticker_lists/{filename}.txt'
     #activate driver
-    driver = webdriver.Chrome()#(options=chrome_options)
+    driver = webdriver.Chrome(options=chrome_options)
 
     #navigate to link of requested index
     is_link = 'https://www.slickcharts.com/' + index
