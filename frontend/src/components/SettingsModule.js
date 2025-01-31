@@ -1,134 +1,105 @@
 import React, { useState } from 'react';
 import './SettingsModule.css';
 
-const StartupSettings = () => {
-  const [databases, setDatabases] = useState([]);
-  const [selectedDb, setSelectedDb] = useState('');
-  const [updateOnStartup, setUpdateOnStartup] = useState(false);
-
-  const handleSave = () => {
-    // Implementation here
-  };
-
-  return (
-    <div className="section">
-      <h3>Startup Settings</h3>
-      <div className="form-group">
-        <label>Select Database:</label>
-        <select 
-          value={selectedDb}
-          onChange={(e) => setSelectedDb(e.target.value)}
-          className="select-input"
-        >
-          <option value="">Select Database</option>
-          {databases.map(db => (
-            <option key={db} value={db}>{db}</option>
-          ))}
-        </select>
-      </div>
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={updateOnStartup}
-            onChange={(e) => setUpdateOnStartup(e.target.checked)}
-          />
-          Update on Startup
-        </label>
-      </div>
-      <button className="action-button" onClick={handleSave}>Save Settings</button>
-    </div>
-  );
-};
-
 const CacheManagement = () => {
   const [cacheInfo, setCacheInfo] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleCheckCache = () => {
-    // Implementation here
+  const handleCheckCache = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch('http://localhost:5000/api/cache/info');
+      const data = await response.json();
+      
+      if (data.success) {
+        setCacheInfo(data.data);
+      } else {
+        setError(data.error || 'Failed to fetch cache information');
+      }
+    } catch (err) {
+      setError('Failed to fetch cache information: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleClearCache = () => {
-    // Implementation here
+  const handleClearCache = async () => {
+    if (!window.confirm('Are you sure you want to clear the cache?')) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch('http://localhost:5000/api/cache/clear', {
+        method: 'POST',
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setCacheInfo(null);
+        alert('Cache cleared successfully');
+      } else {
+        setError(data.error || 'Failed to clear cache');
+      }
+    } catch (err) {
+      setError('Failed to clear cache: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDateRange = (range) => {
+    if (!range || !range[0] || !range[1]) return 'No data';
+    return `${new Date(range[0]).toLocaleString()} to ${new Date(range[1]).toLocaleString()}`;
   };
 
   return (
     <div className="section">
       <h3>Cache Management</h3>
+      {error && <div className="error-message">{error}</div>}
+      
       <div className="button-group">
-        <button className="action-button" onClick={handleCheckCache}>
-          Check Cache
+        <button 
+          className="action-button" 
+          onClick={handleCheckCache}
+          disabled={loading}
+        >
+          {loading ? 'Loading...' : 'Check Cache'}
         </button>
-        <button className="action-button remove" onClick={handleClearCache}>
-          Clear Cache
+        <button 
+          className="action-button remove" 
+          onClick={handleClearCache}
+          disabled={loading}
+        >
+          {loading ? 'Clearing...' : 'Clear Cache'}
         </button>
       </div>
+
       {cacheInfo && (
         <div className="cache-info">
           <h4>Cache Information:</h4>
-          <pre>{JSON.stringify(cacheInfo, null, 2)}</pre>
+          {Object.entries(cacheInfo).length === 0 ? (
+            <p>Cache is empty</p>
+          ) : (
+            <div className="cache-entries">
+              {Object.entries(cacheInfo).map(([key, info]) => (
+                <div key={key} className="cache-entry">
+                  <h5>Key: {key}</h5>
+                  <p>Shape: {info.shape[0]} rows × {info.shape[1]} columns</p>
+                  <p>Date Range: {formatDateRange(info.date_range)}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 };
 
-const SettingsModule = () => {
-  const [view, setView] = useState('main');
-
-  const menuItems = [
-    {
-      title: 'Startup Settings',
-      description: 'Configure database update behavior on startup',
-      action: 'startup'
-    },
-    {
-      title: 'Cache Management',
-      description: 'View and clear application cache',
-      action: 'cache'
-    }
-  ];
-
-  const renderContent = () => {
-    switch (view) {
-      case 'startup':
-        return <StartupSettings />;
-      case 'cache':
-        return <CacheManagement />;
-      default:
-        return (
-          <div className="menu-grid">
-            {menuItems.map((item) => (
-              <button
-                key={item.action}
-                onClick={() => setView(item.action)}
-                className="menu-button"
-              >
-                <div className="menu-item">
-                  <h3>{item.title}</h3>
-                  <p>{item.description}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        );
-    }
-  };
-
-  return (
-    <div>
-      <h2 className="module-title">Settings</h2>
-      {view !== 'main' && (
-        <button 
-          onClick={() => setView('main')}
-          className="back-button"
-        >
-          Back
-        </button>
-      )}
-      {renderContent()}
-    </div>
-  );
-};
-
-export default SettingsModule;
+export default CacheManagement;

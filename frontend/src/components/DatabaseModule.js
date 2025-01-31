@@ -44,19 +44,61 @@ const DatabaseSelect = ({ value, onChange, className }) => {
 
 
 const CreateDatabase = () => {
-  const [file, setFile] = useState(null);
+  const [selectedFile, setSelectedFile] = useState('');
   const [dbName, setDbName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [availableFiles, setAvailableFiles] = useState([]);
+  const [fileContent, setFileContent] = useState(null);
 
-  const handleFileUpload = (event) => {
-    setFile(event.target.files[0]);
+  // Fetch available files when component mounts
+  useEffect(() => {
+    fetchAvailableFiles();
+  }, []);
+
+  const fetchAvailableFiles = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/ticker-lists');
+      const data = await response.json();
+      
+      if (data.success) {
+        setAvailableFiles(data.files);
+      } else {
+        setError('Failed to fetch available files');
+      }
+    } catch (err) {
+      setError('Failed to fetch available files: ' + err.message);
+    }
+  };
+
+  const handleFileSelect = async (event) => {
+    const filename = event.target.value;
+    setSelectedFile(filename);
     setError(null);
+
+    if (filename) {
+      try {
+        const response = await fetch(`http://localhost:5000/api/ticker-lists/${filename}`);
+        const data = await response.json();
+        
+        if (data.success) {
+          setFileContent(data.content);
+        } else {
+          setError('Failed to load file content');
+          setFileContent(null);
+        }
+      } catch (err) {
+        setError('Failed to load file content: ' + err.message);
+        setFileContent(null);
+      }
+    } else {
+      setFileContent(null);
+    }
   };
 
   const handleSubmit = async () => {
-    if (!file || !dbName) {
-      setError('Please provide both a database name and a file');
+    if (!fileContent || !dbName) {
+      setError('Please provide both a database name and select a file');
       return;
     }
 
@@ -64,10 +106,6 @@ const CreateDatabase = () => {
     setError(null);
 
     try {
-      // First, read the file content
-      const fileContent = await file.text();
-      
-      // Send the file content and database name to the server
       const response = await fetch(`http://localhost:5000/api/database/${dbName}/create`, {
         method: 'POST',
         headers: {
@@ -83,10 +121,8 @@ const CreateDatabase = () => {
       if (data.success) {
         alert('Database created successfully');
         setDbName('');
-        setFile(null);
-        // Reset the file input
-        const fileInput = document.querySelector('.file-input');
-        if (fileInput) fileInput.value = '';
+        setSelectedFile('');
+        setFileContent(null);
       } else {
         setError(data.error || 'Failed to create database');
       }
@@ -100,6 +136,8 @@ const CreateDatabase = () => {
   return (
     <div className="section">
       <h3>Create Database</h3>
+      {error && <div className="error-message">{error}</div>}
+      
       <div className="form-group">
         <label>Database Name:</label>
         <input
@@ -110,37 +148,152 @@ const CreateDatabase = () => {
           disabled={loading}
         />
       </div>
+      
       <div className="form-group">
-        <label>Upload Ticker File:</label>
+        <label>Select Ticker List:</label>
+        <select
+          value={selectedFile}
+          onChange={handleFileSelect}
+          className="select-input"
+          disabled={loading}
+        >
+          <option value="">Select a file</option>
+          {availableFiles.map(file => (
+            <option key={file} value={file}>
+              {file}
+            </option>
+          ))}
+        </select>
+      </div>
+      
+      {fileContent && (
+        <div className="form-group">
+          <label>File Preview:</label>
+          <div className="file-preview">
+            {fileContent.split('\n').slice(0, 5).map((line, index) => (
+              <div key={index}>{line}</div>
+            ))}
+            {fileContent.split('\n').length > 5 && (
+              <div>... and {fileContent.split('\n').length - 5} more lines</div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      <button
+        className="action-button"
+        onClick={handleSubmit}
+        disabled={loading || !fileContent || !dbName}
+      >
+        {loading ? 'Creating Database...' : 'Create Database'}
+      </button>
+    </div>
+  );
+};
+
+const API_BASE_URL = 'http://localhost:5000/api';
+
+const Scraper = () => {
+  const [index, setIndex] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [fileMode, setFileMode] = useState('add');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleScrape = async () => {
+    if (!index || !fileName) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/scrape`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          index,
+          fileName,
+          fileMode
+        }),
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to scrape index');
+      }
+
+      alert('Scraping completed successfully!');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="section">
+      <h3>Stock Index Scraper</h3>
+      {error && <div className="error-message">{error}</div>}
+      <div className="form-group">
+        <label>Index:</label>
+        <select 
+          value={index}
+          onChange={(e) => setIndex(e.target.value)}
+          className="select-input"
+          disabled={loading}
+        >
+          <option value="">Select Index</option>
+          <option value="dowjones">Dow Jones</option>
+          <option value="sp500">S&P 500</option>
+          <option value="nasdaq100">NASDAQ 100</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Output File Name:</label>
         <input
-          type="file"
-          onChange={handleFileUpload}
-          accept=".txt"
-          className="file-input"
+          type="text"
+          value={fileName}
+          onChange={(e) => setFileName(e.target.value)}
+          className="input-field"
           disabled={loading}
         />
       </div>
-      <div className="file-format">
-        <h4>File Format Guide:</h4>
-        <pre>
-          {`AAPL
-          MSFT
-          GOOGL
-          ...`}
-        </pre>
-        <p>One ticker symbol per line</p>
-      </div>
-      {error && (
-        <div className="error-message text-red-500 mt-2">
-          {error}
+      <div className="form-group">
+        <label>File Mode:</label>
+        <div className="radio-group">
+          <label>
+            <input
+              type="radio"
+              value="add"
+              checked={fileMode === 'add'}
+              onChange={(e) => setFileMode(e.target.value)}
+              disabled={loading}
+            />
+            Add to file
+          </label>
+          <label>
+            <input
+              type="radio"
+              value="overwrite"
+              checked={fileMode === 'overwrite'}
+              onChange={(e) => setFileMode(e.target.value)}
+              disabled={loading}
+            />
+            Overwrite file
+          </label>
         </div>
-      )}
+      </div>
       <button 
-        className="action-button"
-        onClick={handleSubmit}
-        disabled={loading || !file || !dbName}
+        className="action-button" 
+        onClick={handleScrape}
+        disabled={loading}
       >
-        {loading ? 'Creating...' : 'Create Database'}
+        {loading ? 'Scraping...' : 'Start Scraping'}
       </button>
     </div>
   );
@@ -298,6 +451,11 @@ const DatabaseModule = () => {
       title: 'Reset Database',
       description: 'Clear database contents',
       action: 'reset'
+    },
+    {
+      title: 'Stock Index Scraper',
+      description: 'Scrape stock symbols from major indices into txt',
+      action: 'scraper'
     }
   ];
 
@@ -309,6 +467,8 @@ const DatabaseModule = () => {
         return <ModifyDatabase />;
       case 'reset':
         return <ResetDatabase />;
+      case 'scraper':
+        return <Scraper />;
       default:
         return (
           <div className="menu-grid">
