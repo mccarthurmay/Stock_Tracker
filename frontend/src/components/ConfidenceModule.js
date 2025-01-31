@@ -1,5 +1,5 @@
 import './ConfidenceModule.css';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { DatabaseSelect } from './DatabaseModule';
 
 // 95% Module Components
@@ -81,6 +81,10 @@ const UpdateDatabase = () => {
     </div>
   );
 };
+
+
+
+
 const ShowDatabases = () => {
   const [selectedDb, setSelectedDb] = useState('');
   const [sortChoice, setSortChoice] = useState('normal');
@@ -96,7 +100,7 @@ const ShowDatabases = () => {
     { value: 'turn', label: 'RSI Turnover' }
   ];
 
-  const fetchDatabaseData = async () => {
+  const fetchDatabaseData = useCallback(async () => {
     if (!selectedDb) return;
     
     setLoading(true);
@@ -116,13 +120,11 @@ const ShowDatabases = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDb, sortChoice]);
 
   useEffect(() => {
-    if (selectedDb) {
-      fetchDatabaseData();
-    }
-  }, [selectedDb, sortChoice]);
+    fetchDatabaseData();
+  }, [fetchDatabaseData, selectedDb]); // Added selectedDb to dependency array
 
   return (
     <div className="section">
