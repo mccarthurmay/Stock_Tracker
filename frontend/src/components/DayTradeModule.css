@@ -1,0 +1,69 @@
+.section {
+  padding: 1.5rem;
+  background: #232730;
+  border-radius: 1rem;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+  border: 1px solid #2e3443;
+  color: white;
+}
+
+.form-group {
+  margin: 1rem 0;
+}
+
+.input-field {
+  background: #1a1d23;
+  border: 1px solid #2e3443;
+  color: white;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  width: 100%;
+  max-width: 300px;
+}
+
+.file-input {
+  color: #a0aec0;
+  margin: 1rem 0;
+}
+
+.file-format {
+  background: #1a1d23;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  border: 1px solid #2e3443;
+}
+
+.file-format pre {
+  background: #2e3443;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  color: #a0aec0;
+  white-space: pre-line;
+}
+
+.action-button {
+  background: #4CAF50;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+.action-button.remove {
+  background: #dc3545;
+}
+
+.action-button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+
+label {
+  color: #a0aec0;
+  margin-bottom: 0.5rem;
+  display: block;
+}
