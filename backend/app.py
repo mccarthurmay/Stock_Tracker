@@ -1,21 +1,53 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, send_file
 from flask_cors import CORS
 from data.analysis import RSIManager, AnalysisManager, AlpacaDataManager
 from data.database import DBManager, Update
 from data.day_trade import DTManager, DTData
 from data.winrate import WinrateManager
-from settings.settings_manager import SettingsManager
+from applications.scraper import scraper
+from applications.converter import convert
 import os
 import data.config
+from werkzeug.utils import secure_filename
+import subprocess
+import sys
 
-app = Flask(__name__, static_folder ='../frontend/build')
+# Get the absolute path of the current file (app.py)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Navigate to the ticker_lists directory relative to backend
+TICKER_LISTS_PATH = os.path.join(current_dir, 'storage', 'ticker_lists')
+
+
+app = Flask(__name__)
 CORS(app)
 
+# Initialize existing managers
 dt_manager = DTManager()
 analysis_manager = AnalysisManager()
 db_manager = DBManager()
-settings_manager = SettingsManager()
 rsi_manager = RSIManager()
+
+
+@app.route('/api/scrape', methods=['POST'])
+def scrape_index():
+    print("Scraping...")
+    data = request.json
+    index = data.get('index')
+    file_name = data.get('fileName')
+    file_mode = data.get('fileMode')
+    
+    try:
+        scraper(index, file_mode, file_name)
+        return jsonify({
+            'success': True,
+            'message': f'Successfully scraped {index} index'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 @app.route('/', defaults = {'path': ''})
 @app.route('/<path:path>')
@@ -149,7 +181,51 @@ def create_database(dbname):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/ticker-lists', methods=['GET'])
+def get_ticker_lists():
+    try:
+        if not os.path.exists(TICKER_LISTS_PATH):
+            os.makedirs(TICKER_LISTS_PATH)
+            
+        files = [f for f in os.listdir(TICKER_LISTS_PATH) if os.path.isfile(os.path.join(TICKER_LISTS_PATH, f))]
+        return jsonify({
+            'success': True,
+            'files': files
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
+@app.route('/api/ticker-lists/<filename>', methods=['GET'])
+def get_ticker_list_content(filename):
+    try:
+        file_path = os.path.join(TICKER_LISTS_PATH, filename)
+        if not os.path.exists(file_path):
+            return jsonify({
+                'success': False,
+                'error': 'File not found'
+            }), 404
+            
+        with open(file_path, 'r') as f:
+            content = f.read()
+            
+        return jsonify({
+            'success': True,
+            'content': content
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+
+
+
+# ConfidenceModule handling
 @app.route('/api/database/<dbname>/update', methods=['POST'])
 def update_database(dbname):
     try:
@@ -197,6 +273,9 @@ def run_experiments():
             'success': False,
             'error': str(e)
         }), 500
+    
+
+
     
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
