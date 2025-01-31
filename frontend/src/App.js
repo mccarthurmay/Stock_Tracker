@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import './App.css';
 import ConfidenceModule from './components/ConfidenceModule';
 import DatabaseModule from './components/DatabaseModule';
-import ApplicationsModule from './components/ApplicationsModule';
 import SettingsModule from './components/SettingsModule';
 import DayTradeModule from './components/DayTradeModule';
 
@@ -18,24 +17,19 @@ const Layout = ({ children }) => (
 const MainMenu = ({ onNavigate }) => {
   const menuItems = [
     {
+      title: 'Main Module',
+      description: 'Manage 95% confidence interval analysis',
+      path: 'confidence'
+    },
+    {
       title: 'Day Trading',
       description: 'Run paper trading simulation',
       path: 'daytrading'
     },
     {
-      title: '95% Module',
-      description: 'Manage 95% confidence interval analysis',
-      path: 'confidence'
-    },
-    {
       title: 'Manage Databases',
       description: 'Database operations and management',
       path: 'databases'
-    },
-    {
-      title: 'Applications',
-      description: 'External tools and utilities',
-      path: 'applications'
     },
     {
       title: 'Settings',
@@ -79,8 +73,6 @@ const App = () => {
         return <ConfidenceModule />;
       case 'databases':
         return <DatabaseModule />;
-      case 'applications':
-        return <ApplicationsModule />;
       case 'settings':
         return <SettingsModule />;
       default:
