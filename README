@@ -63,6 +63,13 @@ This is a comprehensive stock analysis and trading platform that combines techni
     - Settings
         - Change startup settings
         - Check cache/Clear Cache
+
+- Add data gathering methods 
+    - IEX Cloud - uh oh they got shut down
+    - TIINGO
+        - only viable option for day trading; although it is in the IEX 
+    - alpaca api - 200 calls/minute 
+    - I think we're going to switch to alpaca only, and just get hit with that 200 calls/minute because it's free. 
     
 
 ## Requirements
