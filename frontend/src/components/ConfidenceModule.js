@@ -428,20 +428,20 @@ const ConfidenceModule = () => {
     {
       title: 'Run Experiments',
       description: 'Update "winrate" experiment',
-      action: 'updae-experiments'
-    },
+      action: 'update-experiments' 
+    }
   ];
 
   const renderContent = () => {
     switch (view) {
       case 'update-db':
         return <UpdateDatabase />;
-      case 'update-experiments':
-        return <UpdateExperiments />;
       case 'show-db':
         return <ShowDatabases />;
       case 'calculations':
         return <Calculations />;
+      case 'update-experiments':  // Added this case
+        return <UpdateExperiments />;
       default:
         return (
           <div className="menu-grid">
