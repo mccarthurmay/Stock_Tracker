@@ -178,6 +178,27 @@ class AnalysisManager:
         self.data_manager = AlpacaDataManager()
         self.rate_limiter = RateLimiter(max_requests_per_minute=150)
         
+    def estimate_processing_time(self, ticker_count):
+        """
+        Estimates the processing time based on API rate limits and number of tickers
+        Returns estimated time in seconds
+        """
+        # Each ticker requires approximately:
+        # - 1 call for CI calculations (90 days data)
+        # - 1 call for RSI calculations (720 days data)
+        # - 1 call for MA calculations (60 days data)
+        # - 1 call for current price
+        API_CALLS_PER_TICKER = 4
+        
+        total_api_calls = ticker_count * API_CALLS_PER_TICKER
+        rate_limit_per_minute = 150  # From rate limiter
+        
+        # Calculate minutes needed based on rate limit
+        estimated_minutes = (total_api_calls / rate_limit_per_minute)
+        # Add 10% buffer for processing overhead
+        estimated_seconds = (estimated_minutes * 60) * 1.1
+        return round(estimated_seconds)
+        
     def runall(self, ticker, db):
         self.rate_limiter.wait_if_needed()
 
