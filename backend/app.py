@@ -6,6 +6,8 @@ from data.day_trade import DTManager, DTData
 from data.winrate import WinrateManager
 from applications.scraper import scraper
 from applications.converter import convert
+from data.database import open_file, close_file
+import pickle
 import os
 import data.config
 from werkzeug.utils import secure_filename
@@ -226,14 +228,6 @@ def get_ticker_list_content(filename):
 
 
 # ConfidenceModule handling
-@app.route('/api/database/<dbname>/update', methods=['POST'])
-def update_database(dbname):
-    try:
-        update_manager = Update()
-        update_manager.updateData(dbname)
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/database/<dbname>/load')
 def load_database(dbname):
@@ -251,11 +245,9 @@ def load_database(dbname):
 def run_experiments():
     try:
         # Initialize managers
-        settings_manager = SettingsManager()
         winrate_manager = WinrateManager()
 
         # Run the experiments
-        settings_manager.checkSettings()
         winrate_manager.checkWinrate()
         winrate_manager.winrate()
         winrate_manager.scanWinrate()
@@ -274,7 +266,43 @@ def run_experiments():
             'error': str(e)
         }), 500
     
+@app.route('/api/database/<dbname>/estimate', methods=['GET'])
+def estimate_update_time(dbname):
+    try:
+        # Use the existing open_file function from database.py
+        db, dbfile = open_file(dbname)
+        ticker_count = len(db.keys())
 
+        # Calculate estimate
+        analysis_manager = AnalysisManager()
+        estimated_time = analysis_manager.estimate_processing_time(ticker_count)
+        
+        return jsonify({
+            'success': True,
+            'estimated_time': estimated_time,
+        })
+    except FileNotFoundError:
+        return jsonify({
+            'success': False,
+            'error': 'Database not found'
+        }), 404
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/database/<dbname>/update', methods=['POST'])
+def update_database(dbname):
+    try:
+        update_manager = Update()
+        update_manager.updateData(dbname)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
     
 if __name__ == '__main__':
