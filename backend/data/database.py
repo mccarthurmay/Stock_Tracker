@@ -126,14 +126,13 @@ class Update():
             print(f"{dbname} loading...")
         except FileNotFoundError:
             print("file not found")
-            return
+            return None
 
         def process_ticker(ticker):
             try:
                 self.analysis.runall(ticker, db)
             except Exception as e:
                 print(f"There has been an error with {ticker}: {e}")
-
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             executor.map(process_ticker, db.keys())
