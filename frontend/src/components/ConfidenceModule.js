@@ -9,6 +9,53 @@ const UpdateDatabase = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [updateStatus, setUpdateStatus] = useState(null);
+  const [timeRemaining, setTimeRemaining] = useState(null);
+  const [estimateRequested, setEstimateRequested] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    let timer;
+    if (timeRemaining && timeRemaining > 0 && loading) {
+      const interval = 1000; // 1 second
+      timer = setInterval(() => {
+        setTimeRemaining(prev => {
+          if (prev <= 0) {
+            clearInterval(timer);
+            return 0;
+          }
+          const newTime = prev - 1;
+          // Update progress percentage
+          setProgress((1 - newTime / timeRemaining) * 100);
+          return newTime;
+        });
+      }, interval);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [timeRemaining, loading]);
+
+  const formatTime = (seconds) => {
+    if (seconds === null) return '--:--';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const getEstimate = async () => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/database/${selectedDb}/estimate`);
+      const data = await response.json();
+      
+      if (data.success) {
+        return data.estimated_time;
+      } else {
+        throw new Error(data.error || 'Failed to get estimate');
+      }
+    } catch (err) {
+      throw new Error('Failed to get time estimate');
+    }
+  };
 
   const handleUpdate = async () => {
     if (!selectedDb) {
@@ -16,11 +63,30 @@ const UpdateDatabase = () => {
       return;
     }
 
-    setLoading(true);
+    setEstimateRequested(true);
     setError(null);
-    setUpdateStatus('Updating database...');
+    setUpdateStatus('Calculating estimated time...');
 
     try {
+      // First get the estimate
+      const estimatedTime = await getEstimate();
+      setTimeRemaining(estimatedTime);
+      setUpdateStatus(`Estimated time: ${formatTime(estimatedTime)}. Proceed with update?`);
+      
+      // User must confirm before proceeding
+      if (!window.confirm(`This update will take approximately ${formatTime(estimatedTime)}. Do you want to continue?`)) {
+        setEstimateRequested(false);
+        setUpdateStatus(null);
+        setTimeRemaining(null);
+        setProgress(0);
+        return;
+      }
+
+      // Start the update
+      setLoading(true);
+      setProgress(0);
+      setUpdateStatus('Updating database...');
+
       const response = await fetch(`http://localhost:5000/api/database/${selectedDb}/update`, {
         method: 'POST',
         headers: {
@@ -33,24 +99,34 @@ const UpdateDatabase = () => {
       if (data.success) {
         setUpdateStatus('Database updated successfully');
       } else {
-        setError(data.error || 'Failed to update database');
+        throw new Error(data.error || 'Failed to update database');
       }
     } catch (err) {
-      setError('Failed to connect to server');
+      setError(err.message || 'Failed to connect to server');
     } finally {
       setLoading(false);
+      setEstimateRequested(false);
+      setTimeRemaining(null);
+      setProgress(0);
     }
   };
 
   return (
     <div className="section">
       <h3 className="text-xl font-bold mb-4">Update Database</h3>
-      <h5>Alpaca API Call Limit: 200/min</h5>
-      <h5>SMP500 would take 3+ minutes to scan through</h5>
+      <h5>Alpaca API Call Limit: 150/min</h5>
+      
       <DatabaseSelect 
         className="select-input w-full p-2 mb-4 border rounded"
         value={selectedDb}
-        onChange={(e) => setSelectedDb(e.target.value)}
+        onChange={(e) => {
+          setSelectedDb(e.target.value);
+          setEstimateRequested(false);
+          setUpdateStatus(null);
+          setError(null);
+          setTimeRemaining(null);
+          setProgress(0);
+        }}
       />
 
       <button 
@@ -58,8 +134,24 @@ const UpdateDatabase = () => {
         onClick={handleUpdate}
         disabled={loading || !selectedDb}
       >
-        {loading ? 'Updating...' : 'Update Database'}
+        {loading ? 'Updating...' : estimateRequested ? 'Getting estimate...' : 'Update Database'}
       </button>
+
+      {timeRemaining !== null && loading && (
+        <div className="mt-4">
+          <div className="bg-blue-100 p-4 rounded">
+            <p className="text-blue-800">
+              Time remaining: {formatTime(timeRemaining)}
+            </p>
+            <div className="w-full bg-blue-200 rounded-full h-2.5 mt-2">
+              <div 
+                className="bg-blue-600 h-2.5 rounded-full transition-all duration-1000"
+                style={{ width: `${Math.min(100, progress)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="error-message text-red-500 mt-2">
@@ -70,12 +162,6 @@ const UpdateDatabase = () => {
       {updateStatus && !error && (
         <div className="success-message text-green-500 mt-2">
           {updateStatus}
-        </div>
-      )}
-
-      {loading && (
-        <div className="loading-indicator text-gray-500 mt-2">
-          Please wait while the database is being updated...
         </div>
       )}
     </div>
@@ -95,9 +181,9 @@ const ShowDatabases = () => {
   const sortOptions = [
     { value: 'normal', label: 'Below 95% CI' },
     { value: 'short', label: 'Above 95% CI' },
-    { value: 'msd', label: 'RSI MSD' },
     { value: 'rsi', label: 'RSI Value' },
     { value: 'turn', label: 'RSI Turnover' }
+    
   ];
 
   const fetchDatabaseData = useCallback(async () => {
@@ -167,21 +253,29 @@ const ShowDatabases = () => {
                 <th className="border p-2 text-left">Below 95% CI</th>
                 <th className="border p-2 text-left">Above 95% CI</th>
                 <th className="border p-2 text-left">RSI</th>
-                <th className="border p-2 text-left">RSI MSD</th>
                 <th className="border p-2 text-left">RSI Turnover</th>
                 <th className="border p-2 text-left">MA Status</th>
+                <th className="border p-2 text-left">Buy Signal</th>
               </tr>
             </thead>
             <tbody>
               {data.map((item, index) => (
                 <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="border p-2">{item.Ticker}</td>
-                  <td className="border p-2">{item['% Below 95% CI']?.toFixed(2)}%</td>
-                  <td className="border p-2">{item['% Above 95% CI']?.toFixed(2)}%</td>
-                  <td className="border p-2">{item.RSI?.toFixed(2)}</td>
-                  <td className="border p-2">{item['RSI MSD']?.toFixed(2)}</td>
+                  <td className="border p-2">{item['% Below 95% CI']}%</td>
+                  <td className="border p-2">{item['% Above 95% CI']}%</td>
+                  <td className="border p-2">{item.RSI}</td>
                   <td className="border p-2">{item['RSI Avg Turnover']}</td>
                   <td className="border p-2">{item.MA?.[0]} ({item.MA?.[1]})</td>
+                  <td className="border p-10">
+                    {item.Buy === true ? (
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded">Yes</span>
+                    ) : item.Buy === false ? (
+                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded">No</span>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
