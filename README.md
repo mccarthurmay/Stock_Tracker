@@ -41,7 +41,7 @@ Frontend dependencies are managed through `package.json` and include:
 1. Clone the repository:
 ```bash
 git clone [repository-url]
-cd stock-market-analysis-tool
+cd Stock_Analysis
 ```
 
 2. Configure Alpaca API credentials:
