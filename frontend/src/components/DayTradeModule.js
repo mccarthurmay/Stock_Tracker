@@ -50,6 +50,7 @@ const DayTradeModule = () => {
   return (
     <div>
       <h2 className="module-title">Day Trading Module</h2>
+      <p>Not in working condition.</p>
       <PaperTrading />
     </div>
   );
