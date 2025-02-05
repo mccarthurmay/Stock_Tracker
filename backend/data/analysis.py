@@ -76,8 +76,8 @@ class AlpacaDataManager:
             return self._cache[cache_key]
             
         # Calculate dates for API call
-        # End time is now minus 15 minutes to avoid subscription limitations
-        end_dt = datetime.now(pytz.UTC) - timedelta(minutes=15)
+        # End time is now minus 20 minutes to avoid subscription limitations
+        end_dt = datetime.now(pytz.UTC) - timedelta(minutes=20)
         start_dt = end_dt - timedelta(days=days_back)
         
         # Convert frequency string to TimeFrame
@@ -201,15 +201,25 @@ class AnalysisManager:
         
     def runall(self, ticker, db):
         self.rate_limiter.wait_if_needed()
+        try:
+            percent_under = round(self.CI.under_confidence(ticker, db).iloc[0])
+            percent_over = round(self.CI.over_confidence(ticker, db).iloc[0])
+        except Exception as e:
+            print("percent_under ", e)
+        
+        try:
+            ma, ma_date, converging = self.RSI.MA(ticker, graph = False)
+            rsi = self.RSI.rsi_calc(ticker, graph = False, date = None)
+        except Exception as e:
+            print("ma and rsi", e)
 
-        percent_under = round(self.CI.under_confidence(ticker, db).iloc[0])
-        percent_over = round(self.CI.over_confidence(ticker, db).iloc[0])
-        ma, ma_date, converging = self.RSI.MA(ticker, graph = False)
-        rsi = self.RSI.rsi_calc(ticker, graph = False, date = None)
-        buy_bool = self.buy(rsi, percent_under)
-        short_bool = self.short(rsi, percent_over)
-        cos, msd = self.RSI.rsi_accuracy(ticker)
-        turnover = self.RSI.rsi_turnover(ticker)
+        try:
+            buy_bool = self.buy(rsi, percent_under)
+            short_bool = self.short(rsi, percent_over)
+            cos, msd = self.RSI.rsi_accuracy(ticker)
+            turnover = self.RSI.rsi_turnover(ticker)
+        except Exception as e:
+            print("after", e)
         db[ticker] = {
             'Ticker': ticker,
             'Buy': buy_bool,
@@ -267,8 +277,6 @@ class AnalysisManager:
             return True
         else:
             return False
-        
-
 
                 
                 
@@ -359,7 +367,7 @@ class RSIManager:
 
     def rsi_base(self, ticker, days_back, frequency="1D"):
         df = self.data_manager.get_data(ticker, days_back, frequency)
-    
+
         if df.empty:
             return pd.Series(), ticker, df
 
@@ -493,7 +501,7 @@ class RSIManager:
         plt.show()
 
     # Only used for individual calls; remains on yFinance
-    def MA(self, ticker, graph, frequency="daily", days_back = 60, span1=5, span2=20, standardize=False):
+    def MA(self, ticker, graph, frequency="1D", days_back = 60, span1=5, span2=20, standardize=False):
         df = self.data_manager.get_data(ticker, days_back, frequency)
         
         if standardize:
