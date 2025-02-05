@@ -14,15 +14,6 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv venv
-fi
-
-# Activate virtual environment
-source venv/bin/activate
-
 # Check and install Python requirements
 echo "Checking Python requirements..."
 pip freeze > installed_requirements.txt
@@ -42,7 +33,7 @@ fi
 # Start both servers
 echo "Starting servers..."
 cd ..
-(source venv/bin/activate && python app.py) &
+(cd backend && python app.py) &
 (cd frontend && npm start) &
 
 # Store process IDs
