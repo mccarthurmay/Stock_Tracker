@@ -19,15 +19,6 @@ if errorlevel 1 (
     exit /b
 )
 
-REM Create virtual environment if it doesn't exist
-if not exist "venv" (
-    echo Creating virtual environment...
-    python -m venv venv
-)
-
-REM Activate virtual environment
-call venv\Scripts\activate
-
 REM Check and install Python requirements
 echo Checking Python requirements...
 pip freeze > installed_requirements.txt
@@ -47,7 +38,7 @@ if not exist "node_modules" (
 
 REM Start both servers
 echo Starting servers...
-start /min cmd /c "cd %ORIGINAL_DIR% && venv\Scripts\python app.py"
+start /min cmd /c "cd %ORIGINAL_DIR%\backend && python app.py"
 start /min cmd /c "cd %ORIGINAL_DIR%\frontend && npm start"
 
 echo Application started! Please wait for the browser to open...
