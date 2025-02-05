@@ -57,12 +57,10 @@ os.environ['ALPACA_SECRET'] = "your_api_secret"
 ### Windows Users (start.bat)
 Simply run `start.bat` in the root directory. The script will:
 1. Check for Python and Node.js installations
-2. Create a Python virtual environment if it doesn't exist
-3. Activate the virtual environment
-4. Install/update Python requirements automatically
-5. Install frontend dependencies if needed
-6. Start both backend and frontend servers
-7. Open the application in your default browser
+2. Install/update Python requirements automatically
+3. Install frontend dependencies if needed
+4. Start both backend and frontend servers
+5. Open the application in your default browser
 
 To stop the application:
 - Press 'Q' in the command window
@@ -72,12 +70,10 @@ To stop the application:
 ### Unix/Linux/Mac Users (start.sh)
 Run `start.sh` in the root directory. The script will:
 1. Verify Python and Node.js installations
-2. Create a Python virtual environment if it doesn't exist
-3. Activate the virtual environment
-4. Install/update Python requirements automatically
-5. Install frontend dependencies if needed
-6. Start both backend and frontend servers
-7. Open the application in your default browser
+2. Install/update Python requirements automatically
+3. Install frontend dependencies if needed
+4. Start both backend and frontend servers
+5. Open the application in your default browser
 
 To stop the application:
 - Press Ctrl+C in the terminal
@@ -92,8 +88,7 @@ To stop the application:
 - `database.py`: Database management and operations
 - `day_trade.py`: Day trading simulation logic
 - `scraper.py`: Web scraping functionality for stock indices
-- `requirements.txt`: Python dependency specifications
-
+- 
 ### Frontend Components
 - `App.js`: Main React application component
 - `ConfidenceModule.js`: 95% confidence interval analysis interface
