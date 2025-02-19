@@ -28,6 +28,7 @@ cd frontend || exit
 if [ ! -d "node_modules" ]; then
     echo "Installing frontend dependencies..."
     npm install
+    npm install recharts
 fi
 
 # Start both servers

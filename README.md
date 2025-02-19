@@ -35,6 +35,7 @@ Frontend dependencies are managed through `package.json` and include:
 - React (UI framework)
 - Tailwind CSS (styling)
 - Additional development dependencies
+- recharts
 
 ## Installation
 

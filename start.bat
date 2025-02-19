@@ -34,6 +34,7 @@ cd "%ORIGINAL_DIR%\frontend"
 if not exist "node_modules" (
     echo Installing frontend dependencies...
     npm install
+    npm install recharts
 )
 
 REM Start both servers

@@ -7,6 +7,8 @@ from data.winrate import WinrateManager
 from applications.scraper import scraper
 from applications.converter import convert
 from data.database import open_file, close_file
+import numpy as np
+import pandas as pd
 import pickle
 import os
 import data.config
@@ -303,6 +305,92 @@ def update_database(dbname):
             'success': False,
             'error': str(e)
         }), 500
+    
+    
+@app.route('/api/analysis/<ticker>')
+def get_combined_analysis(ticker):
+    try:
+        rsi_manager = RSIManager()
+        # Get RSI data and dataframe
+        rsi, _, df = rsi_manager.rsi_base(ticker, 720)
+        
+        if df.empty or rsi.empty:
+            return jsonify({
+                'success': False,
+                'error': 'No data available for this ticker'
+            }), 400
+        
+        # Remove first 13 rows as done in plot_data
+        df = df.iloc[13:]  
+        rsi = rsi[13:]
+        
+        # Make sure indexes match
+        common_index = df.index.intersection(rsi.index)
+        df = df.loc[common_index]
+        rsi = rsi.loc[common_index]
+        
+        # Calculate MAs using the existing MA function
+        close_data = df['close']
+        MA = pd.DataFrame()
+        MA['ST'] = close_data.ewm(span=5, adjust=False).mean() 
+        MA['LT'] = close_data.ewm(span=20, adjust=False).mean()
+        MA.dropna(inplace=True)
+        
+        # Ensure all indexes align
+        common_index = df.index.intersection(MA.index)
+        df = df.loc[common_index]
+        rsi = rsi.loc[common_index]
+        MA = MA.loc[common_index]
+        
+        # Convert DataFrame to dictionary format
+        df = df.reset_index()
+        
+        # Create data points
+        data = []
+        for i in range(1, len(df)):  # Start at 1 to compare previous day's data
+            if (not pd.isna(df['close'][i]) and 
+                not pd.isna(rsi.iloc[i]) and 
+                not pd.isna(MA['ST'].iloc[i]) and 
+                not pd.isna(MA['LT'].iloc[i])):
+                
+                # Check for short MA crossing above long MA (bullish signal)
+                bull_run = False
+                if MA['ST'].iloc[i] > MA['LT'].iloc[i] and MA['ST'].iloc[i-1] <= MA['LT'].iloc[i-1]:
+                    bull_run = True
+                
+                data_point = {
+                    'timestamp': df['timestamp'][i].isoformat(),
+                    'price': float(df['close'][i]),
+                    'rsi': float(rsi.iloc[i]),
+                    'ma_short': float(MA['ST'].iloc[i]),
+                    'ma_long': float(MA['LT'].iloc[i]),
+                    'bull_run': bull_run  # Add bull_run field to indicate crossover
+                }
+                data.append(data_point)
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No valid data points after processing'
+            }), 400
+            
+        print("Final data length:", len(data))
+        print("Sample data points:")
+        for i in range(min(3, len(data))):
+            print(f"Point {i}:", data[i])
+        
+        # Verify no null values in the data
+        for point in data:
+            if any(v is None for v in point.values()):
+                print("Warning: Found null values in data point:", point)
+            
+        return jsonify({
+            'success': True,
+            'data': data
+        })
+    except Exception as e:
+        print(f"Error in get_combined_analysis: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
     
 if __name__ == '__main__':

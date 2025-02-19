@@ -1,6 +1,7 @@
 import './ConfidenceModule.css';
 import React, { useState, useEffect, useCallback } from 'react';
 import { DatabaseSelect } from './DatabaseModule';
+import CombinedAnalysisChart from './CombinedAnalysisChart';
 
 // 95% Module Components
 
@@ -458,6 +459,14 @@ const Calculations = () => {
             </p>
           </>
         )
+
+      case 'graph':
+        return (
+          <>
+            <h4>Combined Analysis Chart:</h4>
+            <CombinedAnalysisChart ticker={ticker} />
+          </>
+        );
       
       default:
         return (
@@ -486,6 +495,8 @@ const Calculations = () => {
         <button className="calc-button" onClick={() => handleCalculation('accuracy')}>RSI Accuracy (Trend)</button>
         <button className="calc-button" onClick={() => handleCalculation('turnover')}>RSI Turnover</button>
         <button className="calc-button" onClick={() => handleCalculation('ma')}>Moving Average</button>
+        <button className="calc-button" onClick={() => handleCalculation('graph')}>Show Chart</button>
+
       </div>
 
       {loading && <div>Loading...</div>}
