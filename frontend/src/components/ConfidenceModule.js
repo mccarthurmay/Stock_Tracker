@@ -171,20 +171,20 @@ const UpdateDatabase = () => {
 
 
 
-
 const ShowDatabases = () => {
   const [selectedDb, setSelectedDb] = useState('');
   const [sortChoice, setSortChoice] = useState('normal');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedTicker, setSelectedTicker] = useState(null);
+  const [showChart, setShowChart] = useState(false);
 
   const sortOptions = [
     { value: 'normal', label: 'Below 95% CI' },
     { value: 'short', label: 'Above 95% CI' },
     { value: 'rsi', label: 'RSI Value' },
     { value: 'turn', label: 'RSI Turnover' }
-    
   ];
 
   const fetchDatabaseData = useCallback(async () => {
@@ -211,7 +211,34 @@ const ShowDatabases = () => {
 
   useEffect(() => {
     fetchDatabaseData();
-  }, [fetchDatabaseData, selectedDb]); // Added selectedDb to dependency array
+  }, [fetchDatabaseData, selectedDb]);
+
+  const handleTickerClick = (ticker) => {
+    setSelectedTicker(ticker);
+    setShowChart(true);
+  };
+
+  // Modal component for the chart
+  const ChartModal = () => {
+    if (!showChart) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold">{selectedTicker} Analysis</h3>
+            <button 
+              onClick={() => setShowChart(false)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <span className="text-2xl">&times;</span>
+            </button>
+          </div>
+          <CombinedAnalysisChart ticker={selectedTicker} />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="section">
@@ -262,7 +289,12 @@ const ShowDatabases = () => {
             <tbody>
               {data.map((item, index) => (
                 <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="border p-2">{item.Ticker}</td>
+                  <td 
+                    className="border p-2 cursor-pointer text-blue-600 hover:text-blue-800 hover:underline"
+                    onClick={() => handleTickerClick(item.Ticker)}
+                  >
+                    {item.Ticker}
+                  </td>
                   <td className="border p-2">{item['% Below 95% CI']}%</td>
                   <td className="border p-2">{item['% Above 95% CI']}%</td>
                   <td className="border p-2">{item.RSI}</td>
@@ -283,6 +315,9 @@ const ShowDatabases = () => {
           </table>
         </div>
       )}
+
+      {/* Chart Modal */}
+      <ChartModal />
     </div>
   );
 };

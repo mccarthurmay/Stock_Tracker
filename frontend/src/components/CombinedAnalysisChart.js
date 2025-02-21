@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ReferenceLine, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Scatter } from 'recharts';
+import { ReferenceLine, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const CombinedAnalysisChart = ({ ticker }) => {
   const [data, setData] = useState([]);
@@ -13,12 +13,6 @@ const CombinedAnalysisChart = ({ ticker }) => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // Bull markers for RSI oversold/overbought
-  const bullMarkers = data.filter(item => item.bull_run).map(item => ({
-    x: item.timestamp, // Use the timestamp for X axis
-    y: item.rsi,       // Use RSI for Y axis
-  }));
-
   useEffect(() => {
     const fetchData = async () => {
       if (!ticker) return;
@@ -31,7 +25,7 @@ const CombinedAnalysisChart = ({ ticker }) => {
           const formattedData = result.data.map(item => ({
             ...item,
             date: new Date(item.timestamp).toLocaleDateString(),
-            timestamp: new Date(item.timestamp), // Store the original timestamp for filtering
+            timestamp: new Date(item.timestamp),
           }));
           setData(formattedData);
         } else {
@@ -48,7 +42,7 @@ const CombinedAnalysisChart = ({ ticker }) => {
     fetchData();
   }, [ticker]);
 
-  // Filter data based on zoom range (startDate, endDate)
+  // Filter data based on zoom range
   const filteredData = data.filter(item => {
     if (!startDate && !endDate) return true;
     const itemDate = new Date(item.timestamp);
@@ -63,46 +57,55 @@ const CombinedAnalysisChart = ({ ticker }) => {
 
   return (
     <div className="mt-5 p-5 bg-white rounded-lg shadow-md overflow-hidden">
-      <div className="mb-4">
-        <label>
+      <div className="mb-4 space-x-4">
+        <label className="inline-flex items-center">
           <input
             type="checkbox"
             checked={showRSI}
             onChange={() => setShowRSI(!showRSI)}
+            className="mr-2"
           />
           Show RSI
         </label>
-        <label className="ml-4">
+        <label className="inline-flex items-center">
           <input
             type="checkbox"
             checked={showShortMA}
             onChange={() => setShowShortMA(!showShortMA)}
+            className="mr-2"
           />
           Show Short MA
         </label>
-        <label className="ml-4">
+        <label className="inline-flex items-center">
           <input
             type="checkbox"
             checked={showLongMA}
             onChange={() => setShowLongMA(!showLongMA)}
+            className="mr-2"
           />
           Show Long MA
         </label>
       </div>
 
-      <div className="mb-4">
-        <label>Start Date: </label>
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
-        <label className="ml-4">End Date: </label>
-        <input
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-        />
+      <div className="mb-4 space-x-4">
+        <label className="inline-flex items-center">
+          Start Date:
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="ml-2"
+          />
+        </label>
+        <label className="inline-flex items-center">
+          End Date:
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="ml-2"
+          />
+        </label>
       </div>
 
       <ResponsiveContainer width="100%" height={400}>
@@ -132,74 +135,53 @@ const CombinedAnalysisChart = ({ ticker }) => {
             label={{ value: 'RSI', angle: 90, position: 'insideRight' }}
           />
           
-          <ReferenceLine 
-            y={30} 
-            yAxisId="right" 
-            stroke="red" 
-            strokeDasharray="3 3" 
-          />
-          <ReferenceLine 
-            y={70} 
-            yAxisId="right" 
-            stroke="green" 
-            strokeDasharray="3 3" 
-          />
+          <ReferenceLine y={30} yAxisId="right" stroke="#ef4444" strokeDasharray="3 3" />
+          <ReferenceLine y={70} yAxisId="right" stroke="#22c55e" strokeDasharray="3 3" />
 
-          <Tooltip />
-          <Legend verticalAlign="top" height={36} /> 
+          <Tooltip 
+            formatter={(value, name) => [value?.toFixed(2) || value, name]}
+          />
+          <Legend verticalAlign="top" height={36} />
 
+          <Line 
+            yAxisId="left"
+            type="monotone"
+            dataKey="price"
+            stroke="#f97316"
+            name="Price"
+            dot={false}
+          />
+          
           {showShortMA && (
             <Line 
-                yAxisId="left"
-                type="monotone"
-                dataKey="ma_short"
-                stroke="#82ca9d"
-                name="Short MA"
-                dot={false}
+              yAxisId="left"
+              type="monotone"
+              dataKey="ma_short"
+              stroke="#22c55e"
+              name="Short MA"
+              dot={false}
             />
           )}
           
           {showLongMA && (
             <Line 
-                yAxisId="left"
-                type="monotone"
-                dataKey="ma_long"
-                stroke="#ffc658"
-                name="Long MA"
-                dot={false}
+              yAxisId="left"
+              type="monotone"
+              dataKey="ma_long"
+              stroke="#eab308"
+              name="Long MA"
+              dot={false}
             />
           )}
           
           {showRSI && (
             <Line 
-                yAxisId="right"
-                type="monotone"
-                dataKey="rsi"
-                stroke="#8884d8"
-                strokeOpacity={0.8}
-                name="RSI"
-                dot={false}
-            />
-          )}
-          
-          <Line 
-            yAxisId="left"
-            type="monotone"
-            dataKey="price"
-            stroke="#ff7300"
-            name="Price"
-            dot={false}
-          />
-
-          {/* Bull markers (RSI oversold or overbought) */}
-          {bullMarkers.length > 0 && (
-            <Scatter 
               yAxisId="right"
-              data={bullMarkers}
-              line={{ stroke: 'red', strokeWidth: 3 }}
-              fill="red"
-              name="Bull Markers"
-              shape="cross"
+              type="monotone"
+              dataKey="rsi"
+              stroke="#6366f1"
+              name="RSI"
+              dot={false}
             />
           )}
         </LineChart>

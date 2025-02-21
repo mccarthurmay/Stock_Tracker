@@ -113,7 +113,7 @@ class Update():
             except Exception as e:
                 print(f"There has been an error with {ticker}: {e}")
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with concurrent.futures.ThreadPoolExecutor() as executor: # dynamically change thread max_workers
             executor.map(process_ticker, db.keys())
 
         close_file(db, dbname)
