@@ -14,17 +14,31 @@ import config
 import time
 from datetime import datetime
 
+max_requests_per_minute=150 * 4 # We have 4 calls per 1 call, but they are calling from cache # Not exactly 4, actually more
+
 class RateLimiter:
     def __init__(self, max_requests_per_minute):
         self.max_requests = max_requests_per_minute
         self.requests = []
+        self.cache_hits = 0
+        self.api_calls = 0
     
-    def wait_if_needed(self):
+    def wait_if_needed(self, is_cached=False):
+        """
+        Rate limits API calls while tracking cache hits separately
+        
+        Args:
+            is_cached (bool): Whether this request will use cached data
+        """
+        if is_cached:
+            self.cache_hits += 1
+            return
+            
         now = datetime.now()
         # Remove requests older than 1 minute
         self.requests = [req_time for req_time in self.requests 
                         if (now - req_time).total_seconds() < 60]
-        
+        print(len(self.requests))
         if len(self.requests) >= self.max_requests:
             # Get the oldest request
             oldest_request = self.requests[0]
@@ -35,8 +49,23 @@ class RateLimiter:
             # Clear old requests after waiting
             self.requests = []
         
-        # Add the new request
+        # Add the new API request
         self.requests.append(now)
+        self.api_calls += 1
+    
+    def get_stats(self):
+        """Returns statistics about API usage and cache hits"""
+        return {
+            'api_calls': self.api_calls,
+            'cache_hits': self.cache_hits,
+            'total_requests': self.api_calls + self.cache_hits
+        }
+    
+    
+    def reset_stats(self):
+        """Resets the statistics counters"""
+        self.api_calls = 0
+        self.cache_hits = 0
 
 
 class AlpacaDataManager:
@@ -44,7 +73,7 @@ class AlpacaDataManager:
 
     def __init__(self):
         self.data_client = StockHistoricalDataClient
-        self.rate_limiter = RateLimiter(max_requests_per_minute=100)
+        self.rate_limiter = RateLimiter(max_requests_per_minute)
     
     def __new__(cls):
         if cls._instance is None:
@@ -65,15 +94,17 @@ class AlpacaDataManager:
         return cls._instance
         
     def get_data(self, ticker, days_back=5, frequency="1D"):
-        self.rate_limiter.wait_if_needed()
         
         """Get stock data from Alpaca with smart caching"""
         cache_key = f"{ticker}_{frequency}_{days_back}"
-        eastern_tz = pytz.timezone('US/Eastern')
         
         # Check cache
         if cache_key in self._cache:
+            # Use rate limiter but indicate it's a cache hit
+            self.rate_limiter.wait_if_needed(is_cached=True)
             return self._cache[cache_key]
+        
+        self.rate_limiter.wait_if_needed(is_cached=False)
             
         # Calculate dates for API call
         # End time is now minus 20 minutes to avoid subscription limitations
@@ -128,39 +159,22 @@ class AlpacaDataManager:
             return pd.DataFrame()
     
     def get_price(self, ticker):
-        """Get latest available price (delayed by 15 minutes)"""
-        try:
-            # Use get_data to fetch the recent data with 5 minute lookback
-            df = self.get_data(ticker, days_back=0.003472, frequency="1Min")  # ~5 minutes in days
+        for days_back in [0.003472, 1, 3, 5]:
+            df = self.get_data(ticker, days_back=days_back, frequency="1Min")
             if not df.empty:
                 return float(df['close'].iloc[-1])
+        return None
             
-            df = self.get_data(ticker, days_back = 1, frequency="1Min")
-            if not df.empty:
-                return float(df['close'].iloc[-1])
-            
-            df = self.get_data(ticker, days_back = 3, frequency="1Min")
-            if not df.empty:
-                return float(df['close'].iloc[-1])
-            
-            df = self.get_data(ticker, days_back = 5, frequency="1Min")
-            if not df.empty:
-                return float(df['close'].iloc[-1])
-            
-            return None
-        
-                
-        except Exception as e:
-            print(f"Error getting price for {ticker}: {e}")
-            return None
-            
-            
-
-    
     def clear_cache(self):
         """Clear the entire cache"""
         self._cache = {}
         print("Cache cleared")
+    
+    def get_cache_stats(self):
+        """Get statistics about cache and API usage"""
+        stats = self.rate_limiter.get_stats()
+        stats['cache_size'] = len(self._cache)
+        return stats
 
     def get_cache_info(self):
         """Print information about what's currently in cache"""
@@ -172,35 +186,13 @@ class AlpacaDataManager:
             print(f"Date Range: {df.index[0]} to {df.index[-1]}\n")
 
 class AnalysisManager:
-    def __init__(self):
-        self.CI = CIManager()
-        self.RSI = RSIManager()
-        self.data_manager = AlpacaDataManager()
-        self.rate_limiter = RateLimiter(max_requests_per_minute=150)
-        
-    def estimate_processing_time(self, ticker_count):
-        """
-        Estimates the processing time based on API rate limits and number of tickers
-        Returns estimated time in seconds
-        """
-        # Each ticker requires approximately:
-        # - 1 call for CI calculations (90 days data)
-        # - 1 call for RSI calculations (720 days data)
-        # - 1 call for MA calculations (60 days data)
-        # - 1 call for current price
-        API_CALLS_PER_TICKER = 4
-        
-        total_api_calls = ticker_count * API_CALLS_PER_TICKER
-        rate_limit_per_minute = 150  # From rate limiter
-        
-        # Calculate minutes needed based on rate limit
-        estimated_minutes = (total_api_calls / rate_limit_per_minute)
-        # Add 10% buffer for processing overhead
-        estimated_seconds = (estimated_minutes * 60) * 1.1
-        return round(estimated_seconds)
+    def __init__(self, data_manager=None):
+        self.data_manager = data_manager or AlpacaDataManager()
+        self.CI = CIManager(self.data_manager)
+        self.RSI = RSIManager(self.data_manager)
+    
         
     def runall(self, ticker, db):
-        self.rate_limiter.wait_if_needed()
         try:
             percent_under = round(self.CI.under_confidence(ticker, db).iloc[0])
             percent_over = round(self.CI.over_confidence(ticker, db).iloc[0])
@@ -594,28 +586,6 @@ class RSIManager:
         
 
 
-#possibly add this to main filter function,(most recent rsi score indicates 'buy' or add rsi score to print in summary)
-#not done
-def day_movement(ticker):
-    stock_data = yf.Ticker(ticker).history(period="3mo").reset_index(drop=True)
-    stock_close = pd.DataFrame(stock_data['close'])
-    stock_close = stock_close.iloc[-1]
-    stock_curr = yf.Ticker(ticker).info['currentPrice']
-    stock_perc = (stock_close - stock_curr) / stock_close
-    print(f"{float(stock_perc.values):.15f}")
-
-
-#SHOWINFO
-def showinfo(ticker):
-    stock_data = yf.Ticker(ticker)
-    stock_history = stock_data.history(period = '3mo')
-    print('\n',stock_data.info['longBusinessSummary'])
-    stock_close = pd.DataFrame(stock_history['close']).iloc[-2].item()
-    stock_curr = yf.Ticker(ticker).info['currentPrice']
-    print('\nStock close:',stock_close,'\nCurrent Price:', stock_curr)
-
-
-  
 def main():
     # Initialize the manager
     manager = AlpacaDataManager()
@@ -649,62 +619,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-###CALLING yf.ticker.history for many functions... may be increasing time signfificantly
-
-
-###Add to winrate/shortrate... 'current rsi current approaching' and update that each time
-
-
-#Depreciated 
-"""
-#VISUALIZE CONFIDENCE INTERVAL
-def con_plot(ticker):
-
-    tick = yf.Ticker(ticker)
-    df_list = tick.history(interval='1d', period='20mo')
-    df = pd.DataFrame(df_list['close'])
-    ci_list = []
-    ci = df.std() * 2
-    upper_bound = df.mean() + ci
-    lower_bound = df.mean() - ci
-    mean = df.mean()
-    current = yf.Ticker(ticker).info['currentPrice']
-    print(f"CI:{ci.values} \nUpper Bound:{upper_bound.values} \nLower Bound:{lower_bound.values} \nMean:{mean.values} \nCurrent:{current}")
-    for close in df_list['close']:
-        percent_lower = (close - lower_bound) / (upper_bound - lower_bound) * 100
-        ci_list.append(percent_lower)  # Append to list
-    plt.style.use('fivethirtyeight')
-    #figure size
-    plt.rcParams['figure.figsize'] = (15,10)
-
-    ax1 = plt.subplot2grid((10,1), (0,0), rowspan = 4, colspan = 1)
-    ax2 = plt.subplot2grid((10, 1), (5, 0), rowspan=4, colspan=1)
-
-    ax1.plot(df['close'], linewidth = 2)
-    ax1.set_title('close prices')
-
-    ax2.set_title('Confidence Interval')
-    ax2.plot(ci_list, color = 'orange', linewidth = 1)
-
-    #Oversold
-    ax2.axhline(30, linestyle = '--', linewidth = 1.5, color = 'green')
-    ax2.axhline(70, linestyle = '--', linewidth = 1.5, color = 'red')
-
-    plt.show()
-
-
-
-#SLOPE CALCULATOR
-#def slope(ticker):
-    #df = yf.Ticker(ticker)
-    #df = df.history(interval='1d', period='20mo')
-    #dates = np.arange(len(df))
-    #closing_prices = df['close'].values
-    #slope, _, _, _, _ = linregress(dates, closing_prices)
-    #return slope
-    #not sure if slope works, maybe do period prior to crash so 3-20 months    
-"""
-
-## COPY AND PASTE SCALPING STUFF - correct way to call api
