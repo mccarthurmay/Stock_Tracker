@@ -316,7 +316,11 @@ def estimate_update_time(dbname):
 def update_database(dbname):
     try:
         update_manager = Update()
-        update_manager.updateData(dbname)
+        # If dbname is porfolio, updatePortfolio, Else, updateData
+        if dbname.startswith('p_') or dbname.startswith('portfolio_'):
+            update_manager.updatePortfolio(dbname)
+        else: 
+            update_manager.updateData(dbname)
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({
