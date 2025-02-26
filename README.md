@@ -156,6 +156,15 @@ The application implements comprehensive error handling for:
 - Dependency management
 - Virtual environment issues
 
+## TODO
+
+The application currently has no settings. Would love this to implement:
+- Setting API/Creating config
+- If ALPACA Free, max_workers = 1
+- Otherwise, customize worker count
+- Currently stops entire program to let API "wait", should only be stopping update. However, at 1 worker, the 'uptime' is higher
+   - ^ possible fix is to make identical function, having getdata() not wait for all
+
 ## Troubleshooting
 
 ### Common Issues
