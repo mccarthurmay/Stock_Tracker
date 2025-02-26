@@ -243,6 +243,8 @@ const ShowDatabases = () => {
   return (
     <div className="section">
       <h3 className="text-xl font-bold mb-4">Show Database</h3>
+      {/* Chart Modal */}
+      <ChartModal />
       
       <div className="mb-4 flex gap-4">
         <DatabaseSelect 
@@ -316,8 +318,7 @@ const ShowDatabases = () => {
         </div>
       )}
 
-      {/* Chart Modal */}
-      <ChartModal />
+      
     </div>
   );
 };
