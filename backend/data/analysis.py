@@ -263,6 +263,7 @@ class AnalysisManager:
         }
 
 
+
     #BUY/SELL BOOL
     def buy(self, rsi, percent_under):
         if percent_under > -1 and rsi < 31:
@@ -295,8 +296,8 @@ class AnalysisManager:
 
 
 class CIManager:
-    def __init__(self):
-        self.data_manager = AlpacaDataManager()
+    def __init__(self, data_manager=None):
+        self.data_manager = data_manager or AlpacaDataManager()
 
     def under_confidence(self, ticker, dbname):
         # closing price of input stock
@@ -353,9 +354,9 @@ class CIManager:
 
 
 class RSIManager:
-    def __init__(self):
+    def __init__(self, data_manager=None):
+        self.data_manager = data_manager or AlpacaDataManager()
         self.CI = CIManager()
-        self.data_manager = AlpacaDataManager()
 
     def rsi_base(self, ticker, days_back, frequency="1D"):
         df = self.data_manager.get_data(ticker, days_back, frequency)

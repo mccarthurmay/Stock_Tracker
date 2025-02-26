@@ -200,9 +200,21 @@ class DBManager:
         close_file(db, dbname)
         db, dbfile = open_file(dbname)
         
-        def process_ticker(ticker):
+        def process_ticker_data(ticker):
             try:
+
                 self.analysis.runall(ticker, db)
+                return True
+            except Exception as e:
+                print(f"Removing {ticker}: {e}")
+                if ticker in db:
+                    del db[ticker]
+                return False
+            
+        def process_ticker_portfolio(ticker):
+            try:
+
+                self.analysis.runall_sell(ticker, db)
                 return True
             except Exception as e:
                 print(f"Removing {ticker}: {e}")
@@ -211,10 +223,17 @@ class DBManager:
                 return False
 
         # Process tickers with optimized worker pool
-        results = self.worker_pool.process_tickers(
-            tickers=list(db.keys()),
-            process_func=process_ticker
-        )
+        if dbname.startswith('p_') or dbname.startswith('portfolio_') or dbname.startswith('portfolio'):
+
+            results = self.worker_pool.process_tickers(
+                tickers=list(db.keys()),
+                process_func=process_ticker_portfolio
+            )
+        else:
+            results = self.worker_pool.process_tickers(
+                tickers=list(db.keys()),
+                process_func=process_ticker_data
+            )
         
         close_file(db, dbname)
         
@@ -230,7 +249,11 @@ class DBManager:
 
             if ticker not in db:
                 try:
-                    self.analysis.runall(ticker, db)
+                    if dbname.startswith('p_') or dbname.startswith('portfolio_') or dbname.startswith('portfolio') or dbname.equals('portfolio'):
+                        price = self.analysis.data_manager.get_price(ticker)
+                        self.analysis.runall_sell(ticker,db, price)
+                    else:
+                        self.analysis.runall(ticker, db)
                 except Exception as e:
                     print(f"Removing {ticker}: {e}")
                     del db[ticker]
@@ -289,37 +312,6 @@ class Update():
         self.analysis = AnalysisManager()
         self.worker_pool = WorkerPoolManager(self.analysis.data_manager)
 
-    
-    def updatePortfolio(self, dbname: str) -> None:
-        """Update database with optimized worker pool"""
-        try:
-            db, dbfile = open_file(dbname)
-            print(f"{dbname} loading...")
-        except FileNotFoundError:
-            print("File not found")
-            return
-
-        def process_ticker(ticker):
-            try:
-                self.analysis.runall_sell(ticker, db)
-                return True
-            except Exception as e:
-                print(f"Error processing {ticker}: {e}")
-                return False
-
-        # Process updates with optimized worker pool
-        results = self.worker_pool.process_tickers(
-            tickers=list(db.keys()),
-            process_func=process_ticker
-        )
-        
-        close_file(db, dbname)
-        
-        # Report statistics
-        success_count = sum(1 for result in results.values() if result)
-        print(f"Successfully updated {success_count} out of {len(db)} tickers")
-
-
     #UPDATE DATABASES
     
     def updateData(self, dbname: str) -> None:
@@ -331,19 +323,34 @@ class Update():
             print("File not found")
             return
 
-        def process_ticker(ticker):
+        def process_ticker_data(ticker):
             try:
-                self.analysis.runall(ticker, db)
+                self.analysis.runall(ticker, db)    
+                return True
+            except Exception as e:
+                print(f"Error processing {ticker}: {e}")
+                return False
+            
+        def process_ticker_portfolio(ticker):
+            try:
+                
+                self.analysis.runall_sell(ticker, db, self.analysis.data_manager.get_price)
                 return True
             except Exception as e:
                 print(f"Error processing {ticker}: {e}")
                 return False
 
         # Process updates with optimized worker pool
-        results = self.worker_pool.process_tickers(
-            tickers=list(db.keys()),
-            process_func=process_ticker
-        )
+        if dbname.startswith('p_') or dbname.startswith('portfolio_') or dbname.startswith('portfolio'):
+            results = self.worker_pool.process_tickers(
+                tickers=list(db.keys()),
+                process_func=process_ticker_portfolio
+            )
+        else: 
+            results = self.worker_pool.process_tickers(
+                tickers=list(db.keys()),
+                process_func=process_ticker_data
+            )
         
         close_file(db, dbname)
         
