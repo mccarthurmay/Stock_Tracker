@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request, send_from_directory, send_file
 from flask_cors import CORS
 from data.analysis import RSIManager, AnalysisManager, AlpacaDataManager
-from data.database import DBManager, Update
+from data.database import DBManager, Update, WorkerPoolManager
 from data.day_trade import DTManager, DTData
 from data.winrate import WinrateManager
 from applications.scraper import scraper
@@ -271,17 +271,34 @@ def run_experiments():
 @app.route('/api/database/<dbname>/estimate', methods=['GET'])
 def estimate_update_time(dbname):
     try:
-        # Use the existing open_file function from database.py
+        # Get the database
         db, dbfile = open_file(dbname)
-        ticker_count = len(db.keys())
-
-        # Calculate estimate
-        analysis_manager = AnalysisManager()
-        estimated_time = analysis_manager.estimate_processing_time(ticker_count)
+        tickers = list(db.keys())
         
+        # Close the database file
+        dbfile.close()
+        
+        # Initialize WorkerPoolManager with AlpacaDataManager
+        data_manager = AlpacaDataManager()
+        worker_pool = WorkerPoolManager(data_manager)
+        
+        # Get workload analysis
+        cached_tickers, total_api_calls, optimal_workers = worker_pool.analyze_workload(tickers)
+        
+        # Calculate time in seconds (convert from minutes)
+        if total_api_calls > 0:
+            estimated_minutes = total_api_calls / worker_pool.api_limit_per_minute
+            estimated_seconds = estimated_minutes * 60
+        else:
+            estimated_seconds = 0
+            
         return jsonify({
             'success': True,
-            'estimated_time': estimated_time,
+            'estimated_time': estimated_seconds,
+            'workers': optimal_workers,
+            'total_api_calls': total_api_calls,
+            'cached_tickers': cached_tickers,
+            'api_limit': worker_pool.api_limit_per_minute
         })
     except FileNotFoundError:
         return jsonify({
@@ -289,6 +306,7 @@ def estimate_update_time(dbname):
             'error': 'Database not found'
         }), 404
     except Exception as e:
+        print(f"Error in estimate_update_time: {str(e)}")  # Add logging
         return jsonify({
             'success': False,
             'error': str(e)
