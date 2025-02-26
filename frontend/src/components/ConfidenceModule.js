@@ -286,6 +286,7 @@ const ShowDatabases = () => {
                 <th className="border p-2 text-left">RSI Turnover</th>
                 <th className="border p-2 text-left">MA Status</th>
                 <th className="border p-2 text-left">Buy Signal</th>
+                <th className="border p-2 text-left">Sell Signal</th>
               </tr>
             </thead>
             <tbody>
@@ -306,6 +307,15 @@ const ShowDatabases = () => {
                     {item.Buy === true ? (
                       <span className="px-2 py-1 bg-green-100 text-green-800 rounded">Yes</span>
                     ) : item.Buy === false ? (
+                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded">No</span>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
+                  <td className="border p-10">
+                    {item.Sell === true ? (
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded">Yes</span>
+                    ) : item.Sell === false ? (
                       <span className="px-2 py-1 bg-red-100 text-red-800 rounded">No</span>
                     ) : (
                       '-'
