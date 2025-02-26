@@ -164,6 +164,9 @@ The application currently has no settings. Would love this to implement:
 - Otherwise, customize worker count
 - Currently stops entire program to let API "wait", should only be stopping update. However, at 1 worker, the 'uptime' is higher
    - ^ possible fix is to make identical function, having getdata() not wait for all
+- Rework worker count/estimate calcualation
+   - need a single general function/tracking method
+   - I believe self.requests should only count NEW requests, not cache requests.
 
 ## Troubleshooting
 
