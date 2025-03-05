@@ -1,6 +1,8 @@
 # Stock Market Analysis Tool
 
-A comprehensive tool for analyzing stock market data using various technical indicators, including RSI analysis, confidence intervals, and moving averages.
+A comprehensive tool for analyzing stock market data using various technical indicators, including RSI analysis, confidence intervals, and moving averages. 
+
+## Last Year's Return: 29%
 
 ## Features
 
@@ -89,7 +91,7 @@ To stop the application:
 - `database.py`: Database management and operations
 - `day_trade.py`: Day trading simulation logic
 - `scraper.py`: Web scraping functionality for stock indices
-- 
+  
 ### Frontend Components
 - `App.js`: Main React application component
 - `ConfidenceModule.js`: 95% confidence interval analysis interface
