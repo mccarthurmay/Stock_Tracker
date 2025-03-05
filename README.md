@@ -2,7 +2,7 @@
 
 A comprehensive tool for analyzing stock market data using various technical indicators, including RSI analysis, confidence intervals, and moving averages. 
 
-## Last Year's Return: 29%
+Last year's realized return: 29% 
 
 ## Features
 
