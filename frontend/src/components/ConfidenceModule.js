@@ -1,5 +1,5 @@
 import './ConfidenceModule.css';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { DatabaseSelect } from './DatabaseModule';
 import CombinedAnalysisChart from './CombinedAnalysisChart';
 
@@ -169,8 +169,6 @@ const UpdateDatabase = () => {
   );
 };
 
-
-
 const ShowDatabases = () => {
   const [selectedDb, setSelectedDb] = useState('');
   const [sortChoice, setSortChoice] = useState('normal');
@@ -179,6 +177,14 @@ const ShowDatabases = () => {
   const [error, setError] = useState(null);
   const [selectedTicker, setSelectedTicker] = useState(null);
   const [showChart, setShowChart] = useState(false);
+  const [tickerHistory, setTickerHistory] = useState([]);
+  
+  // Using array for visited tickers instead of Set for better visibility of state changes
+  const [visitedTickers, setVisitedTickers] = useState([]);
+  
+  // Create refs for chart element and clicked row position
+  const chartRef = useRef(null);
+  const clickedRowRef = useRef(null);
 
   const sortOptions = [
     { value: 'normal', label: 'Below 95% CI' },
@@ -213,28 +219,104 @@ const ShowDatabases = () => {
     fetchDatabaseData();
   }, [fetchDatabaseData, selectedDb]);
 
-  const handleTickerClick = (ticker) => {
+  const handleTickerClick = (ticker, rowElement) => {
+    // Add current ticker to history if different from last viewed
+    if (selectedTicker && selectedTicker !== ticker) {
+      setTickerHistory(prev => [...prev, selectedTicker]);
+    }
+    
+    // Store reference to the clicked row element
+    clickedRowRef.current = rowElement;
+    
+    // Mark ticker as visited if not already
+    if (!visitedTickers.includes(ticker)) {
+      setVisitedTickers(prev => [...prev, ticker]);
+      console.log("Added to visited:", ticker);
+    }
+    
     setSelectedTicker(ticker);
     setShowChart(true);
   };
+
+  // Handle returning to table
+  const handleReturnToTable = () => {
+    setShowChart(false);
+    
+    // Scroll back to the clicked row
+    setTimeout(() => {
+      if (clickedRowRef.current) {
+        clickedRowRef.current.scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'center'
+        });
+      }
+    }, 100);
+  };
+
+  // Scroll to chart when it becomes visible
+  useEffect(() => {
+    if (showChart && chartRef.current) {
+      // Use setTimeout to ensure the chart is rendered
+      setTimeout(() => {
+        chartRef.current.scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }, 100);
+    }
+  }, [showChart, selectedTicker]);
 
   // Modal component for the chart
   const ChartModal = () => {
     if (!showChart) return null;
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-bold">{selectedTicker} Analysis</h3>
+      <div 
+        ref={chartRef}
+        className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
+      >
+        {/* Semi-transparent overlay to clearly separate from the table */}
+        <div className="absolute inset-0" onClick={() => setShowChart(false)}></div>
+        
+        {/* Chart container with visual distinction */}
+        <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto relative shadow-2xl border-2 border-blue-200">
+          {/* Header bar with visual separation */}
+          <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <h3 className="text-xl font-bold text-blue-800">{selectedTicker} Analysis</h3>
+              
+              {/* Return to table button */}
+              <button
+                onClick={handleReturnToTable}
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors"
+                aria-label="Return to table view"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Return to table
+              </button>
+            </div>
+            
             <button 
               onClick={() => setShowChart(false)}
-              className="text-gray-500 hover:text-gray-700"
+              className="text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
+              aria-label="Close chart"
             >
-              <span className="text-2xl">&times;</span>
+              <span className="text-2xl block w-6 h-6 flex items-center justify-center">&times;</span>
             </button>
           </div>
-          <CombinedAnalysisChart ticker={selectedTicker} />
+          
+          {/* Visual badge to distinguish this is the chart section */}
+          <div className="absolute top-4 right-4 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
+            Chart View
+          </div>
+          
+          {/* Chart content */}
+          <div className="mt-2">
+            <CombinedAnalysisChart ticker={selectedTicker} />
+          </div>
         </div>
       </div>
     );
@@ -243,7 +325,33 @@ const ShowDatabases = () => {
   return (
     <div className="section">
       <h3 className="text-xl font-bold mb-4">Show Database</h3>
-      {/* Chart Modal */}
+      
+      {/* Info Section */}
+      <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+        <h4 className="font-semibold text-blue-800 mb-2">About This Tool</h4>
+        <p className="text-blue-900 mb-3">
+          This tool allows you to view and analyze stock data with confidence intervals, RSI indicators, and moving averages.
+        </p>
+        
+        <h5 className="font-medium text-blue-800 mb-1">How to use:</h5>
+        <ol className="list-decimal list-inside text-blue-900 space-y-1 mb-3">
+          <li>Select a database from the dropdown menu</li>
+          <li>Choose how to sort the data (by RSI, CI values, etc.)</li>
+          <li>Click on any ticker symbol to view its detailed analysis chart</li>
+          <li>Use the "Return to table" button to go back to the database view</li>
+        </ol>
+        
+        <h5 className="font-medium text-blue-800 mb-1">Column Explanations:</h5>
+        <ul className="list-disc list-inside text-blue-900 text-sm grid grid-cols-2 gap-x-4 gap-y-1">
+          <li><span className="font-medium">Below/Above 95% CI</span>: Percentage deviation from confidence interval</li>
+          <li><span className="font-medium">RSI</span>: Relative Strength Index value</li>
+          <li><span className="font-medium">RSI Turnover</span>: Average days between RSI trend changes</li>
+          <li><span className="font-medium">MA Status</span>: Current moving average trend</li>
+          <li><span className="font-medium">Buy/Sell Signal</span>: Trading signals based on analysis</li>
+        </ul>
+      </div>
+      
+      {/* Chart Modal - positioned outside main content flow */}
       <ChartModal />
       
       <div className="mb-4 flex gap-4">
@@ -265,6 +373,28 @@ const ShowDatabases = () => {
           ))}
         </select>
       </div>
+
+      {/* Show history navigation if available */}
+      {tickerHistory.length > 0 && !showChart && (
+        <div className="mb-4 p-2 bg-gray-50 rounded">
+          <p className="text-sm text-gray-600 mb-1">Recently viewed:</p>
+          <div className="flex flex-wrap gap-2">
+            {[...tickerHistory].reverse().slice(0, 5).map((ticker, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleTickerClick(ticker)}
+                className={`px-2 py-1 text-sm border rounded transition-colors ${
+                  visitedTickers.includes(ticker) 
+                    ? 'bg-red-50 text-red-700 border-red-200 font-bold'
+                    : 'bg-white text-blue-600 border-gray-300 hover:bg-blue-50'
+                }`}
+              >
+                {visitedTickers.includes(ticker) ? '✓ ' : ''}{ticker}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="text-gray-500">Loading database...</div>
@@ -291,19 +421,37 @@ const ShowDatabases = () => {
             </thead>
             <tbody>
               {data.map((item, index) => (
-                <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td 
-                    className="border p-2 cursor-pointer text-blue-600 hover:text-blue-800 hover:underline"
-                    onClick={() => handleTickerClick(item.Ticker)}
-                  >
-                    {item.Ticker}
+                <tr 
+                  key={index} 
+                  className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} 
+                  ref={element => {
+                    // Store reference to row element when ticker matches selected ticker
+                    if (item.Ticker === selectedTicker) {
+                      clickedRowRef.current = element;
+                    }
+                  }}
+                >
+                  <td className="border p-2">
+                    <button
+                      onClick={(e) => handleTickerClick(item.Ticker, e.currentTarget.closest('tr'))}
+                      className={`font-medium focus:outline-none ${
+                        visitedTickers.includes(item.Ticker) 
+                          ? 'text-red-600 font-bold' // Bold red for visited
+                          : 'text-blue-600 hover:text-blue-800' // Blue for unvisited
+                      }`}
+                      aria-label={`View chart analysis for ${item.Ticker}`}
+                    >
+                      {/* Clear indicator for visited tickers */}
+                      {visitedTickers.includes(item.Ticker) ? '✓ ' : ''}
+                      {item.Ticker}
+                    </button>
                   </td>
                   <td className="border p-2">{item['% Below 95% CI']}%</td>
                   <td className="border p-2">{item['% Above 95% CI']}%</td>
                   <td className="border p-2">{item.RSI}</td>
                   <td className="border p-2">{item['RSI Avg Turnover']}</td>
                   <td className="border p-2">{item.MA?.[0]} ({item.MA?.[1]})</td>
-                  <td className="border p-10">
+                  <td className="border p-2">
                     {item.Buy === true ? (
                       <span className="px-2 py-1 bg-green-100 text-green-800 rounded">Yes</span>
                     ) : item.Buy === false ? (
@@ -312,7 +460,7 @@ const ShowDatabases = () => {
                       '-'
                     )}
                   </td>
-                  <td className="border p-10">
+                  <td className="border p-2">
                     {item.Sell === true ? (
                       <span className="px-2 py-1 bg-green-100 text-green-800 rounded">Yes</span>
                     ) : item.Sell === false ? (
@@ -327,11 +475,10 @@ const ShowDatabases = () => {
           </table>
         </div>
       )}
-
-      
     </div>
   );
 };
+
 
 const UpdateExperiments = () => {
   const [loading, setLoading] = useState(false);

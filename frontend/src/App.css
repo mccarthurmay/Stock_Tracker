@@ -96,3 +96,39 @@
   transform: translateY(-1px);
   box-shadow: 0 4px 6px rgba(0,0,0,0.3);
 }
+
+
+  /* Set the base dark background for the entire page */
+  html, body {
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    background-color: #1a1d23; /* Matching your darker background color */
+    color: white;
+  }
+  
+  /* Ensure the main container fills the viewport */
+  #root, .app-container, .content-area {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Make content area fill available space */
+  .content-area > div {
+    flex: 1;
+  }
+  
+  /* Fix margin on the last section */
+  .section:last-child {
+    margin-bottom: 0;
+  }
+  
+  /* If you have a container wrapping your sections, ensure it has padding at the bottom */
+  .sections-container {
+    padding-bottom: 1.5rem;
+  }
+  
+  body {
+    background: linear-gradient(to bottom, #1a1d23, #232730);
+  }
