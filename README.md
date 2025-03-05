@@ -1,6 +1,6 @@
 # Stock Market Analysis Tool
 
-A comprehensive tool for analyzing stock market data using various technical indicators, including RSI analysis, confidence intervals, and day trading capabilities.
+A comprehensive tool for analyzing stock market data using various technical indicators, including RSI analysis, confidence intervals, and moving averages.
 
 ## Features
 
