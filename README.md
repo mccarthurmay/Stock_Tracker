@@ -166,6 +166,7 @@ The application currently has no settings. Would love this to implement:
 - News trading functionality (paper)
 - News integration to "show database" with google news api
 - Paper trading bot (long term)
+- Dividend section
 
 
 ## Troubleshooting
