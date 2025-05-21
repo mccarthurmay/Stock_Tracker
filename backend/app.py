@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pickle
 import os
-import data.config
+import config
 from werkzeug.utils import secure_filename
 import subprocess
 import sys
