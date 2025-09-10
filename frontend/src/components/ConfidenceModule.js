@@ -188,9 +188,10 @@ const ShowDatabases = () => {
 
   const sortOptions = [
     { value: 'normal', label: 'Below 95% CI' },
-    { value: 'short', label: 'Above 95% CI' },
     { value: 'rsi', label: 'RSI Value' },
-    { value: 'turn', label: 'RSI Turnover' }
+    { value: 'turn', label: 'RSI Turnover' },
+    { value: 'anomaly', label: 'Anomaly Count' },  
+    { value: 'zscore', label: 'Z-Score Value' },   
   ];
 
   const fetchDatabaseData = useCallback(async () => {
@@ -330,25 +331,52 @@ const ShowDatabases = () => {
       <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
         <h4 className="font-semibold text-blue-800 mb-2">About This Tool</h4>
         <p className="text-blue-900 mb-3">
-          This tool allows you to view and analyze stock data with confidence intervals, RSI indicators, and moving averages.
+          This advanced stock analysis tool combines traditional technical indicators with cutting-edge anomaly detection to identify unusual market opportunities. It's specifically designed to find stocks experiencing statistically significant deviations from normal trading patterns - perfect for identifying oversold conditions, black swan events, and mean reversion opportunities.
         </p>
         
         <h5 className="font-medium text-blue-800 mb-1">How to use:</h5>
-        <ol className="list-decimal list-inside text-blue-900 space-y-1 mb-3">
+        <ol className="list-decimal list-inside text-blue-900 space-y-1 mb-4">
           <li>Select a database from the dropdown menu</li>
-          <li>Choose how to sort the data (by RSI, CI values, etc.)</li>
+          <li>Choose how to sort the data (by anomaly count, RSI, CI values, etc.)</li>
+          <li>Look for stocks with high anomaly counts and favorable Z-scores for best opportunities</li>
           <li>Click on any ticker symbol to view its detailed analysis chart</li>
           <li>Use the "Return to table" button to go back to the database view</li>
         </ol>
         
-        <h5 className="font-medium text-blue-800 mb-1">Column Explanations:</h5>
-        <ul className="list-disc list-inside text-blue-900 text-sm grid grid-cols-2 gap-x-4 gap-y-1">
-          <li><span className="font-medium">Below/Above 95% CI</span>: Percentage deviation from confidence interval</li>
-          <li><span className="font-medium">RSI</span>: Relative Strength Index value</li>
-          <li><span className="font-medium">RSI Turnover</span>: Average days between RSI trend changes</li>
-          <li><span className="font-medium">MA Status</span>: Current moving average trend</li>
-          <li><span className="font-medium">Buy/Sell Signal</span>: Trading signals based on analysis</li>
+        <h5 className="font-medium text-blue-800 mb-2">Buy Signal Triggers:</h5>
+        <div className="mb-3 p-3 bg-green-50 rounded border border-green-200">
+          <p className="text-green-800 text-sm">
+            <span className="font-medium">Buy = Yes</span> when any of these conditions are met:
+          </p>
+          <ul className="list-disc list-inside text-green-800 text-sm mt-1 ml-4">
+            <li><span className="font-medium">Strong Signal:</span> 3+ anomalies detected, Z-Score downward, price below trend, RSI &lt; 35</li>
+            <li><span className="font-medium">Medium Signal:</span> 2+ anomalies detected, negative volatility breakout, significant trend deviation, RSI &lt; 32</li>
+            <li><span className="font-medium">Traditional Signal:</span> Below 95% confidence interval, RSI &lt; 31, Z-Score not upward</li>
+          </ul>
+        </div>
+        
+        <h5 className="font-medium text-blue-800 mb-2">Column Explanations:</h5>
+        <ul className="list-disc list-inside text-blue-900 text-sm space-y-2">
+          <li><span className="font-medium">Below 95% CI</span>: How far the current price is below the statistical "normal" range. Positive values indicate potential buying opportunities (stock is unusually cheap).</li>
+          
+          <li><span className="font-medium">RSI</span>: Relative Strength Index (0-100). Values below 30 indicate oversold conditions, above 70 indicate overbought. Used to confirm entry/exit timing.</li>
+          
+          <li><span className="font-medium">RSI Turnover</span>: Average number of days between major RSI trend changes (70→30 cycles). Helps predict how long current conditions might last.</li>
+          
+          <li><span className="font-medium">Anomaly Count</span>: Number of statistical anomaly detection methods that flagged unusual behavior (0-4). Higher counts indicate stronger confidence in abnormal price movements.</li>
+          
+          <li><span className="font-medium">Z-Score</span>: Measures how many standard deviations the price is from its recent average. Buy opportunities: &lt; -2.0 (unusually low), Sell signals: &gt; +2.0 (unusually high), Normal range: -1.5 to +1.5.</li>
+          
+          <li><span className="font-medium">Trend Dev</span>: Shows if current price deviates significantly from the established trend line. BL=Below trend (potential buy), AB=Above trend (potential sell).</li>
+          
+          <li><span className="font-medium">Vol Break</span>: Indicates when price volatility exceeds normal patterns, suggesting unusual market activity. NEG=Downward volatility spike, POS=Upward volatility spike.</li>
+          
+          <li><span className="font-medium">Buy/Sell Signal</span>: Final trading recommendation combining all analyses. Enhanced signals use multiple confirmation methods for higher accuracy than traditional single-indicator approaches.</li>
         </ul>
+        
+        <div className="mt-3 p-3 bg-blue-100 rounded">
+          <p className="text-blue-800 text-sm font-medium">💡 Pro Tip: Look for stocks with Anomaly Count ≥ 2, Z-Score &lt; -2.0, and Buy Signal = Yes for the highest-probability opportunities.</p>
+        </div>
       </div>
       
       {/* Chart Modal - positioned outside main content flow */}
@@ -411,10 +439,12 @@ const ShowDatabases = () => {
               <tr className="bg-gray-100">
                 <th className="border p-2 text-left">Ticker</th>
                 <th className="border p-2 text-left">Below 95% CI</th>
-                <th className="border p-2 text-left">Above 95% CI</th>
                 <th className="border p-2 text-left">RSI</th>
                 <th className="border p-2 text-left">RSI Turnover</th>
-                <th className="border p-2 text-left">MA Status</th>
+                <th className="border p-2 text-left">Anomaly Count</th> 
+                <th className="border p-2 text-left">Z-Score</th>        
+                <th className="border p-2 text-left">Trend Dev</th>      
+                <th className="border p-2 text-left">Vol Break</th>      
                 <th className="border p-2 text-left">Buy Signal</th>
                 <th className="border p-2 text-left">Sell Signal</th>
               </tr>
@@ -424,33 +454,60 @@ const ShowDatabases = () => {
                 <tr 
                   key={index} 
                   className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} 
-                  ref={element => {
-                    // Store reference to row element when ticker matches selected ticker
-                    if (item.Ticker === selectedTicker) {
-                      clickedRowRef.current = element;
-                    }
-                  }}
                 >
                   <td className="border p-2">
                     <button
                       onClick={(e) => handleTickerClick(item.Ticker, e.currentTarget.closest('tr'))}
                       className={`font-medium focus:outline-none ${
                         visitedTickers.includes(item.Ticker) 
-                          ? 'text-red-600 font-bold' // Bold red for visited
-                          : 'text-blue-600 hover:text-blue-800' // Blue for unvisited
+                          ? 'text-red-600 font-bold' 
+                          : 'text-blue-600 hover:text-blue-800'
                       }`}
-                      aria-label={`View chart analysis for ${item.Ticker}`}
                     >
-                      {/* Clear indicator for visited tickers */}
                       {visitedTickers.includes(item.Ticker) ? '✓ ' : ''}
                       {item.Ticker}
                     </button>
                   </td>
                   <td className="border p-2">{item['% Below 95% CI']}%</td>
-                  <td className="border p-2">{item['% Above 95% CI']}%</td>
                   <td className="border p-2">{item.RSI}</td>
                   <td className="border p-2">{item['RSI Avg Turnover']}</td>
-                  <td className="border p-2">{item.MA?.[0]} ({item.MA?.[1]})</td>
+                  <td className="border p-2">
+                    <span className={`px-2 py-1 rounded text-sm ${
+                      item.ANOM_COUNT >= 3 ? 'bg-red-100 text-red-800' :
+                      item.ANOM_COUNT >= 2 ? 'bg-yellow-100 text-yellow-800' :
+                      item.ANOM_COUNT >= 1 ? 'bg-blue-100 text-blue-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.ANOM_COUNT || 0}
+                    </span>
+                  </td>
+                  
+                  <td className="border p-2">
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      item.ZS_DIR === 'DN' ? 'bg-green-100 text-green-800' :
+                      item.ZS_DIR === 'UP' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.ZS_VAL || 'N/A'}
+                    </span>
+                  </td>
+                  
+                  <td className="border p-2">
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      item.TD_SIG ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.TD_SIG ? item.TD_DIR : 'N/A'}
+                    </span>
+                  </td>
+                  
+                  <td className="border p-2">
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      item.VB_BREAK ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.VB_BREAK ? item.VB_DIR : 'N/A'}
+                    </span>
+                  </td>
+                  
                   <td className="border p-2">
                     {item.Buy === true ? (
                       <span className="px-2 py-1 bg-green-100 text-green-800 rounded">Yes</span>

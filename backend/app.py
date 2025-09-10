@@ -33,6 +33,26 @@ db_manager = DBManager()
 rsi_manager = RSIManager()
 
 
+import json
+
+def convert_numpy_types(obj):
+    """Convert numpy types to native Python types for JSON serialization"""
+    if isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, (np.integer, np.int32, np.int64)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float32, np.float64)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    else:
+        return obj
+
+
 @app.route('/api/scrape', methods=['POST'])
 def scrape_index():
     print("Scraping...")
@@ -235,9 +255,13 @@ def load_database(dbname):
         sort_choice = request.args.get('sort', 'normal')
         db_manager = DBManager()
         sorted_data = db_manager.loadData(dbname, sort_choice)
+        
+        # Convert numpy types to native Python types
+        converted_data = convert_numpy_types(sorted_data)
+        
         return jsonify({
             'success': True,
-            'data': sorted_data
+            'data': converted_data
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -409,6 +433,9 @@ def get_combined_analysis(ticker):
     except Exception as e:
         print(f"Error in get_combined_analysis: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
+    
+
+
 
     
 if __name__ == '__main__':
