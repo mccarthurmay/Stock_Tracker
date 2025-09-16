@@ -186,6 +186,10 @@ const ShowDatabases = () => {
   const chartRef = useRef(null);
   const clickedRowRef = useRef(null);
 
+  // State for "Why" popup
+  const [showWhyPopup, setShowWhyPopup] = useState(false);
+  const [whyData, setWhyData] = useState(null);
+
   const sortOptions = [
     { value: 'normal', label: 'Below 95% CI' },
     { value: 'rsi', label: 'RSI Value' },
@@ -237,6 +241,11 @@ const ShowDatabases = () => {
     
     setSelectedTicker(ticker);
     setShowChart(true);
+  };
+
+  const handleWhyClick = (tickerData) => {
+    setWhyData(tickerData);
+    setShowWhyPopup(true);
   };
 
   // Handle returning to table
@@ -375,12 +384,15 @@ const ShowDatabases = () => {
         </ul>
         
         <div className="mt-3 p-3 bg-blue-100 rounded">
-          <p className="text-blue-800 text-sm font-medium">💡 Pro Tip: Look for stocks with Anomaly Count ≥ 2, Z-Score &lt; -2.0, and Buy Signal = Yes for the highest-probability opportunities.</p>
+          <p className="text-blue-800 text-sm font-medium">💡 Pro Tip: Click "Why?" on any ticker to understand the detailed reasoning behind buy/sell signals.</p>
         </div>
       </div>
       
       {/* Chart Modal - positioned outside main content flow */}
       <ChartModal />
+
+      {/* Why Analysis Modal */}
+      <WhyModal />
       
       <div className="mb-4 flex gap-4">
         <DatabaseSelect 
@@ -440,94 +452,60 @@ const ShowDatabases = () => {
                 <th className="border p-2 text-left">Ticker</th>
                 <th className="border p-2 text-left">Below 95% CI</th>
                 <th className="border p-2 text-left">RSI</th>
-                <th className="border p-2 text-left">RSI Turnover</th>
-                <th className="border p-2 text-left">Anomaly Count</th> 
-                <th className="border p-2 text-left">Z-Score</th>        
-                <th className="border p-2 text-left">Trend Dev</th>      
-                <th className="border p-2 text-left">Vol Break</th>      
-                <th className="border p-2 text-left">Buy Signal</th>
-                <th className="border p-2 text-left">Sell Signal</th>
+                <th className="border p-2 text-left">Final Signal</th>
+                <th className="border p-2 text-left">Why</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((item, index) => (
-                <tr 
-                  key={index} 
-                  className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} 
-                >
-                  <td className="border p-2">
-                    <button
-                      onClick={(e) => handleTickerClick(item.Ticker, e.currentTarget.closest('tr'))}
-                      className={`font-medium focus:outline-none ${
-                        visitedTickers.includes(item.Ticker) 
-                          ? 'text-red-600 font-bold' 
-                          : 'text-blue-600 hover:text-blue-800'
-                      }`}
-                    >
-                      {visitedTickers.includes(item.Ticker) ? '✓ ' : ''}
-                      {item.Ticker}
-                    </button>
-                  </td>
-                  <td className="border p-2">{item['% Below 95% CI']}%</td>
-                  <td className="border p-2">{item.RSI}</td>
-                  <td className="border p-2">{item['RSI Avg Turnover']}</td>
-                  <td className="border p-2">
-                    <span className={`px-2 py-1 rounded text-sm ${
-                      item.ANOM_COUNT >= 3 ? 'bg-red-100 text-red-800' :
-                      item.ANOM_COUNT >= 2 ? 'bg-yellow-100 text-yellow-800' :
-                      item.ANOM_COUNT >= 1 ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {item.ANOM_COUNT || 0}
-                    </span>
-                  </td>
-                  
-                  <td className="border p-2">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      item.ZS_DIR === 'DN' ? 'bg-green-100 text-green-800' :
-                      item.ZS_DIR === 'UP' ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {item.ZS_VAL || 'N/A'}
-                    </span>
-                  </td>
-                  
-                  <td className="border p-2">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      item.TD_SIG ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {item.TD_SIG ? item.TD_DIR : 'N/A'}
-                    </span>
-                  </td>
-                  
-                  <td className="border p-2">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      item.VB_BREAK ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {item.VB_BREAK ? item.VB_DIR : 'N/A'}
-                    </span>
-                  </td>
-                  
-                  <td className="border p-2">
-                    {item.Buy === true ? (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded">Yes</span>
-                    ) : item.Buy === false ? (
-                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded">No</span>
-                    ) : (
-                      '-'
-                    )}
-                  </td>
-                  <td className="border p-2">
-                    {item.Sell === true ? (
-                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded">Yes</span>
-                    ) : item.Sell === false ? (
-                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded">No</span>
-                    ) : (
-                      '-'
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {data.map((item, index) => {
+                // Determine if this is a portfolio database
+                const isPortfolio = selectedDb.toLowerCase().includes('portfolio') || selectedDb.toLowerCase().startsWith('p_');
+                
+                // Determine final signal based on database type
+                const finalSignal = isPortfolio 
+                  ? (item.Sell === true ? 'SELL' : 'DON\'T SELL')
+                  : (item.Buy === true ? 'BUY' : 'DON\'T BUY');
+                
+                const signalColor = isPortfolio
+                  ? (item.Sell === true ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800')
+                  : (item.Buy === true ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800');
+
+                return (
+                  <tr 
+                    key={index} 
+                    className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} 
+                  >
+                    <td className="border p-2">
+                      <button
+                        onClick={(e) => handleTickerClick(item.Ticker, e.currentTarget.closest('tr'))}
+                        className={`font-medium focus:outline-none ${
+                          visitedTickers.includes(item.Ticker) 
+                            ? 'text-red-600 font-bold' 
+                            : 'text-blue-600 hover:text-blue-800'
+                        }`}
+                      >
+                        {visitedTickers.includes(item.Ticker) ? '✓ ' : ''}
+                        {item.Ticker}
+                      </button>
+                    </td>
+                    <td className="border p-2">{item['% Below 95% CI']}%</td>
+                    <td className="border p-2">{item.RSI}</td>
+                    <td className="border p-2">
+                      <span className={`px-2 py-1 rounded text-sm font-medium ${signalColor}`}>
+                        {finalSignal}
+                      </span>
+                    </td>
+                    <td className="border p-2">
+                      <button
+                        onClick={() => handleWhyClick(item)}
+                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                      >
+                        Why?
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -536,6 +514,78 @@ const ShowDatabases = () => {
   );
 };
 
+
+// Modal component for "Why" analysis
+const WhyModal = () => {
+  if (!showWhyPopup || !whyData) return null;
+
+  // Determine if this is a portfolio database
+  const isPortfolio = selectedDb.toLowerCase().includes('portfolio') || selectedDb.toLowerCase().startsWith('p_');
+  
+  const finalSignal = isPortfolio 
+    ? (whyData.Sell === true ? 'SELL' : 'DON\'T SELL')
+    : (whyData.Buy === true ? 'BUY' : 'DON\'T BUY');
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+      <div className="absolute inset-0" onClick={() => setShowWhyPopup(false)}></div>
+      
+      <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto relative shadow-2xl border-2 border-green-200">
+        <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
+          <h3 className="text-xl font-bold text-green-800">Why {finalSignal}: {whyData.Ticker}</h3>
+          
+          <button 
+            onClick={() => setShowWhyPopup(false)}
+            className="text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
+            aria-label="Close analysis"
+          >
+            <span className="text-2xl block w-6 h-6 flex items-center justify-center">&times;</span>
+          </button>
+        </div>
+        
+        <div className="absolute top-4 right-4 bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
+          Analysis View
+        </div>
+        
+        <div className="space-y-4">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-semibold text-blue-800 mb-2">Current Statistical Conditions</h4>
+            <ul className="space-y-1 text-sm">
+              <li><strong>Below 95% CI:</strong> {whyData['% Below 95% CI']}%</li>
+              <li><strong>RSI Level:</strong> {whyData.RSI}</li>
+              <li><strong>Signal:</strong> <span className={finalSignal.includes('BUY') || finalSignal.includes('SELL') ? 'text-green-600 font-bold' : 'text-gray-600'}>{finalSignal}</span></li>
+            </ul>
+          </div>
+
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <h4 className="font-semibold text-yellow-800 mb-2">Algorithm Reasoning</h4>
+            <p className="text-sm text-gray-700">
+              {isPortfolio 
+                ? `This ${finalSignal.includes('SELL') ? 'sell' : 'hold'} signal is based on ${whyData.Sell ? 'overbought conditions and profit-taking indicators' : 'continued strength and holding potential'}.`
+                : `This ${finalSignal.includes('BUY') ? 'buy' : 'no-buy'} signal is based on ${whyData.Buy ? 'oversold conditions and value opportunity indicators' : 'current market conditions not meeting buy criteria'}.`
+              }
+            </p>
+          </div>
+
+          <div className="bg-red-50 p-4 rounded-lg">
+            <h4 className="font-semibold text-red-800 mb-2">Risk Factors</h4>
+            <p className="text-sm text-gray-700">
+              Market volatility, sector-specific risks, and general economic conditions should be considered. 
+              This is algorithmic analysis and not financial advice.
+            </p>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <h4 className="font-semibold text-gray-800 mb-2">Confidence Level</h4>
+            <p className="text-sm text-gray-700">
+              Based on current statistical analysis. Future updates will include Monte Carlo validation and expected value calculations.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const UpdateExperiments = () => {
   const [loading, setLoading] = useState(false);
