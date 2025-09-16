@@ -331,6 +331,77 @@ const ShowDatabases = () => {
       </div>
     );
   };
+  // Modal component for "Why" analysis
+  const WhyModal = () => {
+    if (!showWhyPopup || !whyData) return null;
+
+    // Determine if this is a portfolio database
+    const isPortfolio = selectedDb.toLowerCase().includes('portfolio') || selectedDb.toLowerCase().startsWith('p_');
+    
+    const finalSignal = isPortfolio 
+      ? (whyData.Sell === true ? 'SELL' : 'DON\'T SELL')
+      : (whyData.Buy === true ? 'BUY' : 'DON\'T BUY');
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+        <div className="absolute inset-0" onClick={() => setShowWhyPopup(false)}></div>
+        
+        <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto relative shadow-2xl border-2 border-green-200">
+          <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
+            <h3 className="text-xl font-bold text-green-800">Why {finalSignal}: {whyData.Ticker}</h3>
+            
+            <button 
+              onClick={() => setShowWhyPopup(false)}
+              className="text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
+              aria-label="Close analysis"
+            >
+              <span className="text-2xl block w-6 h-6 flex items-center justify-center">&times;</span>
+            </button>
+          </div>
+          
+          <div className="absolute top-4 right-4 bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
+            Analysis View
+          </div>
+          
+          <div className="space-y-4">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-blue-800 mb-2">Current Statistical Conditions</h4>
+              <ul className="space-y-1 text-sm">
+                <li><strong>Below 95% CI:</strong> {whyData['% Below 95% CI']}%</li>
+                <li><strong>RSI Level:</strong> {whyData.RSI}</li>
+                <li><strong>Signal:</strong> <span className={finalSignal.includes('BUY') || finalSignal.includes('SELL') ? 'text-green-600 font-bold' : 'text-gray-600'}>{finalSignal}</span></li>
+              </ul>
+            </div>
+
+            <div className="bg-yellow-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-yellow-800 mb-2">Algorithm Reasoning</h4>
+              <p className="text-sm text-gray-700">
+                {isPortfolio 
+                  ? `This ${finalSignal.includes('SELL') ? 'sell' : 'hold'} signal is based on ${whyData.Sell ? 'overbought conditions and profit-taking indicators' : 'continued strength and holding potential'}.`
+                  : `This ${finalSignal.includes('BUY') ? 'buy' : 'no-buy'} signal is based on ${whyData.Buy ? 'oversold conditions and value opportunity indicators' : 'current market conditions not meeting buy criteria'}.`
+                }
+              </p>
+            </div>
+
+            <div className="bg-red-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-red-800 mb-2">Risk Factors</h4>
+              <p className="text-sm text-gray-700">
+                Market volatility, sector-specific risks, and general economic conditions should be considered. 
+                This is algorithmic analysis and not financial advice.
+              </p>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-gray-800 mb-2">Confidence Level</h4>
+              <p className="text-sm text-gray-700">
+                Based on current statistical analysis. Future updates will include Monte Carlo validation and expected value calculations.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="section">
@@ -515,77 +586,7 @@ const ShowDatabases = () => {
 };
 
 
-// Modal component for "Why" analysis
-const WhyModal = () => {
-  if (!showWhyPopup || !whyData) return null;
 
-  // Determine if this is a portfolio database
-  const isPortfolio = selectedDb.toLowerCase().includes('portfolio') || selectedDb.toLowerCase().startsWith('p_');
-  
-  const finalSignal = isPortfolio 
-    ? (whyData.Sell === true ? 'SELL' : 'DON\'T SELL')
-    : (whyData.Buy === true ? 'BUY' : 'DON\'T BUY');
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
-      <div className="absolute inset-0" onClick={() => setShowWhyPopup(false)}></div>
-      
-      <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto relative shadow-2xl border-2 border-green-200">
-        <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
-          <h3 className="text-xl font-bold text-green-800">Why {finalSignal}: {whyData.Ticker}</h3>
-          
-          <button 
-            onClick={() => setShowWhyPopup(false)}
-            className="text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
-            aria-label="Close analysis"
-          >
-            <span className="text-2xl block w-6 h-6 flex items-center justify-center">&times;</span>
-          </button>
-        </div>
-        
-        <div className="absolute top-4 right-4 bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
-          Analysis View
-        </div>
-        
-        <div className="space-y-4">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-blue-800 mb-2">Current Statistical Conditions</h4>
-            <ul className="space-y-1 text-sm">
-              <li><strong>Below 95% CI:</strong> {whyData['% Below 95% CI']}%</li>
-              <li><strong>RSI Level:</strong> {whyData.RSI}</li>
-              <li><strong>Signal:</strong> <span className={finalSignal.includes('BUY') || finalSignal.includes('SELL') ? 'text-green-600 font-bold' : 'text-gray-600'}>{finalSignal}</span></li>
-            </ul>
-          </div>
-
-          <div className="bg-yellow-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-yellow-800 mb-2">Algorithm Reasoning</h4>
-            <p className="text-sm text-gray-700">
-              {isPortfolio 
-                ? `This ${finalSignal.includes('SELL') ? 'sell' : 'hold'} signal is based on ${whyData.Sell ? 'overbought conditions and profit-taking indicators' : 'continued strength and holding potential'}.`
-                : `This ${finalSignal.includes('BUY') ? 'buy' : 'no-buy'} signal is based on ${whyData.Buy ? 'oversold conditions and value opportunity indicators' : 'current market conditions not meeting buy criteria'}.`
-              }
-            </p>
-          </div>
-
-          <div className="bg-red-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-red-800 mb-2">Risk Factors</h4>
-            <p className="text-sm text-gray-700">
-              Market volatility, sector-specific risks, and general economic conditions should be considered. 
-              This is algorithmic analysis and not financial advice.
-            </p>
-          </div>
-
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <h4 className="font-semibold text-gray-800 mb-2">Confidence Level</h4>
-            <p className="text-sm text-gray-700">
-              Based on current statistical analysis. Future updates will include Monte Carlo validation and expected value calculations.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const UpdateExperiments = () => {
   const [loading, setLoading] = useState(false);
