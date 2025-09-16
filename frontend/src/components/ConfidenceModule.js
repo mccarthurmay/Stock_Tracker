@@ -192,11 +192,47 @@ const ShowDatabases = () => {
 
   const sortOptions = [
     { value: 'normal', label: 'Below 95% CI' },
+    { value: 'finalbuy', label: 'Final Buy Signal' },
+    { value: 'stage1', label: 'Stage 1 Signal' },
     { value: 'rsi', label: 'RSI Value' },
     { value: 'turn', label: 'RSI Turnover' },
-    { value: 'anomaly', label: 'Anomaly Count' },  
-    { value: 'zscore', label: 'Z-Score Value' },   
+    { value: 'expected_return', label: 'Expected Return' },
+    { value: 'profit_prob', label: 'Profit Probability' },
   ];
+  
+  // Update the handleWhyClick function
+  const handleWhyClick = async (tickerData) => {
+    setWhyData(tickerData);
+    setShowWhyPopup(true);
+    
+    // Fetch enhanced analysis in background
+    const detailedAnalysis = await fetchDetailedAnalysis(tickerData.Ticker);
+    if (detailedAnalysis) {
+      setWhyData(prev => ({
+        ...prev,
+        detailedAnalysis: detailedAnalysis
+      }));
+    }
+  };
+
+  // Add this function to the ShowDatabases component
+  const fetchDetailedAnalysis = async (ticker) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/why-analysis/${ticker}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        return result.data;
+      } else {
+        console.error('Failed to fetch detailed analysis:', result.error);
+        return null;
+      }
+    } catch (err) {
+      console.error('Error fetching detailed analysis:', err);
+      return null;
+    }
+  };
+
 
   const fetchDatabaseData = useCallback(async () => {
     if (!selectedDb) return;
@@ -241,11 +277,6 @@ const ShowDatabases = () => {
     
     setSelectedTicker(ticker);
     setShowChart(true);
-  };
-
-  const handleWhyClick = (tickerData) => {
-    setWhyData(tickerData);
-    setShowWhyPopup(true);
   };
 
   // Handle returning to table
@@ -340,13 +371,17 @@ const ShowDatabases = () => {
     
     const finalSignal = isPortfolio 
       ? (whyData.Sell === true ? 'SELL' : 'DON\'T SELL')
-      : (whyData.Buy === true ? 'BUY' : 'DON\'T BUY');
+      : (whyData.FinalBuy === true ? 'BUY' : 'DON\'T BUY');
+
+    // Check if this is new database format with Monte Carlo data
+    const hasMonteCarloData = whyData.MC_Data && typeof whyData.MC_Data === 'object';
+    const isNewFormat = 'FinalBuy' in whyData;
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
         <div className="absolute inset-0" onClick={() => setShowWhyPopup(false)}></div>
         
-        <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto relative shadow-2xl border-2 border-green-200">
+        <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto relative shadow-2xl border-2 border-green-200">
           <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
             <h3 className="text-xl font-bold text-green-800">Why {finalSignal}: {whyData.Ticker}</h3>
             
@@ -360,42 +395,192 @@ const ShowDatabases = () => {
           </div>
           
           <div className="absolute top-4 right-4 bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
-            Analysis View
+            {isNewFormat ? 'Two-Stage Analysis' : 'Traditional Analysis'}
           </div>
           
           <div className="space-y-4">
+            {/* Current Statistical Conditions */}
             <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-blue-800 mb-2">Current Statistical Conditions</h4>
-              <ul className="space-y-1 text-sm">
-                <li><strong>Below 95% CI:</strong> {whyData['% Below 95% CI']}%</li>
-                <li><strong>RSI Level:</strong> {whyData.RSI}</li>
-                <li><strong>Signal:</strong> <span className={finalSignal.includes('BUY') || finalSignal.includes('SELL') ? 'text-green-600 font-bold' : 'text-gray-600'}>{finalSignal}</span></li>
-              </ul>
+              <h4 className="font-semibold text-blue-800 mb-3">📊 Current Statistical Conditions</h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p><strong>Below 95% CI:</strong> <span className="text-blue-700">{whyData['% Below 95% CI']}%</span></p>
+                  <p><strong>RSI Level:</strong> <span className="text-blue-700">{whyData.RSI}</span></p>
+                  <p><strong>RSI Turnover:</strong> <span className="text-blue-700">{whyData['RSI Avg Turnover']} days</span></p>
+                </div>
+                <div>
+                  <p><strong>RSI Accuracy (COS):</strong> <span className="text-blue-700">{whyData['RSI COS']}</span></p>
+                  <p><strong>RSI Accuracy (MSD):</strong> <span className="text-blue-700">{whyData['RSI MSD']}</span></p>
+                  <p><strong>Moving Average:</strong> <span className="text-blue-700">{whyData.MA ? whyData.MA[0] : 'N/A'}</span></p>
+                </div>
+              </div>
+              
+              {isNewFormat && (
+                <div className="mt-3 pt-3 border-t border-blue-200">
+                  <p><strong>Stage 1 Signal:</strong> <span className={whyData.Buy ? 'text-green-600 font-bold' : 'text-gray-600'}>{whyData.Buy ? 'BUY' : 'NO BUY'}</span></p>
+                  <p><strong>Final Signal:</strong> <span className={finalSignal.includes('BUY') || finalSignal.includes('SELL') ? 'text-green-600 font-bold' : 'text-gray-600'}>{finalSignal}</span></p>
+                  {hasMonteCarloData && (
+                    <>
+                      <p><strong>Monte Carlo Validation:</strong> <span className={whyData.MC_Validation ? 'text-green-600 font-bold' : 'text-red-600'}>{whyData.MC_Validation ? 'PASSED' : 'FAILED'}</span></p>
+                      <p><strong>Expected Return:</strong> <span className="text-blue-700">{whyData.MC_Data.expected_return}%</span></p>
+                      <p><strong>Profit Probability:</strong> <span className="text-blue-700">{whyData.MC_Data.prob_profit}%</span></p>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
+            {/* Algorithm Reasoning */}
             <div className="bg-yellow-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-yellow-800 mb-2">Algorithm Reasoning</h4>
-              <p className="text-sm text-gray-700">
-                {isPortfolio 
-                  ? `This ${finalSignal.includes('SELL') ? 'sell' : 'hold'} signal is based on ${whyData.Sell ? 'overbought conditions and profit-taking indicators' : 'continued strength and holding potential'}.`
-                  : `This ${finalSignal.includes('BUY') ? 'buy' : 'no-buy'} signal is based on ${whyData.Buy ? 'oversold conditions and value opportunity indicators' : 'current market conditions not meeting buy criteria'}.`
-                }
-              </p>
+              <h4 className="font-semibold text-yellow-800 mb-3">🧠 Algorithm Reasoning</h4>
+              <div className="text-sm text-gray-700 space-y-3">
+                {isNewFormat ? (
+                  <>
+                    <div className="bg-white p-3 rounded border-l-4 border-yellow-400">
+                      <p><strong>Stage 1 (Technical Analysis):</strong> {whyData.Buy ? 'Passed - Technical indicators suggest oversold conditions with potential for reversal.' : 'Failed - Current technical conditions do not meet buy criteria.'}</p>
+                    </div>
+                    
+                    <div className="bg-white p-3 rounded border-l-4 border-yellow-400">
+                      {whyData.Buy ? (
+                        hasMonteCarloData ? (
+                          <p><strong>Stage 2 (Monte Carlo Validation):</strong> {whyData.MC_Validation ? 
+                            `Passed - Simulation shows ${whyData.MC_Data.prob_profit}% chance of profit with ${whyData.MC_Data.expected_return}% expected return.` : 
+                            `Failed - Monte Carlo simulation indicates insufficient probability of profit (${whyData.MC_Data.prob_profit}%) or unfavorable risk/reward.`}</p>
+                        ) : (
+                          <p><strong>Stage 2 (Monte Carlo Validation):</strong> Failed to run - Insufficient historical data or technical error prevented Monte Carlo analysis.</p>
+                        )
+                      ) : (
+                        <p><strong>Stage 2 (Monte Carlo Validation):</strong> Skipped - Stage 1 did not pass, so Monte Carlo validation was not needed.</p>
+                      )}
+                    </div>
+                    
+                    <div className="bg-white p-3 rounded border-l-4 border-green-400">
+                      <p><strong>Final Decision:</strong> {isPortfolio 
+                        ? `${finalSignal.includes('SELL') ? 'SELL' : 'HOLD'} based on ${whyData.Sell ? 'profit-taking signals' : 'continued holding potential'}.`
+                        : `${finalSignal.includes('BUY') ? 'BUY' : 'DON\'T BUY'} - ${whyData.FinalBuy ? 'Both stages passed' : whyData.Buy ? 'Stage 1 passed but Stage 2 failed or could not run' : 'Stage 1 failed'}.`
+                      }</p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-white p-3 rounded border-l-4 border-yellow-400">
+                    <p><strong>Traditional Analysis:</strong> {isPortfolio 
+                      ? `This ${finalSignal.includes('SELL') ? 'sell' : 'hold'} signal is based on ${whyData.Sell ? 'overbought conditions and profit-taking indicators' : 'continued strength and holding potential'}.`
+                      : `This ${finalSignal.includes('BUY') ? 'buy' : 'no-buy'} signal is based on ${whyData.Buy ? 'oversold conditions and value opportunity indicators' : 'current market conditions not meeting buy criteria'}.`
+                    }</p>
+                  </div>
+                )}
+              </div>
             </div>
 
+            {/* Detailed Analysis Section - NEW */}
+            {whyData.detailedAnalysis && (
+              <div className="bg-indigo-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-indigo-800 mb-3">🔍 Detailed Analysis</h4>
+                <div className="text-sm text-gray-700 space-y-3">
+                  <div className="bg-white p-3 rounded border-l-4 border-indigo-400">
+                    <p><strong>Why This Stock Was Flagged:</strong></p>
+                    <p className="mt-1">{whyData.detailedAnalysis.detailed_reasoning.why_flagged}</p>
+                  </div>
+                  
+                  <div className="bg-white p-3 rounded border-l-4 border-indigo-400">
+                    <p><strong>Expected Outcome:</strong></p>
+                    <p className="mt-1">{whyData.detailedAnalysis.detailed_reasoning.expected_outcome}</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="bg-white p-3 rounded border">
+                      <p><strong>Key Opportunity Factors:</strong></p>
+                      <ul className="mt-1 text-xs space-y-1">
+                        {whyData.detailedAnalysis.risk_assessment.opportunity_factors.map((factor, idx) => (
+                          <li key={idx} className="text-green-700">• {factor}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    
+                    <div className="bg-white p-3 rounded border">
+                      <p><strong>Risk Factors:</strong></p>
+                      <ul className="mt-1 text-xs space-y-1">
+                        {whyData.detailedAnalysis.risk_assessment.risk_factors.map((factor, idx) => (
+                          <li key={idx} className="text-red-700">• {factor}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white p-3 rounded border-l-4 border-green-400">
+                    <p><strong>Overall Confidence:</strong> <span className="font-semibold">{whyData.detailedAnalysis.risk_assessment.overall_confidence}</span></p>
+                    <p className="mt-1 text-xs">{whyData.detailedAnalysis.risk_assessment.confidence_explanation}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Risk Assessment */}
             <div className="bg-red-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-red-800 mb-2">Risk Factors</h4>
-              <p className="text-sm text-gray-700">
-                Market volatility, sector-specific risks, and general economic conditions should be considered. 
-                This is algorithmic analysis and not financial advice.
-              </p>
+              <h4 className="font-semibold text-red-800 mb-3">⚠️ Risk Assessment</h4>
+              <div className="text-sm text-gray-700 space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p><strong>Market Risk:</strong> General market volatility could impact this position regardless of individual stock fundamentals.</p>
+                    <p><strong>Sector Risk:</strong> Industry-specific events or trends could affect stock performance.</p>
+                  </div>
+                  <div>
+                    <p><strong>Technical Risk:</strong> {whyData.RSI > 70 ? 'RSI indicates overbought conditions' : whyData.RSI < 30 ? 'RSI indicates oversold conditions' : 'RSI in neutral territory'}.</p>
+                    <p><strong>Timing Risk:</strong> Entry/exit timing based on technical indicators may not align with market movements.</p>
+                  </div>
+                </div>
+                
+                {hasMonteCarloData && (
+                  <div className="mt-3 p-3 bg-white rounded border">
+                    <p><strong>Quantified Risk:</strong> Monte Carlo simulation suggests {whyData.MC_Data.prob_loss}% probability of loss with average loss of {whyData.MC_Data.avg_loss}%.</p>
+                  </div>
+                )}
+                
+                <div className="mt-3 p-2 bg-red-100 rounded text-red-800 text-xs">
+                  <strong>Disclaimer:</strong> This is algorithmic analysis for educational purposes only, not financial advice. Past performance does not guarantee future results.
+                </div>
+              </div>
             </div>
 
+            {/* Time Horizon & Confidence */}
             <div className="bg-gray-50 p-4 rounded-lg">
-              <h4 className="font-semibold text-gray-800 mb-2">Confidence Level</h4>
-              <p className="text-sm text-gray-700">
-                Based on current statistical analysis. Future updates will include Monte Carlo validation and expected value calculations.
-              </p>
+              <h4 className="font-semibold text-gray-800 mb-3">📅 Time Horizon & Confidence</h4>
+              <div className="text-sm text-gray-700 space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p><strong>Expected Timeframe:</strong> {whyData['RSI Avg Turnover']} days average based on historical RSI patterns.</p>
+                    <p><strong>Technical Confidence:</strong> {whyData['RSI COS'] > 0.8 ? 'High' : whyData['RSI COS'] > 0.6 ? 'Medium' : 'Low'} correlation between RSI and price movements.</p>
+                  </div>
+                  <div>
+                    {hasMonteCarloData ? (
+                      <>
+                        <p><strong>Statistical Confidence:</strong> Based on {whyData.MC_Data.simulations_run} Monte Carlo simulations over {whyData.MC_Data.time_horizon_days} days.</p>
+                        <p><strong>Volatility:</strong> {whyData.MC_Data.volatility}% daily volatility detected.</p>
+                      </>
+                    ) : (
+                      <>
+                        <p><strong>Analysis Type:</strong> Traditional technical analysis without probabilistic validation.</p>
+                        <p><strong>Recommendation:</strong> Consider updating database for enhanced Monte Carlo analysis.</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Historical Performance Context */}
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-purple-800 mb-3">📈 Historical Context</h4>
+              <div className="text-sm text-gray-700">
+                <p><strong>RSI Pattern:</strong> Based on {whyData['RSI Avg Turnover']}-day average turnover cycles, this stock typically moves from oversold to overbought conditions over this timeframe.</p>
+                <p><strong>Moving Average Trend:</strong> {whyData.MA && whyData.MA[0] === 'BULL' ? 'Currently in bullish trend' : whyData.MA && whyData.MA[0] === 'BEAR' ? 'Currently in bearish trend' : 'Trend direction unclear'}. {whyData['MA Converging'] ? 'Moving averages are converging, suggesting potential trend change.' : 'Moving averages show stable trend direction.'}</p>
+                
+                {hasMonteCarloData && (
+                  <div className="mt-2 p-3 bg-white rounded border">
+                    <p><strong>Simulation Results:</strong> Out of {whyData.MC_Data.simulations_run} scenarios, {whyData.MC_Data.prob_profit}% resulted in profit with average gain of {whyData.MC_Data.avg_profit}%.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -531,15 +716,22 @@ const ShowDatabases = () => {
               {data.map((item, index) => {
                 // Determine if this is a portfolio database
                 const isPortfolio = selectedDb.toLowerCase().includes('portfolio') || selectedDb.toLowerCase().startsWith('p_');
-                
+                const hasMCData = item.MC_Data && typeof item.MC_Data === 'object';
+                const mcValidation = item.MC_Validation || false;
+
                 // Determine final signal based on database type
                 const finalSignal = isPortfolio 
                   ? (item.Sell === true ? 'SELL' : 'DON\'T SELL')
-                  : (item.Buy === true ? 'BUY' : 'DON\'T BUY');
+                  : ((item.FinalBuy === true || (item.FinalBuy === undefined && item.Buy === true)) ? 'BUY' : 'DON\'T BUY');
+
                 
                 const signalColor = isPortfolio
                   ? (item.Sell === true ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800')
-                  : (item.Buy === true ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800');
+                  : item.FinalBuy === true 
+                    ? 'bg-green-100 text-green-800'  // Final buy signal
+                    : item.Buy === true 
+                      ? 'bg-yellow-100 text-yellow-800'  // Stage 1 only
+                      : 'bg-gray-100 text-gray-800';     // No signal
 
                 return (
                   <tr 
@@ -885,5 +1077,6 @@ const ConfidenceModule = () => {
     </div>
   );
 };
+
 
 export default ConfidenceModule;

@@ -15,6 +15,7 @@ import config
 from werkzeug.utils import secure_filename
 import subprocess
 import sys
+from datetime import datetime
 
 # Get the absolute path of the current file (app.py)
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -264,6 +265,11 @@ def load_database(dbname):
             'data': converted_data
         })
     except Exception as e:
+        print(f"ERROR loading database {dbname}: {str(e)}")
+        print(f"ERROR type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()  # This will show the full error stack
+        
         return jsonify({'success': False, 'error': str(e)}), 500
     
     
@@ -435,8 +441,214 @@ def get_combined_analysis(ticker):
         return jsonify({'success': False, 'error': str(e)}), 500
     
 
+@app.route('/api/monte-carlo/<ticker>')
+def monte_carlo_analysis(ticker):
+    try:
+        ci_manager = analysis_manager.CI
+        result = ci_manager.run_monte_carlo_validation(ticker)
+        
+        return jsonify({
+            'success': True,
+            'data': result
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
 
+@app.route('/api/why-analysis/<ticker>')
+def get_why_analysis(ticker):
+    try:
+        # Get fresh analysis data
+        enhanced_results = analysis_manager.CI.enhanced_analysis(ticker, {})
+        if enhanced_results is None:
+            return jsonify({'success': False, 'error': 'No data available for ticker'}), 404
+        
+        # Get RSI and other indicators
+        rsi = analysis_manager.RSI.rsi_calc(ticker, graph=False, date=None)
+        ma, ma_date, converging = analysis_manager.RSI.MA(ticker, graph=False)
+        cos, msd = analysis_manager.RSI.rsi_accuracy(ticker)
+        turnover = analysis_manager.RSI.rsi_turnover(ticker)
+        
+        # Get current price for context
+        current_price = analysis_manager.data_manager.get_price(ticker)
+        
+        # Generate detailed explanations
+        explanations = generate_detailed_explanations(
+            ticker, enhanced_results, rsi, ma, ma_date, converging, 
+            cos, msd, turnover, current_price
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': explanations
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
+def generate_detailed_explanations(ticker, enhanced_results, rsi, ma, ma_date, converging, cos, msd, turnover, current_price):
+    """Generate comprehensive explanations for why analysis"""
+    
+    # Technical condition analysis
+    ci_under = enhanced_results.get('CI_UNDER', 0)
+    anomaly_count = enhanced_results.get('ANOM_COUNT', 0)
+    
+    # RSI analysis
+    if rsi < 30:
+        rsi_condition = "severely oversold"
+        rsi_implication = "Strong potential for upward reversal as selling pressure may be exhausted."
+    elif rsi < 35:
+        rsi_condition = "oversold"
+        rsi_implication = "Moderate potential for price recovery as technical indicators suggest undervaluation."
+    elif rsi > 70:
+        rsi_condition = "overbought"
+        rsi_implication = "Potential for price decline as buying momentum may be weakening."
+    elif rsi > 65:
+        rsi_condition = "approaching overbought"
+        rsi_implication = "Caution advised as price may be reaching short-term peaks."
+    else:
+        rsi_condition = "neutral"
+        rsi_implication = "No strong directional bias from momentum indicators."
+    
+    # Confidence interval analysis
+    if ci_under > 10:
+        ci_explanation = f"Price is {ci_under:.1f}% below the 95% confidence interval, indicating significant statistical undervaluation."
+        ci_strength = "Strong"
+    elif ci_under > 5:
+        ci_explanation = f"Price is {ci_under:.1f}% below normal trading range, suggesting moderate undervaluation."
+        ci_strength = "Moderate"
+    elif ci_under > 0:
+        ci_explanation = f"Price is {ci_under:.1f}% below average, showing slight undervaluation."
+        ci_strength = "Weak"
+    else:
+        ci_explanation = "Price is within or above normal statistical range."
+        ci_strength = "None"
+    
+    # Anomaly analysis
+    if anomaly_count >= 3:
+        anomaly_explanation = f"Multiple anomaly detection methods ({anomaly_count}/4) flagged unusual behavior, indicating high confidence in abnormal market conditions."
+        anomaly_strength = "Very High"
+    elif anomaly_count >= 2:
+        anomaly_explanation = f"Two anomaly detection methods flagged unusual behavior, suggesting moderate confidence in market deviation."
+        anomaly_strength = "High"
+    elif anomaly_count >= 1:
+        anomaly_explanation = f"One anomaly detection method flagged unusual behavior, indicating potential market irregularity."
+        anomaly_strength = "Moderate"
+    else:
+        anomaly_explanation = "No significant anomalies detected in current market behavior."
+        anomaly_strength = "Low"
+    
+    # Moving average analysis
+    if ma == "BULL":
+        ma_explanation = f"Stock is in bullish trend (confirmed {ma_date}). {'Trend may be strengthening.' if not converging else 'Moving averages are converging - potential trend change ahead.'}"
+    elif ma == "BEAR":
+        ma_explanation = f"Stock is in bearish trend (confirmed {ma_date}). {'Trend continues.' if not converging else 'Moving averages are converging - potential reversal possible.'}"
+    else:
+        ma_explanation = "Trend direction is unclear or transitioning between bullish and bearish phases."
+    
+    # Risk factors based on current conditions
+    risk_factors = []
+    
+    if rsi > 70:
+        risk_factors.append("Overbought conditions increase probability of short-term pullback")
+    if anomaly_count == 0:
+        risk_factors.append("Lack of anomalies suggests this may be normal market behavior rather than opportunity")
+    if turnover > 60:
+        risk_factors.append(f"Long average turnover ({turnover} days) suggests extended holding periods may be required")
+    if cos < 0.6:
+        risk_factors.append(f"Low RSI correlation ({cos:.2f}) reduces confidence in momentum-based signals")
+    if ma == "BEAR" and not converging:
+        risk_factors.append("Bearish trend without convergence signals suggests continued downward pressure")
+    
+    # Opportunity factors
+    opportunity_factors = []
+    
+    if ci_under > 5:
+        opportunity_factors.append(f"Significant statistical undervaluation ({ci_under:.1f}% below CI)")
+    if rsi < 35:
+        opportunity_factors.append(f"Oversold RSI ({rsi:.1f}) historically precedes recoveries")
+    if anomaly_count >= 2:
+        opportunity_factors.append(f"Multiple anomalies ({anomaly_count}) suggest unusual opportunity")
+    if cos > 0.7:
+        opportunity_factors.append(f"High RSI accuracy ({cos:.2f}) increases signal reliability")
+    if ma == "BULL" or (ma == "BEAR" and converging):
+        opportunity_factors.append("Trend analysis supports potential upward movement")
+    
+    # Time horizon estimation
+    if turnover < 20:
+        time_horizon = f"Short-term opportunity (avg {turnover} days) - quick movements expected"
+    elif turnover < 40:
+        time_horizon = f"Medium-term setup (avg {turnover} days) - patience required"
+    else:
+        time_horizon = f"Long-term position (avg {turnover} days) - extended holding period likely"
+    
+    # Overall assessment
+    total_strength = 0
+    if ci_strength == "Strong": total_strength += 3
+    elif ci_strength == "Moderate": total_strength += 2
+    elif ci_strength == "Weak": total_strength += 1
+    
+    if anomaly_strength == "Very High": total_strength += 4
+    elif anomaly_strength == "High": total_strength += 3
+    elif anomaly_strength == "Moderate": total_strength += 2
+    elif anomaly_strength == "Low": total_strength += 1
+    
+    if rsi < 30: total_strength += 3
+    elif rsi < 35: total_strength += 2
+    elif rsi > 70: total_strength -= 2
+    
+    if total_strength >= 7:
+        overall_confidence = "High"
+        confidence_explanation = "Multiple strong indicators align to suggest significant opportunity."
+    elif total_strength >= 4:
+        overall_confidence = "Moderate"  
+        confidence_explanation = "Several indicators suggest potential opportunity with moderate confidence."
+    elif total_strength >= 2:
+        overall_confidence = "Low"
+        confidence_explanation = "Limited indicators suggest weak opportunity signal."
+    else:
+        overall_confidence = "Very Low"
+        confidence_explanation = "Current conditions do not strongly support entry signals."
+    
+    return {
+        'ticker': ticker,
+        'current_price': current_price,
+        'analysis_timestamp': datetime.now().isoformat(),
+        'technical_conditions': {
+            'rsi_value': rsi,
+            'rsi_condition': rsi_condition,
+            'rsi_implication': rsi_implication,
+            'ci_percentage': ci_under,
+            'ci_explanation': ci_explanation,
+            'ci_strength': ci_strength,
+            'anomaly_count': anomaly_count,
+            'anomaly_explanation': anomaly_explanation,
+            'anomaly_strength': anomaly_strength
+        },
+        'trend_analysis': {
+            'moving_average': ma,
+            'trend_date': ma_date,
+            'converging': converging,
+            'explanation': ma_explanation
+        },
+        'accuracy_metrics': {
+            'rsi_correlation': cos,
+            'rsi_msd': msd,
+            'turnover_days': turnover,
+            'time_horizon': time_horizon
+        },
+        'risk_assessment': {
+            'risk_factors': risk_factors,
+            'opportunity_factors': opportunity_factors,
+            'overall_confidence': overall_confidence,
+            'confidence_explanation': confidence_explanation
+        },
+        'detailed_reasoning': {
+            'why_flagged': f"This stock was flagged due to {rsi_condition} RSI conditions ({rsi:.1f}), {ci_explanation.lower()}, and {anomaly_explanation.lower()}",
+            'expected_outcome': f"Based on historical patterns with {turnover}-day average turnover and {cos:.2f} RSI correlation, {confidence_explanation.lower()}",
+            'key_factors': opportunity_factors if len(opportunity_factors) > 0 else risk_factors
+        }
+    }
     
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

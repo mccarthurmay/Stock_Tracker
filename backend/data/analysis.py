@@ -217,15 +217,40 @@ class AnalysisManager:
             print("ma and rsi", e)
 
         try:
-            buy_bool = self.buy(rsi, enhanced_results)
+            # Stage 1: Enhanced buy signal
+            buy_signal_result = self.CI.enhanced_buy_signal(rsi, enhanced_results, run_monte_carlo=False)
+            stage1_buy = buy_signal_result['stage1']
+            
+            # Stage 2: Monte Carlo validation (only for Stage 1 buy candidates)
+            stage2_validation = False
+            monte_carlo_data = None
+            
+            if stage1_buy:
+                monte_carlo_result = self.CI.run_monte_carlo_validation(ticker)
+                stage2_validation = monte_carlo_result.get('validation', False)
+                monte_carlo_data = monte_carlo_result
+            
+            # Final buy signal: Stage 1 AND Stage 2
+            final_buy_signal = stage1_buy and stage2_validation
+            
             short_bool = self.short(rsi, enhanced_results)
             cos, msd = self.RSI.rsi_accuracy(ticker)
             turnover = self.RSI.rsi_turnover(ticker)
+            
         except Exception as e:
-            print("after", e)
+            print("Two-stage analysis failed:", e)
+            stage1_buy = False
+            final_buy_signal = False
+            short_bool = False
+            monte_carlo_data = None
+            cos, msd = 0, 0
+            turnover = 0
+        
+        # Store comprehensive results
         db[ticker] = {
             'Ticker': ticker,
-            'Buy': buy_bool,
+            'Buy': stage1_buy,              # Stage 1 signal
+            'FinalBuy': final_buy_signal,   # Stage 1 + Stage 2 combined  
             'Short': short_bool,
             '% Above 95% CI': percent_over,
             '% Below 95% CI': percent_under,
@@ -236,7 +261,10 @@ class AnalysisManager:
             'MA': (ma, ma_date),
             'MA Converging': converging,
             **{k: v for k, v in enhanced_results.items() 
-            if k not in ['CI_UNDER', 'CI_OVER']}  # Add all anomaly fields
+            if k not in ['CI_UNDER', 'CI_OVER']},  # Add all anomaly fields
+            # Monte Carlo results (if available)
+            'MC_Validation': stage2_validation,
+            'MC_Data': monte_carlo_data
         }
 
 
@@ -384,6 +412,94 @@ class CIManager:
     
     def __init__(self, data_manager):
         self.data_manager = data_manager
+
+    def run_monte_carlo_validation(self, ticker, n_simulations=1000, time_horizon=30):
+        """
+        Run Monte Carlo simulation for Stage 2 validation
+        
+        Args:
+            ticker: Stock symbol
+            n_simulations: Number of simulations to run
+            time_horizon: Days to simulate forward
+        
+        Returns:
+            dict: Monte Carlo validation results
+        """
+        try:
+            import numpy as np
+            
+            # Get historical data
+            df = self.data_manager.get_data(ticker, days_back=90, frequency="daily")
+            if df.empty:
+                return {'validation': False, 'reason': 'No data available'}
+            
+            # Calculate daily returns
+            returns = df['close'].pct_change().dropna()
+            if len(returns) < 30:
+                return {'validation': False, 'reason': 'Insufficient historical data'}
+            
+            # Calculate statistics from historical returns
+            mean_return = returns.mean()
+            std_return = returns.std()
+            current_price = df['close'].iloc[-1]
+            
+            # Run Monte Carlo simulation
+            np.random.seed(42)  # For reproducible results
+            simulated_final_prices = []
+            
+            for _ in range(n_simulations):
+                # Generate random returns based on historical distribution
+                random_returns = np.random.normal(mean_return, std_return, time_horizon)
+                
+                # Calculate cumulative return
+                cumulative_return = np.prod(1 + random_returns) - 1
+                final_price = current_price * (1 + cumulative_return)
+                simulated_final_prices.append(final_price)
+            
+            # Analyze simulation results
+            simulated_prices = np.array(simulated_final_prices)
+            
+            # Calculate probabilities and expected outcomes
+            prob_profit = np.mean(simulated_prices > current_price)
+            prob_loss = 1 - prob_profit
+            
+            # Calculate expected returns
+            returns_pct = (simulated_prices - current_price) / current_price * 100
+            profitable_returns = returns_pct[returns_pct > 0]
+            loss_returns = returns_pct[returns_pct <= 0]
+            
+            avg_profit = np.mean(profitable_returns) if len(profitable_returns) > 0 else 0
+            avg_loss = np.mean(loss_returns) if len(loss_returns) > 0 else 0
+            
+            # Expected value calculation
+            expected_return = (prob_profit * avg_profit) + (prob_loss * avg_loss)
+            
+            # Monte Carlo validation criteria (Stage 2 logic)
+            validation_passed = (
+                prob_profit > 0.6 and          # At least 60% chance of profit
+                expected_return > 2.0 and      # Expected return > 2%
+                avg_loss > -15.0 and           # Maximum average loss < 15%
+                std_return < 0.05              # Not too volatile (daily std < 5%)
+            )
+            
+            return {
+                'validation': validation_passed,
+                'prob_profit': round(prob_profit * 100, 1),
+                'prob_loss': round(prob_loss * 100, 1),
+                'avg_profit': round(avg_profit, 2),
+                'avg_loss': round(avg_loss, 2),
+                'expected_return': round(expected_return, 2),
+                'volatility': round(std_return * 100, 2),
+                'simulations_run': n_simulations,
+                'time_horizon_days': time_horizon,
+                'reason': 'Monte Carlo validation complete'
+            }
+            
+        except Exception as e:
+            return {
+                'validation': False, 
+                'reason': f'Monte Carlo simulation failed: {str(e)}'
+            }
     
     def under_confidence(self, ticker, dbname):
         """Original under confidence method - maintained for compatibility"""
@@ -632,34 +748,48 @@ class CIManager:
         
         return results
     
-    def enhanced_buy_signal(self, rsi, enhanced_results):
-        """Optimized buy signal logic using anomaly data"""
+    def enhanced_buy_signal(self, rsi, enhanced_results, run_monte_carlo=True):
+        """Enhanced buy signal logic with optional Monte Carlo validation"""
         if not enhanced_results:
-            return False
+            return {'stage1': False, 'stage2': False, 'final': False}
         
         traditional_under = enhanced_results.get('CI_UNDER', 0)
         anomaly_count = enhanced_results.get('ANOM_COUNT', 0)
+        
+        # Stage 1: Traditional enhanced buy conditions
+        stage1_buy = False
         
         # Strong anomaly buy conditions
         if (anomaly_count >= 3 and 
             enhanced_results.get('ZS_DIR') == 'DN' and 
             enhanced_results.get('TD_DIR') == 'BL' and 
             rsi < 35):
-            return True
+            stage1_buy = True
         
         # Moderate anomaly buy conditions
-        if (anomaly_count >= 2 and 
+        elif (anomaly_count >= 2 and 
             enhanced_results.get('VB_DIR') == 'NEG' and 
             enhanced_results.get('TD_SIG', False) and
             rsi < 32):
-            return True
+            stage1_buy = True
         
         # Traditional buy condition with anomaly support
-        if (traditional_under > -1 and rsi < 31 and
+        elif (traditional_under > -1 and rsi < 31 and
             enhanced_results.get('ZS_DIR') in ['DN', 'NM']):
-            return True
+            stage1_buy = True
         
-        return False
+        # Stage 2: Monte Carlo validation (only if Stage 1 passed)
+        stage2_validation = {'validation': False}
+        if stage1_buy and run_monte_carlo:
+            # This will be called from the main analysis
+            pass
+        
+        return {
+            'stage1': stage1_buy,
+            'stage2': stage2_validation.get('validation', False),
+            'final': stage1_buy,  # Will be updated after Monte Carlo
+            'monte_carlo_data': stage2_validation
+        }
     
     def enhanced_short_signal(self, rsi, enhanced_results):
         """Optimized short signal logic using anomaly data"""

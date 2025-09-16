@@ -284,26 +284,47 @@ class DBManager:
 
     #DISPLAY DATABASE
     def loadData(self, dbname, sort_choice):
-        #try:
         db, dbfile = open_file(dbname)
+        
         if sort_choice == "normal":
-            sorted_data = sorted(db.values(), key=lambda x: x['% Below 95% CI'] if x['% Below 95% CI'] is not None else float('inf'), reverse = True)
+            sorted_data = sorted(db.values(), key=lambda x: x.get('% Below 95% CI', 0), reverse=True)
+        elif sort_choice == "finalbuy":
+            # Sort by FinalBuy first, then by expected return
+            sorted_data = sorted(db.values(), 
+                            key=lambda x: (x.get('FinalBuy', False), 
+                                            x.get('MC_Data', {}).get('expected_return', 0) if x.get('MC_Data') else 0), 
+                            reverse=True)
+        elif sort_choice == "stage1":
+            # Sort by Stage 1 buy signal first, then by CI
+            sorted_data = sorted(db.values(), 
+                            key=lambda x: (x.get('Buy', False), x.get('% Below 95% CI', 0)), 
+                            reverse=True)
+        elif sort_choice == "expected_return":
+            # Sort by Monte Carlo expected return
+            sorted_data = sorted(db.values(), 
+                            key=lambda x: x.get('MC_Data', {}).get('expected_return', -999) if x.get('MC_Data') else -999, 
+                            reverse=True)
+        elif sort_choice == "profit_prob":
+            # Sort by probability of profit
+            sorted_data = sorted(db.values(), 
+                            key=lambda x: x.get('MC_Data', {}).get('prob_profit', 0) if x.get('MC_Data') else 0, 
+                            reverse=True)
         elif sort_choice == "short":
-            sorted_data = sorted(db.values(), key=lambda x: x['% Above 95% CI'] if x['% Above 95% CI'] is not None else float('inf'), reverse = True)
+            sorted_data = sorted(db.values(), key=lambda x: x.get('% Above 95% CI', 0), reverse=True)
         elif sort_choice == "msd":
-            sorted_data = sorted(db.values(), key=lambda x: x['RSI MSD'] if x['RSI MSD'] is not None else float('inf'), reverse = True)
+            sorted_data = sorted(db.values(), key=lambda x: x.get('RSI MSD', 0), reverse=True)
         elif sort_choice == "rsi":
-            sorted_data = sorted(db.values(), key=lambda x: x['RSI'] if x['RSI'] is not None else float('inf'), reverse = True)
+            sorted_data = sorted(db.values(), key=lambda x: x.get('RSI', 0), reverse=True)
         elif sort_choice == "turn":
-            sorted_data = sorted(db.values(), key=lambda x: x['RSI Avg Turnover'] if x['RSI Avg Turnover'] is not None else float('inf'), reverse = False)
+            sorted_data = sorted(db.values(), key=lambda x: x.get('RSI Avg Turnover', 999), reverse=False)
+        else:
+            # Default to normal sorting
+            sorted_data = sorted(db.values(), key=lambda x: x.get('% Below 95% CI', 0), reverse=True)
         
         for ticker in sorted_data:
             print(ticker)
         dbfile.close()
         return sorted_data
-
-        #except Exception as e:
-        #    print(f"{e}")
 
 
 
@@ -325,7 +346,11 @@ class Update():
 
         def process_ticker_data(ticker):
             try:
-                self.analysis.runall(ticker, db)    
+                self.analysis.runall(ticker, db)
+                # Ensure Monte Carlo data is properly stored
+                if ticker in db and 'MC_Data' not in db[ticker]:
+                    db[ticker]['MC_Data'] = None
+                    db[ticker]['MC_Validation'] = False
                 return True
             except Exception as e:
                 print(f"Error processing {ticker}: {e}")
@@ -405,6 +430,38 @@ def close_file(db, dbname):
     with open(f'./storage/databases/{dbname}.pickle', 'wb') as dbfile:
         pickle.dump(db, dbfile)
     dbfile.close()
+
+
+def migrate_database_fields(dbname):
+    """Migrate existing database to include new Monte Carlo fields"""
+    try:
+        db, dbfile = open_file(dbname)
+        
+        for ticker, data in db.items():
+            # Add missing fields with default values
+            if 'FinalBuy' not in data:
+                data['FinalBuy'] = data.get('Buy', False)  # Default to Stage 1 value
+            if 'MC_Data' not in data:
+                data['MC_Data'] = None
+            if 'MC_Validation' not in data:
+                data['MC_Validation'] = False
+        
+        close_file(db, dbname)
+        print(f"Migrated database: {dbname}")
+        
+    except Exception as e:
+        print(f"Migration failed for {dbname}: {e}")
+
+# Call this for existing databases
+def migrate_all_databases():
+    """Migrate all existing databases"""
+    import os
+    db_dir = './storage/databases'
+    if os.path.exists(db_dir):
+        for filename in os.listdir(db_dir):
+            if filename.endswith('.pickle'):
+                dbname = filename.replace('.pickle', '')
+                migrate_database_fields(dbname)
 
 
 
