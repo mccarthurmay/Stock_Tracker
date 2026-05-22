@@ -129,9 +129,27 @@ const UpdateDatabase = () => {
 const SORT_OPTIONS = [
   { value: 'normal', label: 'Below 95% CI' },
   { value: 'rsi',    label: 'RSI Value' },
-  { value: 'bm',     label: 'Book-to-Market' },
-  { value: 'op',     label: 'Profitability' },
+  { value: 'bm',     label: 'Book-to-Market (high→low)' },
+  { value: 'op',     label: 'Profitability (high→low)' },
   { value: 'inv',    label: 'Investment (low→high)' },
+  { value: 'beta',   label: 'Beta (low→high)' },
+  { value: 'mcap',   label: 'Market Cap (small→large)' },
+];
+
+const FF_TOOLTIPS = {
+  bm:   'Book-to-Market (Value). Book Equity ÷ Market Cap. Higher = cheaper relative to accounting value.\n\nRanges:\n  > 0.5   deep value (may be distressed)\n  0.2–0.5 value tilt — good target range\n  0.05–0.2 growth/blend\n  < 0.05  expensive growth\n\nAbove 1.0 means trading below book value. High B/M alone is not enough — pair with profitability > 15% to avoid value traps.',
+  op:   'Profitability (Operating Income ÷ |Book Equity|). Higher = more efficient use of the equity base.\n\nRanges:\n  > 25%   high quality\n  15–25%  solid — good target range\n  5–15%   mediocre\n  < 0%    operating at a loss\n\nThe most important filter to combine with B/M. High B/M + high profitability is the most defensible screen.',
+  inv:  'Investment (Year-over-year total-asset growth). Lower = more conservative capital allocation.\n\nRanges:\n  < 5%   conservative — good target range\n  5–15%  moderate growth\n  > 20%  aggressive expansion\n  < 0%   balance sheet shrinking (buybacks or contraction)\n\nAggressively expanding companies historically underperform. Negative is not automatically bad.',
+  beta: 'Beta (market exposure vs SPY, ~1 year daily returns). Measures how much the stock moves with the market.\n\nRanges:\n  < 0.6   defensive / low correlation\n  0.6–1.0 below-market sensitivity\n  1.0–1.4 above-market sensitivity\n  > 1.5   high volatility relative to market\n\nNot a good/bad signal. Beta 1.3 means if the market drops 10% the stock typically drops ~13%. Use to size positions.',
+  mcap: 'Market Cap in $B (Size factor). Smaller historically outperformed, but that premium is weak.\n\nRanges:\n  < $2B   small cap — historically favored but riskier\n  $2–10B  mid cap — practical sweet spot\n  $10–100B large cap\n  > $100B  mega cap\n\nSize alone is unreliable. It matters more when combined with high B/M and high profitability (small + cheap + profitable is the durable combination).',
+};
+
+const FF_INFO_ITEMS = [
+  { label: 'Beta',         range: '0.6 – 1.0',  note: 'below-market sensitivity; not a quality signal' },
+  { label: 'Mkt Cap',      range: '$2 – 10B',   note: 'mid-cap sweet spot; small + profitable is the durable combo' },
+  { label: 'B/M',          range: '> 0.20',     note: 'value tilt; pair with profitability to avoid traps' },
+  { label: 'Profitability',range: '> 15%',      note: 'most important filter; separates bargains from declines' },
+  { label: 'Investment',   range: '< 10%',      note: 'conservative; aggressive expanders tend to underperform' },
 ];
 
 const thStyle = {
@@ -143,6 +161,46 @@ const tdStyle = { padding: '0.6rem 1rem', borderBottom: '1px solid #2e3443' };
 
 const pct = (v) => `${(v * 100).toFixed(1)}%`;
 const Null = () => <span style={{ color: '#4a5568' }}>—</span>;
+
+const FfInfoBox = () => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: '1rem', background: '#1a1d23', border: '1px solid #2e3443', borderRadius: '0.5rem' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', background: 'none', border: 'none', color: '#a0aec0', padding: '0.6rem 1rem', textAlign: 'left', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between' }}
+      >
+        <span>Target ranges</span>
+        <span>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 1rem 0.9rem' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+            <thead>
+              <tr style={{ color: '#718096' }}>
+                <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', borderBottom: '1px solid #2e3443' }}>Factor</th>
+                <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', borderBottom: '1px solid #2e3443' }}>Look for</th>
+                <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem', borderBottom: '1px solid #2e3443' }}>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {FF_INFO_ITEMS.map(({ label, range, note }) => (
+                <tr key={label}>
+                  <td style={{ padding: '0.3rem 0.5rem', color: '#a0aec0', fontWeight: 600 }}>{label}</td>
+                  <td style={{ padding: '0.3rem 0.5rem', color: '#4CAF50', fontFamily: 'monospace' }}>{range}</td>
+                  <td style={{ padding: '0.3rem 0.5rem', color: '#718096' }}>{note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p style={{ color: '#4a5568', fontSize: '0.75rem', marginTop: '0.6rem', marginBottom: 0 }}>
+            Use as a screen to narrow candidates — high scores don't guarantee a buy. Hover column headers for full ranges.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ShowDatabases = () => {
   const [selectedDb, setSelectedDb] = useState('');
@@ -189,6 +247,8 @@ const ShowDatabases = () => {
         </select>
       </div>
 
+      <FfInfoBox />
+
       {loading && <p style={{ color: '#a0aec0' }}>Loading...</p>}
       {error && <p style={{ color: '#f87171' }}>Error: {error}</p>}
 
@@ -198,22 +258,26 @@ const ShowDatabases = () => {
             <thead>
               <tr style={{ background: '#1a1d23' }}>
                 <th style={thStyle}>Ticker</th>
-                <th style={thStyle}>% Below 95% CI</th>
+                <th style={thStyle}>% Below CI</th>
                 <th style={thStyle}>RSI</th>
-                <th style={{...thStyle, ...thTip}} title="Book-to-Market (1/P/B) — higher means cheaper relative to book value">B/M ↑</th>
-                <th style={{...thStyle, ...thTip}} title="Operating Profitability (Op. Income / Book Equity) — higher is better">Profitability ↑</th>
-                <th style={{...thStyle, ...thTip}} title="Investment / Asset Growth YoY — lower means more conservative (Fama-French CMA)">Investment ↓</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.beta}>Beta</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.mcap}>Mkt Cap ($B) ↓</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.bm}>B/M ↑</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.op}>Profitability ↑</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.inv}>Investment ↓</th>
               </tr>
             </thead>
             <tbody>
               {data.map((item, i) => (
                 <tr key={i} style={{ background: i % 2 === 0 ? '#232730' : '#1e222a' }}>
                   <td style={tdStyle}>{item.Ticker}</td>
-                  <td style={tdStyle}>{item['% Below 95% CI']}%</td>
-                  <td style={tdStyle}>{item.RSI}</td>
-                  <td style={tdStyle}>{item.BM != null ? item.BM.toFixed(3) : <Null />}</td>
-                  <td style={tdStyle}>{item.OP != null ? pct(item.OP) : <Null />}</td>
-                  <td style={tdStyle}>{item.INV != null ? pct(item.INV) : <Null />}</td>
+                  <td style={tdStyle}>{item['% Below 95% CI'] != null ? `${item['% Below 95% CI']}%` : <Null />}</td>
+                  <td style={tdStyle}>{item.RSI ?? <Null />}</td>
+                  <td style={tdStyle}>{item.BETA != null ? item.BETA.toFixed(2) : <Null />}</td>
+                  <td style={tdStyle}>{item.MCAP != null ? item.MCAP.toFixed(2) : <Null />}</td>
+                  <td style={tdStyle}>{item.BM   != null ? item.BM.toFixed(3)   : <Null />}</td>
+                  <td style={tdStyle}>{item.OP   != null ? pct(item.OP)         : <Null />}</td>
+                  <td style={tdStyle}>{item.INV  != null ? pct(item.INV)        : <Null />}</td>
                 </tr>
               ))}
             </tbody>
@@ -426,11 +490,13 @@ const SearchTicker = () => {
             <thead>
               <tr style={{ background: '#1a1d23' }}>
                 <th style={thStyle}>Ticker</th>
-                <th style={thStyle}>% Below 95% CI</th>
+                <th style={thStyle}>% Below CI</th>
                 <th style={thStyle}>RSI</th>
-                <th style={{...thStyle, ...thTip}} title="Book-to-Market (1/P/B) — higher means cheaper relative to book value">B/M ↑</th>
-                <th style={{...thStyle, ...thTip}} title="Operating Profitability (Op. Income / Book Equity) — higher is better">Profitability ↑</th>
-                <th style={{...thStyle, ...thTip}} title="Investment / Asset Growth YoY — lower means more conservative (Fama-French CMA)">Investment ↓</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.beta}>Beta</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.mcap}>Mkt Cap ($B) ↓</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.bm}>B/M ↑</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.op}>Profitability ↑</th>
+                <th style={{...thStyle, ...thTip}} title={FF_TOOLTIPS.inv}>Investment ↓</th>
                 <th style={thStyle}></th>
               </tr>
             </thead>
@@ -439,10 +505,12 @@ const SearchTicker = () => {
                 <tr key={item.Ticker} style={{ background: i % 2 === 0 ? '#232730' : '#1e222a' }}>
                   <td style={{...tdStyle, fontWeight: 600}}>{item.Ticker}</td>
                   <td style={tdStyle}>{item['% Below 95% CI'] != null ? `${item['% Below 95% CI']}%` : <Null />}</td>
-                  <td style={tdStyle}>{item.RSI ?? <Null />}</td>
-                  <td style={tdStyle}>{item.BM  != null ? item.BM.toFixed(3)  : <Null />}</td>
-                  <td style={tdStyle}>{item.OP  != null ? pct(item.OP)        : <Null />}</td>
-                  <td style={tdStyle}>{item.INV != null ? pct(item.INV)       : <Null />}</td>
+                  <td style={tdStyle}>{item.RSI  ?? <Null />}</td>
+                  <td style={tdStyle}>{item.BETA != null ? item.BETA.toFixed(2) : <Null />}</td>
+                  <td style={tdStyle}>{item.MCAP != null ? item.MCAP.toFixed(2) : <Null />}</td>
+                  <td style={tdStyle}>{item.BM   != null ? item.BM.toFixed(3)   : <Null />}</td>
+                  <td style={tdStyle}>{item.OP   != null ? pct(item.OP)         : <Null />}</td>
+                  <td style={tdStyle}>{item.INV  != null ? pct(item.INV)        : <Null />}</td>
                   <td style={tdStyle}>
                     <button
                       onClick={() => removeResult(item.Ticker)}

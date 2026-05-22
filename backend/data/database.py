@@ -294,6 +294,10 @@ class DBManager:
             sorted_data = sorted(db.values(), key=lambda x: x.get('OP') or -999, reverse=True)
         elif sort_choice == "inv":
             sorted_data = sorted(db.values(), key=lambda x: x.get('INV') if x.get('INV') is not None else 999, reverse=False)
+        elif sort_choice == "beta":
+            sorted_data = sorted(db.values(), key=lambda x: x.get('BETA') if x.get('BETA') is not None else 999, reverse=False)
+        elif sort_choice == "mcap":
+            sorted_data = sorted(db.values(), key=lambda x: x.get('MCAP') if x.get('MCAP') is not None else 999, reverse=False)
         else:  # "normal" — sort by % below 95% CI
             sorted_data = sorted(db.values(), key=lambda x: x.get('% Below 95% CI', 0), reverse=True)
         

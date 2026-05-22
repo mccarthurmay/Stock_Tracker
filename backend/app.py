@@ -2,7 +2,6 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from data.analysis import RSIManager, AnalysisManager, AlpacaDataManager
 from data.database import DBManager, Update, WorkerPoolManager
-from applications.scraper import scraper
 from data.database import open_file
 import numpy as np
 import pandas as pd
@@ -103,9 +102,11 @@ def get_ticker(ticker):
                 'Ticker': ticker,
                 'RSI': rsi,
                 '% Below 95% CI': ci_under,
-                'BM':  ff['BM'],
-                'OP':  ff['OP'],
-                'INV': ff['INV'],
+                'BM':   ff['BM'],
+                'OP':   ff['OP'],
+                'INV':  ff['INV'],
+                'BETA': ff['BETA'],
+                'MCAP': ff['MCAP'],
             })
         })
     except Exception as e:

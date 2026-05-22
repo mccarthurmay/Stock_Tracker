@@ -248,9 +248,11 @@ class AnalysisManager:
             '% Above 95% CI': percent_over,
             '% Below 95% CI': percent_under,
             'RSI': rsi,
-            'BM': ff['BM'],
-            'OP': ff['OP'],
-            'INV': ff['INV'],
+            'BM':   ff['BM'],
+            'OP':   ff['OP'],
+            'INV':  ff['INV'],
+            'BETA': ff['BETA'],
+            'MCAP': ff['MCAP'],
         }
 
 
@@ -294,9 +296,11 @@ class AnalysisManager:
             '% Above 95% CI': percent_over,
             '% Below 95% CI': percent_under,
             'RSI': rsi,
-            'BM': ff['BM'],
-            'OP': ff['OP'],
-            'INV': ff['INV'],
+            'BM':   ff['BM'],
+            'OP':   ff['OP'],
+            'INV':  ff['INV'],
+            'BETA': ff['BETA'],
+            'MCAP': ff['MCAP'],
         }
 
 

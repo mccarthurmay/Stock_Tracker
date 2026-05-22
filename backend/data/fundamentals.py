@@ -1,5 +1,6 @@
 import time
 import requests
+import numpy as np
 from threading import Lock
 
 
@@ -7,9 +8,10 @@ _SEC_HEADERS = {
     "User-Agent": "StockTracker/1.0 contact@stocktracker.local",
     "Accept-Encoding": "gzip, deflate",
 }
-_TICKERS_URL    = "https://www.sec.gov/files/company_tickers.json"
-_FACTS_URL      = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+_TICKERS_URL      = "https://www.sec.gov/files/company_tickers.json"
+_FACTS_URL        = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 _SEC_MIN_INTERVAL = 0.12   # stay under SEC EDGAR's 10 req/s limit
+_BETA_DAYS        = 400    # calendar days back (~252 trading days) for beta
 
 
 def _safe_round(val, digits=3):
@@ -21,26 +23,29 @@ def _safe_round(val, digits=3):
 
 class FundamentalsManager:
     """
-    Fama-French fundamental metrics using:
-      - Alpaca (same credentials as analysis.py) for market price
-      - SEC EDGAR public API for accounting data (no API key required)
+    All five Fama-French factors plus market beta:
 
-      BM  — Book-to-Market  = Book Equity / Market Cap   (higher = cheaper vs book value)
-      OP  — Operating Profitability = Operating Income / |Book Equity|  (higher = better)
-      INV — Investment ratio = YoY total-asset growth                   (lower = conservative)
+      BETA — Market factor  : beta vs SPY over ~1 year of daily returns
+                              Measures market-risk exposure. Not a good/bad axis.
+      MCAP — Size factor    : market cap in $B (smaller historically favored, weakly)
+      BM   — Value factor   : Book Equity / Market Cap  (higher = cheaper vs book)
+      OP   — Profitability  : Operating Income / |Book Equity|  (higher = better)
+      INV  — Investment     : YoY total-asset growth  (lower = conservative)
 
-    Singleton with per-session caching so each ticker is only fetched once.
+    Price / returns via AlpacaDataManager (same credentials as analysis.py).
+    Accounting data via SEC EDGAR public API (no key required).
+    Singleton with per-session caching.
     """
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
             inst = super().__new__(cls)
-            inst._fund_cache  = {}      # ticker  → {BM, OP, INV}
-            inst._facts_cache = {}      # CIK str → raw EDGAR facts JSON
-            inst._cik_map     = None    # ticker  → zero-padded CIK string
-            inst._lock        = Lock()
-            inst._last_req    = 0.0
+            inst._fund_cache   = {}
+            inst._facts_cache  = {}
+            inst._cik_map      = None
+            inst._lock         = Lock()
+            inst._last_req     = 0.0
             cls._instance = inst
         return cls._instance
 
@@ -54,7 +59,7 @@ class FundamentalsManager:
         self._fund_cache[ticker] = result
         return result
 
-    # ------------------------------------------------------------------ HTTP helpers
+    # ------------------------------------------------------------------ SEC helpers
 
     def _throttle(self):
         with self._lock:
@@ -68,8 +73,6 @@ class FundamentalsManager:
         r = requests.get(url, headers=_SEC_HEADERS, timeout=15)
         r.raise_for_status()
         return r.json()
-
-    # ------------------------------------------------------------------ EDGAR helpers
 
     def _load_cik_map(self):
         if self._cik_map is None:
@@ -90,14 +93,10 @@ class FundamentalsManager:
         self._facts_cache[cik] = data
         return data
 
-    # ------------------------------------------------------------------ parsing
+    # ------------------------------------------------------------------ EDGAR parsing
 
     def _annual_value(self, facts, concept, taxonomy="us-gaap"):
-        """
-        Most recent 10-K value for a US-GAAP concept.
-        When a period has multiple filings (e.g. amended 10-K/A),
-        the most recently filed one wins.
-        """
+        """Most recent 10-K value; amended filings (10-K/A) win for the same period."""
         try:
             concept_units = facts["facts"][taxonomy][concept]["units"]
         except KeyError:
@@ -106,7 +105,7 @@ class FundamentalsManager:
         for unit_key in ("USD", "shares", "pure"):
             if unit_key not in concept_units:
                 continue
-            seen = {}   # period end-date → best entry
+            seen = {}
             for e in concept_units[unit_key]:
                 if e.get("form") not in ("10-K", "10-K/A"):
                     continue
@@ -116,11 +115,10 @@ class FundamentalsManager:
             if not seen:
                 continue
             return max(seen.values(), key=lambda e: e["end"])["val"]
-
         return None
 
     def _two_annual_values(self, facts, concept):
-        """Return (current, prior) annual values — needed for growth calculations."""
+        """(current, prior) annual values for growth calculations."""
         try:
             units = facts["facts"]["us-gaap"][concept]["units"]["USD"]
         except KeyError:
@@ -136,14 +134,40 @@ class FundamentalsManager:
 
         if len(seen) < 2:
             return None, None
-
         periods = sorted(seen.keys(), reverse=True)
         return seen[periods[0]]["val"], seen[periods[1]]["val"]
 
     # ------------------------------------------------------------------ metrics
 
-    def _book_to_market(self, facts, price):
-        # Try primary concept, fall back to version that includes minority interest
+    def _compute_beta(self, ticker, dm):
+        """Beta vs SPY using ~1 year of daily returns from AlpacaDataManager."""
+        try:
+            stock_df = dm.get_data(ticker, days_back=_BETA_DAYS, frequency="1D")
+            spy_df   = dm.get_data("SPY",   days_back=_BETA_DAYS, frequency="1D")
+            if stock_df.empty or spy_df.empty:
+                return None
+
+            stock_r = stock_df["close"].pct_change().dropna()
+            spy_r   = spy_df["close"].pct_change().dropna()
+
+            common = stock_r.index.intersection(spy_r.index)
+            if len(common) < 30:
+                return None
+
+            s = stock_r.loc[common]
+            m = spy_r.loc[common]
+            var_m = float(m.var())
+            if var_m == 0:
+                return None
+            return _safe_round(float(s.cov(m)) / var_m, 2)
+        except Exception:
+            return None
+
+    def _compute_accounting(self, facts, price):
+        """
+        Returns (bm, op, inv, mcap) from SEC EDGAR facts + current price.
+        All may be None for ETFs/foreign stocks without EDGAR filings.
+        """
         equity = (
             self._annual_value(facts, "StockholdersEquity")
             or self._annual_value(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")
@@ -152,49 +176,53 @@ class FundamentalsManager:
             self._annual_value(facts, "CommonStockSharesOutstanding")
             or self._annual_value(facts, "CommonStockSharesOutstandingIncludingTreasuryShares")
         )
-        if not all([equity, shares, price]) or shares <= 0 or price <= 0:
-            return None
-        return _safe_round(equity / (shares * price))
-
-    def _operating_profitability(self, facts):
         op_income = (
             self._annual_value(facts, "OperatingIncomeLoss")
             or self._annual_value(facts, "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest")
         )
-        equity = (
-            self._annual_value(facts, "StockholdersEquity")
-            or self._annual_value(facts, "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest")
-        )
-        if op_income is None or not equity or equity == 0:
-            return None
-        return _safe_round(op_income / abs(equity))
+        curr_assets, prev_assets = self._two_annual_values(facts, "Assets")
 
-    def _investment(self, facts):
-        curr, prev = self._two_annual_values(facts, "Assets")
-        if curr is None or prev is None or prev == 0:
-            return None
-        return _safe_round((curr - prev) / abs(prev))
+        # B/M
+        bm = None
+        if equity and shares and price and shares > 0 and price > 0:
+            bm = _safe_round(equity / (shares * price))
 
-    # ------------------------------------------------------------------ fetch
+        # Market cap ($B)
+        mcap = None
+        if shares and price and shares > 0 and price > 0:
+            mcap = _safe_round(shares * price / 1e9, 2)
+
+        # Operating profitability
+        op = None
+        if op_income is not None and equity and equity != 0:
+            op = _safe_round(op_income / abs(equity))
+
+        # Investment (asset growth)
+        inv = None
+        if curr_assets is not None and prev_assets and prev_assets != 0:
+            inv = _safe_round((curr_assets - prev_assets) / abs(prev_assets))
+
+        return bm, op, inv, mcap
+
+    # ------------------------------------------------------------------ main fetch
 
     def _fetch(self, ticker):
-        null = {"BM": None, "OP": None, "INV": None}
+        null = {"BM": None, "OP": None, "INV": None, "BETA": None, "MCAP": None}
         try:
+            from data.analysis import AlpacaDataManager
+            dm    = AlpacaDataManager()
+            price = dm.get_price(ticker)
+            beta  = self._compute_beta(ticker, dm)
+
             cik = self._cik(ticker)
             if not cik:
-                return null  # ETF, foreign stock, or not SEC-registered
+                # ETF, foreign stock, or not SEC-registered — return what we can
+                return {**null, "BETA": beta}
 
-            facts = self._facts(cik)
+            facts              = self._facts(cik)
+            bm, op, inv, mcap  = self._compute_accounting(facts, price)
 
-            # Use AlpacaDataManager for price (same credentials as analysis.py)
-            from data.analysis import AlpacaDataManager
-            price = AlpacaDataManager().get_price(ticker)
-
-            return {
-                "BM":  self._book_to_market(facts, price),
-                "OP":  self._operating_profitability(facts),
-                "INV": self._investment(facts),
-            }
+            return {"BM": bm, "OP": op, "INV": inv, "BETA": beta, "MCAP": mcap}
         except Exception as e:
             print(f"Fundamentals error for {ticker}: {e}")
             return null
