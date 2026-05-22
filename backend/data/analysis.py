@@ -17,6 +17,7 @@ import pytz
 import os
 import config
 import time
+from data.fundamentals import FundamentalsManager
 warnings.filterwarnings('ignore')
 
 
@@ -196,74 +197,60 @@ class AnalysisManager:
         self.data_manager = data_manager or AlpacaDataManager()
         self.CI = CIManager(self.data_manager)
         self.RSI = RSIManager(self.data_manager)
+        self.fundamentals = FundamentalsManager()
     
         
     def runall(self, ticker, db):
         try:
             enhanced_results = self.CI.enhanced_analysis(ticker, db)
             if enhanced_results is None:
-                return  # Ticker removed or no data
+                return
             percent_under = enhanced_results['CI_UNDER']
             percent_over = enhanced_results['CI_OVER']
         except Exception as e:
             print("Enhanced analysis failed:", e)
             return
-        
-        try:
-            ma, ma_date, converging = self.RSI.MA(ticker, graph = False)
-            rsi = self.RSI.rsi_calc(ticker, graph = False, date = None)
-        except Exception as e:
-            print("ma and rsi", e)
 
         try:
-            # Stage 1: Enhanced buy signal
+            rsi = self.RSI.rsi_calc(ticker, graph=False, date=None)
+        except Exception as e:
+            print("RSI failed:", e)
+            return
+
+        try:
             buy_signal_result = self.CI.enhanced_buy_signal(rsi, enhanced_results, run_monte_carlo=False)
             stage1_buy = buy_signal_result['stage1']
-            
-            # Stage 2: Monte Carlo validation (only for Stage 1 buy candidates)
+
             stage2_validation = False
-            monte_carlo_data = None
-            
             if stage1_buy:
-                monte_carlo_result = self.CI.run_monte_carlo_validation(ticker)
-                stage2_validation = monte_carlo_result.get('validation', False)
-                monte_carlo_data = monte_carlo_result
-            
-            # Final buy signal: Stage 1 AND Stage 2
+                mc = self.CI.run_monte_carlo_validation(ticker)
+                stage2_validation = mc.get('validation', False)
+
             final_buy_signal = stage1_buy and stage2_validation
-            
             short_bool = self.short(rsi, enhanced_results)
-            cos, msd = self.RSI.rsi_accuracy(ticker)
-            turnover = self.RSI.rsi_turnover(ticker)
-            
         except Exception as e:
-            print("Two-stage analysis failed:", e)
+            print("Signal analysis failed:", e)
             stage1_buy = False
             final_buy_signal = False
             short_bool = False
-            monte_carlo_data = None
-            cos, msd = 0, 0
-            turnover = 0
-        
-        # Store comprehensive results
+
+        try:
+            ff = self.fundamentals.get_fundamentals(ticker)
+        except Exception as e:
+            print(f"Fundamentals failed for {ticker}: {e}")
+            ff = {'BM': None, 'OP': None, 'INV': None}
+
         db[ticker] = {
             'Ticker': ticker,
-            'Buy': stage1_buy,              # Stage 1 signal
-            'FinalBuy': final_buy_signal,   # Stage 1 + Stage 2 combined  
+            'Buy': stage1_buy,
+            'FinalBuy': final_buy_signal,
             'Short': short_bool,
             '% Above 95% CI': percent_over,
             '% Below 95% CI': percent_under,
             'RSI': rsi,
-            'RSI COS': round(cos,2),
-            'RSI MSD': round(msd,2),
-            'RSI Avg Turnover': turnover,
-            'MA': (ma, ma_date),
-            'MA Converging': converging,
-            **{k: v for k, v in enhanced_results.items() 
-            if k not in ['CI_UNDER', 'CI_OVER']},  # Add all anomaly fields
-            # Monte Carlo results (if available)
-            'MC_Validation': stage2_validation,
-            'MC_Data': monte_carlo_data
+            'BM': ff['BM'],
+            'OP': ff['OP'],
+            'INV': ff['INV'],
         }
 
 
@@ -272,7 +259,6 @@ class AnalysisManager:
             enhanced_results = self.CI.enhanced_analysis(ticker, db)
             if enhanced_results is None:
                 return
-            
             percent_under = enhanced_results['CI_UNDER']
             percent_over = enhanced_results['CI_OVER']
         except Exception as e:
@@ -280,29 +266,26 @@ class AnalysisManager:
             return
 
         try:
-            ma, ma_date, converging = self.RSI.MA(ticker, graph=False)
             rsi = self.RSI.rsi_calc(ticker, graph=False, date=None)
         except Exception as e:
-            print("MA and RSI error:", e)
+            print("RSI error:", e)
             return
 
         try:
-            # Enhanced sell signals
             sell_bool = self.sell(rsi, enhanced_results)
             short_sell_bool = self.short_sell(rsi, enhanced_results)
-            cos, msd = self.RSI.rsi_accuracy(ticker)
-            turnover = self.RSI.rsi_turnover(ticker)
         except Exception as e:
-            print("Enhanced sell logic error:", e)
+            print("Sell logic error:", e)
             return
-        
-        # Preserve buy price logic
-        if ticker in db:
-            buy_price = db[ticker]['Buy Price']
-        else:
-            buy_price = price
-        
-        # Store comprehensive data
+
+        buy_price = db[ticker]['Buy Price'] if ticker in db else price
+
+        try:
+            ff = self.fundamentals.get_fundamentals(ticker)
+        except Exception as e:
+            print(f"Fundamentals failed for {ticker}: {e}")
+            ff = {'BM': None, 'OP': None, 'INV': None}
+
         db[ticker] = {
             'Ticker': ticker,
             'Buy Price': buy_price,
@@ -311,13 +294,9 @@ class AnalysisManager:
             '% Above 95% CI': percent_over,
             '% Below 95% CI': percent_under,
             'RSI': rsi,
-            'RSI COS': round(cos, 2),
-            'RSI MSD': round(msd, 2),
-            'RSI Avg Turnover': turnover,
-            'MA': (ma, ma_date),
-            'MA Converging': converging,
-            **{k: v for k, v in enhanced_results.items() 
-            if k not in ['CI_UNDER', 'CI_OVER']}  # Add all anomaly fields
+            'BM': ff['BM'],
+            'OP': ff['OP'],
+            'INV': ff['INV'],
         }
 
 
