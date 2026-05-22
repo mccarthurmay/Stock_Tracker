@@ -17,7 +17,6 @@ import pytz
 import os
 import config
 import time
-from datetime import datetime
 warnings.filterwarnings('ignore')
 
 
@@ -849,12 +848,9 @@ class RSIManager:
         return rsi, ticker, df
 
     def rsi_calc(self, ticker, graph, date):
-        rsi, ticker, df = self.rsi_base(ticker, 720)
+        rsi, ticker, _ = self.rsi_base(ticker, 720)
 
-        #Graph
-        if graph == True:
-            self.plot_data(rsi, ticker, df)
-        elif date != None:
+        if date != None:
             return (round(rsi[date]))
         else:
             rsi = round(rsi[-1])
@@ -911,56 +907,6 @@ class RSIManager:
         average_turnaround = sum(turnover) / len(turnover)
         return round(average_turnaround, 0)
 
-
-    def plot_data(self, rsi, ticker, df):
-        plt.style.use('fivethirtyeight')
-        plt.rcParams['figure.figsize'] = (15,10)
-        
-        # Prepare data and ensure alignment
-        df = df.iloc[13:]  # Remove first 13 rows from price data
-        rsi = rsi[13:]     # Remove first 13 rows from RSI
-        
-        # Make sure indexes match
-        common_index = df.index.intersection(rsi.index)
-        df = df.loc[common_index]
-        rsi = rsi.loc[common_index]
-        
-        # Calculate MAs
-        s_df = {}
-        l_df = {}
-        s_df['MA'] = df['close'].rolling(window=20).mean()
-        l_df['MA'] = df['close'].rolling(window=50).mean()
-        
-        # Create figure and primary axis
-        fig, ax1 = plt.subplots(figsize=(15,10))
-        
-        # Plot price data on primary axis
-        ax1.plot(df.index, df['close'], linewidth=2, label='Price', color='blue')
-        ax1.plot(df.index, s_df['MA'], label='Short-Term MA', color='Red', linestyle='--', linewidth=2)
-        ax1.plot(df.index, l_df['MA'], label='Long-Term MA', color='Purple', linestyle='--', linewidth=2)
-        ax1.set_ylabel('Price', color='black')
-        ax1.tick_params(axis='y', labelcolor='black')
-        
-        # Create secondary axis for RSI
-        ax2 = ax1.twinx()
-        ax2.plot(df.index, rsi, color='orange', linewidth=1, label='RSI', alpha=0.7)
-        ax2.set_ylabel('RSI', color='orange')
-        ax2.tick_params(axis='y', labelcolor='orange')
-        
-        # Add RSI levels
-        ax2.axhline(30, linestyle='--', linewidth=1.5, color='green', alpha=0.5)
-        ax2.axhline(70, linestyle='--', linewidth=1.5, color='red', alpha=0.5)
-        ax2.set_ylim(0, 100)
-        
-        # Combine legends
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
-        
-        plt.title(f'{ticker} Price and RSI')
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.show()
 
     # Only used for individual calls; remains on yFinance
     def MA(self, ticker, graph, frequency="1D", days_back = 60, span1=5, span2=20, standardize=False):
@@ -1031,61 +977,3 @@ class RSIManager:
             print("No recent crossing detected")
             return None, None, converging
 
-    def macd(self, ticker, frequency = "daily", fast_period=12, slow_period=26, signal_period=9):
-
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=5)
-        df = self.data_manager.get_data(ticker, days_back = 60, frequency= frequency)
-        if df.empty:
-            return None
-
-
-        df['EMA_fast'] = df['close'].ewm(span=fast_period, adjust=False).mean()
-        df['EMA_slow'] = df['close'].ewm(span=slow_period, adjust=False).mean()
-
-        df['MACD'] = df['EMA_fast'] - df['EMA_slow']
-
-        df['Signal'] = df['MACD'].ewm(span=signal_period, adjust=False).mean()
-
-        current_data = df.iloc[-1]
-
-        if current_data['MACD'] > current_data['Signal']:
-            return "BULL"
-        else:
-            return "BEAR"
-        
-
-
-def main():
-    # Initialize the manager
-    manager = AlpacaDataManager()
-    RM = RSIManager()
-    AM = AnalysisManager()
-    
-    # First get_data call will cache the data
-    print("First call - should fetch from API:")
-    macd_result = RM.macd(ticker="AAPL")
-    print(f"MACD Result: {macd_result}")
-    
-    # Check cache after first call
-    print("\nCache after first call:")
-    manager.get_cache_info()
-    
-    # Second call should use cached data
-    print("\nSecond call - should use cache:")
-    macd_result = RM.macd(ticker="NVDA")
-    print(f"MACD Result: {macd_result}")
-
-    # Check cache again
-    print("\nCache should be the same:")
-    manager.get_cache_info()
-    
-    print("\nSecond call - should use cache:")
-    macd_result = RM.macd(ticker="NVDA")
-    print(f"MACD Result: {macd_result}")
-    print("\nSecond call - should use cache:")
-    macd_result = RM.macd(ticker="NVDA")
-    print(f"MACD Result: {macd_result}")
-
-if __name__ == "__main__":
-    main()

@@ -1,20 +1,13 @@
-from flask import Flask, jsonify, request, send_from_directory, send_file
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from data.analysis import RSIManager, AnalysisManager, AlpacaDataManager
 from data.database import DBManager, Update, WorkerPoolManager
-from data.day_trade import DTManager, DTData
 from data.winrate import WinrateManager
 from applications.scraper import scraper
-from applications.converter import convert
-from data.database import open_file, close_file
+from data.database import open_file
 import numpy as np
 import pandas as pd
-import pickle
 import os
-import config
-from werkzeug.utils import secure_filename
-import subprocess
-import sys
 from datetime import datetime
 
 # Get the absolute path of the current file (app.py)
@@ -28,13 +21,10 @@ app = Flask(__name__)
 CORS(app)
 
 # Initialize existing managers
-dt_manager = DTManager()
 analysis_manager = AnalysisManager()
 db_manager = DBManager()
 rsi_manager = RSIManager()
 
-
-import json
 
 def convert_numpy_types(obj):
     """Convert numpy types to native Python types for JSON serialization"""
@@ -176,15 +166,6 @@ def remove_ticker(dbname):
             return jsonify({'success': False, 'error': 'No ticker provided'}), 400
         
         db_manager.remData(ticker, dbname)
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-# DOES NOT WORK 
-@app.route('/api/database/<dbname>/reset', methods=['POST'])
-def reset_database(dbname):
-    try:
-        db_manager.resetData(dbname)
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -368,8 +349,7 @@ def get_combined_analysis(ticker):
                 'error': 'No data available for this ticker'
             }), 400
         
-        # Remove first 13 rows as done in plot_data
-        df = df.iloc[13:]  
+        df = df.iloc[13:]
         rsi = rsi[13:]
         
         # Make sure indexes match
