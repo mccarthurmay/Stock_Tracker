@@ -1,22 +1,20 @@
 from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
+from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-from scipy.stats import linregress
-from scipy import stats
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
 from sklearn.linear_model import LinearRegression
-import warnings
-import matplotlib.pyplot as plt
 from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
+import warnings
 import pytz
 import os
-import config
 import time
+import config
 from data.fundamentals import FundamentalsManager
 warnings.filterwarnings('ignore')
 
@@ -27,78 +25,38 @@ class RateLimiter:
     def __init__(self, max_requests_per_minute):
         self.max_requests = max_requests_per_minute
         self.requests = []
-        self.cache_hits = 0
-        self.api_calls = 0
-    
+
     def wait_if_needed(self, is_cached=False):
-        """
-        Rate limits API calls while tracking cache hits separately
-        
-        Args:
-            is_cached (bool): Whether this request will use cached data
-        """
         if is_cached:
-            self.cache_hits += 1
             return
-            
         now = datetime.now()
-        # Remove requests older than 1 minute
-        self.requests = [req_time for req_time in self.requests 
-                        if (now - req_time).total_seconds() < 60]
-        print(len(self.requests))
+        self.requests = [t for t in self.requests if (now - t).total_seconds() < 60]
         if len(self.requests) >= self.max_requests:
-            # Get the oldest request
-            oldest_request = self.requests[0]
-            # Calculate how long to wait
-            sleep_time = 60 - (now - oldest_request).total_seconds()
+            sleep_time = 60 - (now - self.requests[0]).total_seconds()
             if sleep_time > 0:
                 time.sleep(sleep_time)
-            # Clear old requests after waiting
             self.requests = []
-        
-        # Add the new API request
         self.requests.append(now)
-        self.api_calls += 1
-    
-    def get_stats(self):
-        """Returns statistics about API usage and cache hits"""
-        return {
-            'api_calls': self.api_calls,
-            'cache_hits': self.cache_hits,
-            'total_requests': self.api_calls + self.cache_hits
-        }
-    
-    
-    def reset_stats(self):
-        """Resets the statistics counters"""
-        self.api_calls = 0
-        self.cache_hits = 0
 
 
 class AlpacaDataManager:
     _instance = None
 
-    def __init__(self):
-        self.data_client = StockHistoricalDataClient
-        self.rate_limiter = RateLimiter(max_requests_per_minute)
-    
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.api_key = os.getenv('ALPACA_KEY')
-            cls._instance.api_secret = os.getenv('ALPACA_SECRET')
-            if not cls._instance.api_key or not cls._instance.api_secret:
+            api_key = os.getenv('ALPACA_KEY')
+            api_secret = os.getenv('ALPACA_SECRET')
+            if not api_key or not api_secret:
                 raise ValueError("ALPACA_KEY and ALPACA_SECRET environment variables not set")
-            cls._instance.historical_client = StockHistoricalDataClient(
-                cls._instance.api_key, 
-                cls._instance.api_secret
-            )
-            cls._instance.trading_client = TradingClient(
-                cls._instance.api_key,
-                cls._instance.api_secret
-            )
+            cls._instance.historical_client = StockHistoricalDataClient(api_key, api_secret)
+            cls._instance.trading_client = TradingClient(api_key, api_secret)
+            cls._instance.rate_limiter = RateLimiter(max_requests_per_minute)
             cls._instance._cache = {}
         return cls._instance
+
+    def __init__(self):
+        pass  # singleton — all state set in __new__
         
     def get_data(self, ticker, days_back=5, frequency="1D"):
         
@@ -139,28 +97,14 @@ class AlpacaDataManager:
         
         try:
             response = self.historical_client.get_stock_bars(request)
-            # Convert to DataFrame
-                    #print(f"Processing {symbol}")
             symbol_data = response[ticker]
-            data_dicts = [
-                {key: value for key, value in row}  # Convert each row of tuples into a dictionary
-                for row in symbol_data
-            ]
-
-            # Create a DataFrame from the list of dictionaries
-            df = pd.DataFrame(data_dicts)
-
-            
+            df = pd.DataFrame([{k: v for k, v in row} for row in symbol_data])
             if df.empty:
                 return df
-                
             df.set_index('timestamp', inplace=True)
             df.sort_index(ascending=True, inplace=True)
-            
-            # Cache the result
             self._cache[cache_key] = df
             return df
-            
         except Exception as e:
             print(f"Error getting data for {ticker}: {e}")
             return pd.DataFrame()
@@ -171,26 +115,6 @@ class AlpacaDataManager:
             if not df.empty:
                 return float(df['close'].iloc[-1])
         return None
-            
-    def clear_cache(self):
-        """Clear the entire cache"""
-        self._cache = {}
-        print("Cache cleared")
-    
-    def get_cache_stats(self):
-        """Get statistics about cache and API usage"""
-        stats = self.rate_limiter.get_stats()
-        stats['cache_size'] = len(self._cache)
-        return stats
-
-    def get_cache_info(self):
-        """Print information about what's currently in cache"""
-        print("\nCurrent Cache Contents:")
-        for key in self._cache.keys():
-            df = self._cache[key]
-            print(f"Key: {key}")
-            print(f"Shape: {df.shape}")
-            print(f"Date Range: {df.index[0]} to {df.index[-1]}\n")
 
 class AnalysisManager:
     def __init__(self, data_manager=None):
@@ -212,7 +136,7 @@ class AnalysisManager:
             return
 
         try:
-            rsi = self.RSI.rsi_calc(ticker, graph=False, date=None)
+            rsi = self.RSI.rsi_calc(ticker)
         except Exception as e:
             print("RSI failed:", e)
             return
@@ -238,7 +162,7 @@ class AnalysisManager:
             ff = self.fundamentals.get_fundamentals(ticker)
         except Exception as e:
             print(f"Fundamentals failed for {ticker}: {e}")
-            ff = {'BM': None, 'OP': None, 'INV': None}
+            ff = {'BM': None, 'OP': None, 'INV': None, 'BETA': None, 'MCAP': None}
 
         db[ticker] = {
             'Ticker': ticker,
@@ -268,7 +192,7 @@ class AnalysisManager:
             return
 
         try:
-            rsi = self.RSI.rsi_calc(ticker, graph=False, date=None)
+            rsi = self.RSI.rsi_calc(ticker)
         except Exception as e:
             print("RSI error:", e)
             return
@@ -286,7 +210,7 @@ class AnalysisManager:
             ff = self.fundamentals.get_fundamentals(ticker)
         except Exception as e:
             print(f"Fundamentals failed for {ticker}: {e}")
-            ff = {'BM': None, 'OP': None, 'INV': None}
+            ff = {'BM': None, 'OP': None, 'INV': None, 'BETA': None, 'MCAP': None}
 
         db[ticker] = {
             'Ticker': ticker,
@@ -304,14 +228,6 @@ class AnalysisManager:
         }
 
 
-
-    #BUY/SELL BOOL
-    def buy(self, rsi, enhanced_results):
-        return self.CI.enhanced_buy_signal(rsi, enhanced_results)
-
-
-                
-                
 
     def short(self, rsi, enhanced_results):
         return self.CI.enhanced_short_signal(rsi, enhanced_results)
@@ -408,9 +324,6 @@ class CIManager:
             dict: Monte Carlo validation results
         """
         try:
-            import numpy as np
-            
-            # Get historical data
             df = self.data_manager.get_data(ticker, days_back=90, frequency="daily")
             if df.empty:
                 return {'validation': False, 'reason': 'No data available'}
@@ -830,14 +743,9 @@ class RSIManager:
         rsi = 100 * mean_up / (mean_up + mean_down)
         return rsi, ticker, df
 
-    def rsi_calc(self, ticker, graph, date):
+    def rsi_calc(self, ticker, date=None):
         rsi, ticker, _ = self.rsi_base(ticker, 720)
-
-        if date != None:
-            return (round(rsi[date]))
-        else:
-            rsi = round(rsi[-1])
-            return rsi
+        return round(rsi[date]) if date is not None else round(rsi[-1])
         
 
     def rsi_accuracy(self, ticker):
