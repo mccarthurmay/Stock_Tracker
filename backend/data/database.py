@@ -52,7 +52,7 @@ class ProgressTracker:
 
 
 class WorkerPoolManager:
-    def __init__(self, data_manager, api_limit_per_minute: int = 150):
+    def __init__(self, data_manager, api_limit_per_minute: int = 200):
         self.data_manager = data_manager
         self.api_limit_per_minute = api_limit_per_minute
         self.calls_per_ticker = 4
@@ -119,8 +119,7 @@ class DBManager:
         self.analysis.runall(ticker, db)
 
     def _process_sell(self, ticker, db):
-        price = self.analysis.data_manager.get_price(ticker)
-        self.analysis.runall_sell(ticker, db, price)
+        self.analysis.runall_sell(ticker, db)
 
     def storeData(self, dbname: str, stock_list: List[str]) -> None:
         try:

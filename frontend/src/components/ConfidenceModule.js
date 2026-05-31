@@ -93,7 +93,7 @@ const UpdateDatabase = () => {
   return (
     <div className="section">
       <h3 className="section-title">Update Database</h3>
-      <p style={{ color: '#a0aec0', marginBottom: '1rem', fontSize: '0.875rem' }}>API limit: 150 calls/min</p>
+      <p style={{ color: '#a0aec0', marginBottom: '1rem', fontSize: '0.875rem' }}>API limit: 200 calls/min</p>
       <DatabaseSelect
         className="select-input"
         value={selectedDb}
@@ -355,7 +355,7 @@ const CreateDatabase = () => {
     }
   };
 
-  const estMinutes = Math.ceil(tickers.length * 4 / 150);
+  const estMinutes = Math.ceil(tickers.length * 4 / 200);
 
   return (
     <div className="section">

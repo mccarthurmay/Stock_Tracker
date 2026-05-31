@@ -4,39 +4,36 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 from datetime import datetime, timedelta
 import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import IsolationForest
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics.pairwise import cosine_similarity
-import matplotlib.pyplot as plt
 import warnings
 import pytz
 import os
 import time
-import config
+import threading
 from data.fundamentals import FundamentalsManager
 warnings.filterwarnings('ignore')
 
 
-max_requests_per_minute=150 * 4 # We have 4 calls per 1 call, but they are calling from cache # Not exactly 4, actually more
+max_requests_per_minute = 200
 
 class RateLimiter:
     def __init__(self, max_requests_per_minute):
         self.max_requests = max_requests_per_minute
         self.requests = []
+        self.lock = threading.Lock()
 
     def wait_if_needed(self, is_cached=False):
         if is_cached:
             return
-        now = datetime.now()
-        self.requests = [t for t in self.requests if (now - t).total_seconds() < 60]
-        if len(self.requests) >= self.max_requests:
-            sleep_time = 60 - (now - self.requests[0]).total_seconds()
+        while True:
+            with self.lock:
+                now = datetime.now()
+                self.requests = [t for t in self.requests if (now - t).total_seconds() < 60]
+                if len(self.requests) < self.max_requests:
+                    self.requests.append(now)
+                    return
+                sleep_time = 60 - (now - self.requests[0]).total_seconds()
             if sleep_time > 0:
                 time.sleep(sleep_time)
-            self.requests = []
-        self.requests.append(now)
 
 
 class AlpacaDataManager:
@@ -57,26 +54,20 @@ class AlpacaDataManager:
 
     def __init__(self):
         pass  # singleton — all state set in __new__
-        
+
     def get_data(self, ticker, days_back=5, frequency="1D"):
-        
         """Get stock data from Alpaca with smart caching"""
         cache_key = f"{ticker}_{frequency}_{days_back}"
-        
-        # Check cache
+
         if cache_key in self._cache:
-            # Use rate limiter but indicate it's a cache hit
             self.rate_limiter.wait_if_needed(is_cached=True)
             return self._cache[cache_key]
-        
+
         self.rate_limiter.wait_if_needed(is_cached=False)
-            
-        # Calculate dates for API call
-        # End time is now minus 20 minutes to avoid subscription limitations
+
         end_dt = datetime.now(pytz.UTC) - timedelta(minutes=20)
         start_dt = end_dt - timedelta(days=days_back)
-        
-        # Convert frequency string to TimeFrame
+
         timeframe_map = {
             "daily": TimeFrame.Day,
             "1D": TimeFrame.Day,
@@ -84,17 +75,15 @@ class AlpacaDataManager:
             "1Min": TimeFrame.Minute
         }
         timeframe = timeframe_map.get(frequency, TimeFrame.Day)
-        
-        # Make API call
+
         request = StockBarsRequest(
             symbol_or_symbols=ticker,
             start=start_dt,
             end=end_dt,
             timeframe=timeframe,
-            adjustment='raw'  # Use raw data since we don't have premium access
+            adjustment='raw'
         )
 
-        
         try:
             response = self.historical_client.get_stock_bars(request)
             symbol_data = response[ticker]
@@ -108,7 +97,7 @@ class AlpacaDataManager:
         except Exception as e:
             print(f"Error getting data for {ticker}: {e}")
             return pd.DataFrame()
-    
+
     def get_price(self, ticker):
         for days_back in [0.003472, 1, 3, 5]:
             df = self.get_data(ticker, days_back=days_back, frequency="1Min")
@@ -116,21 +105,20 @@ class AlpacaDataManager:
                 return float(df['close'].iloc[-1])
         return None
 
+
 class AnalysisManager:
     def __init__(self, data_manager=None):
         self.data_manager = data_manager or AlpacaDataManager()
         self.CI = CIManager(self.data_manager)
         self.RSI = RSIManager(self.data_manager)
         self.fundamentals = FundamentalsManager()
-    
-        
+
     def runall(self, ticker, db):
         try:
             enhanced_results = self.CI.enhanced_analysis(ticker, db)
             if enhanced_results is None:
                 return
             percent_under = enhanced_results['CI_UNDER']
-            percent_over = enhanced_results['CI_OVER']
         except Exception as e:
             print("Enhanced analysis failed:", e)
             return
@@ -142,23 +130,6 @@ class AnalysisManager:
             return
 
         try:
-            buy_signal_result = self.CI.enhanced_buy_signal(rsi, enhanced_results, run_monte_carlo=False)
-            stage1_buy = buy_signal_result['stage1']
-
-            stage2_validation = False
-            if stage1_buy:
-                mc = self.CI.run_monte_carlo_validation(ticker)
-                stage2_validation = mc.get('validation', False)
-
-            final_buy_signal = stage1_buy and stage2_validation
-            short_bool = self.short(rsi, enhanced_results)
-        except Exception as e:
-            print("Signal analysis failed:", e)
-            stage1_buy = False
-            final_buy_signal = False
-            short_bool = False
-
-        try:
             ff = self.fundamentals.get_fundamentals(ticker)
         except Exception as e:
             print(f"Fundamentals failed for {ticker}: {e}")
@@ -166,10 +137,6 @@ class AnalysisManager:
 
         db[ticker] = {
             'Ticker': ticker,
-            'Buy': stage1_buy,
-            'FinalBuy': final_buy_signal,
-            'Short': short_bool,
-            '% Above 95% CI': percent_over,
             '% Below 95% CI': percent_under,
             'RSI': rsi,
             'BM':   ff['BM'],
@@ -179,14 +146,12 @@ class AnalysisManager:
             'MCAP': ff['MCAP'],
         }
 
-
-    def runall_sell(self, ticker, db, price):
+    def runall_sell(self, ticker, db):
         try:
             enhanced_results = self.CI.enhanced_analysis(ticker, db)
             if enhanced_results is None:
                 return
             percent_under = enhanced_results['CI_UNDER']
-            percent_over = enhanced_results['CI_OVER']
         except Exception as e:
             print(f"Enhanced analysis failed for {ticker}: {e}")
             return
@@ -198,15 +163,6 @@ class AnalysisManager:
             return
 
         try:
-            sell_bool = self.sell(rsi, enhanced_results)
-            short_sell_bool = self.short_sell(rsi, enhanced_results)
-        except Exception as e:
-            print("Sell logic error:", e)
-            return
-
-        buy_price = db[ticker]['Buy Price'] if ticker in db else price
-
-        try:
             ff = self.fundamentals.get_fundamentals(ticker)
         except Exception as e:
             print(f"Fundamentals failed for {ticker}: {e}")
@@ -214,10 +170,6 @@ class AnalysisManager:
 
         db[ticker] = {
             'Ticker': ticker,
-            'Buy Price': buy_price,
-            'Sell': sell_bool,
-            'Short Sell': short_sell_bool,
-            '% Above 95% CI': percent_over,
             '% Below 95% CI': percent_under,
             'RSI': rsi,
             'BM':   ff['BM'],
@@ -228,369 +180,15 @@ class AnalysisManager:
         }
 
 
-
-    def short(self, rsi, enhanced_results):
-        return self.CI.enhanced_short_signal(rsi, enhanced_results)
-
-    def sell(self, rsi, enhanced_results):
-        """Enhanced sell logic using anomaly detection for long-term holds"""
-        if not enhanced_results:
-            return False
-        
-        # Traditional overbought exit
-        if rsi > 70:
-            return True
-        
-        # Enhanced anomaly-based exits
-        anomaly_count = enhanced_results.get('ANOM_COUNT', 0)
-        
-        # Strong sell signals (multiple anomalies pointing up)
-        if (anomaly_count >= 3 and 
-            enhanced_results.get('ZS_DIR') == 'UP' and 
-            enhanced_results.get('TD_DIR') == 'AB' and 
-            rsi > 60):
-            return True
-        
-        # Moderate sell signals
-        if (anomaly_count >= 2 and 
-            enhanced_results.get('VB_DIR') == 'POS' and 
-            enhanced_results.get('TD_SIG', False) and
-            rsi > 65):
-            return True
-        
-        # Trend deviation sell (price way above trend)
-        if (enhanced_results.get('TD_ZSCORE', 0) > 2.5 and 
-            enhanced_results.get('TD_DIR') == 'AB' and
-            rsi > 55):
-            return True
-        
-        # Volatility breakout exhaustion
-        if (enhanced_results.get('VB_BREAK', False) and 
-            enhanced_results.get('VB_CONSEC', 0) >= 3 and
-            enhanced_results.get('VB_DIR') == 'POS' and
-            rsi > 60):
-            return True
-        
-        return False
-
-    def short_sell(self, rsi, enhanced_results):
-        """For covering short positions"""
-        if not enhanced_results:
-            return False
-        
-        # Traditional oversold cover
-        if rsi < 30:
-            return True
-        
-        # Enhanced signals for covering shorts
-        anomaly_count = enhanced_results.get('ANOM_COUNT', 0)
-        
-        # Strong cover signals (multiple anomalies pointing down = end of downtrend)
-        if (anomaly_count >= 3 and 
-            enhanced_results.get('ZS_DIR') == 'DN' and 
-            enhanced_results.get('TD_DIR') == 'BL'):
-            return True
-        
-        # Sustained anomaly suggests reversal coming
-        if (enhanced_results.get('ZS_SUST', False) and 
-            enhanced_results.get('ZS_DIR') == 'DN' and
-            rsi < 35):
-            return True
-        
-        return False
-
-
-
-
 class CIManager:
-    """
-    Optimized CI Manager integrating traditional confidence intervals 
-    with multiple anomaly detection methods for comprehensive analysis.
-    """
-    
     def __init__(self, data_manager):
         self.data_manager = data_manager
 
-    def run_monte_carlo_validation(self, ticker, n_simulations=1000, time_horizon=30):
-        """
-        Run Monte Carlo simulation for Stage 2 validation
-        
-        Args:
-            ticker: Stock symbol
-            n_simulations: Number of simulations to run
-            time_horizon: Days to simulate forward
-        
-        Returns:
-            dict: Monte Carlo validation results
-        """
-        try:
-            df = self.data_manager.get_data(ticker, days_back=90, frequency="daily")
-            if df.empty:
-                return {'validation': False, 'reason': 'No data available'}
-            
-            # Calculate daily returns
-            returns = df['close'].pct_change().dropna()
-            if len(returns) < 30:
-                return {'validation': False, 'reason': 'Insufficient historical data'}
-            
-            # Calculate statistics from historical returns
-            mean_return = returns.mean()
-            std_return = returns.std()
-            current_price = df['close'].iloc[-1]
-            
-            # Run Monte Carlo simulation
-            np.random.seed(42)  # For reproducible results
-            simulated_final_prices = []
-            
-            for _ in range(n_simulations):
-                # Generate random returns based on historical distribution
-                random_returns = np.random.normal(mean_return, std_return, time_horizon)
-                
-                # Calculate cumulative return
-                cumulative_return = np.prod(1 + random_returns) - 1
-                final_price = current_price * (1 + cumulative_return)
-                simulated_final_prices.append(final_price)
-            
-            # Analyze simulation results
-            simulated_prices = np.array(simulated_final_prices)
-            
-            # Calculate probabilities and expected outcomes
-            prob_profit = np.mean(simulated_prices > current_price)
-            prob_loss = 1 - prob_profit
-            
-            # Calculate expected returns
-            returns_pct = (simulated_prices - current_price) / current_price * 100
-            profitable_returns = returns_pct[returns_pct > 0]
-            loss_returns = returns_pct[returns_pct <= 0]
-            
-            avg_profit = np.mean(profitable_returns) if len(profitable_returns) > 0 else 0
-            avg_loss = np.mean(loss_returns) if len(loss_returns) > 0 else 0
-            
-            # Expected value calculation
-            expected_return = (prob_profit * avg_profit) + (prob_loss * avg_loss)
-            
-            # Monte Carlo validation criteria (Stage 2 logic)
-            validation_passed = (
-                prob_profit > 0.6 and          # At least 60% chance of profit
-                expected_return > 2.0 and      # Expected return > 2%
-                avg_loss > -15.0 and           # Maximum average loss < 15%
-                std_return < 0.05              # Not too volatile (daily std < 5%)
-            )
-            
-            return {
-                'validation': validation_passed,
-                'prob_profit': round(prob_profit * 100, 1),
-                'prob_loss': round(prob_loss * 100, 1),
-                'avg_profit': round(avg_profit, 2),
-                'avg_loss': round(avg_loss, 2),
-                'expected_return': round(expected_return, 2),
-                'volatility': round(std_return * 100, 2),
-                'simulations_run': n_simulations,
-                'time_horizon_days': time_horizon,
-                'reason': 'Monte Carlo validation complete'
-            }
-            
-        except Exception as e:
-            return {
-                'validation': False, 
-                'reason': f'Monte Carlo simulation failed: {str(e)}'
-            }
-    
-    def under_confidence(self, ticker, dbname):
-        """Original under confidence method - maintained for compatibility"""
-        df = self.data_manager.get_data(ticker, days_back=90, frequency="daily")
-        df_close = pd.DataFrame(df['close'])
-        
-        if int(df_close.iloc[-1]) > 5:
-            ci = df_close.std() * 2
-            lower_bound = df_close.mean() - ci
-            try:
-                current_price = self.data_manager.get_price(ticker)
-                percent_under = (1 - current_price / lower_bound) * 100
-                return percent_under
-            except:
-                print(f"No current price available for {ticker}.")
-                return pd.Series([0])
-        else:
-            try:
-                del dbname[ticker]
-                print(f"{ticker} is a penny stock. Removing ticker.")
-            except:
-                print(f"{ticker} is a penny stock. Not adding ticker.")
-            return pd.Series([0])
-
-    def over_confidence(self, ticker, dbname):
-        """Original over confidence method - maintained for compatibility"""
-        df = self.data_manager.get_data(ticker, days_back=90, frequency="daily")
-        df_close = pd.DataFrame(df['close'])
-
-        if int(df_close.iloc[-1]) > 5:
-            ci = df_close.std() * 2
-            upper_bound = df_close.mean() + ci
-            try:
-                current_price = self.data_manager.get_price(ticker)
-                percent_under = (1 - upper_bound/current_price) * 100
-                return percent_under
-            except:
-                print(f"No current price available for {ticker}.")
-                return pd.Series([0])
-        else:
-            try:
-                del dbname[ticker]
-                print(f"{ticker} is a penny stock. Removing ticker.")
-            except:
-                print(f"{ticker} is a penny stock. Not adding ticker.")
-            return pd.Series([0])
-    
-    def _rolling_zscore_analysis(self, df, window=20, threshold=2.0):
-        """Optimized rolling Z-score anomaly detection"""
-        if len(df) < window:
-            return {}
-        
-        rolling_mean = df['close'].rolling(window=window).mean()
-        rolling_std = df['close'].rolling(window=window).std()
-        
-        # Avoid division by zero
-        zscore = np.where(rolling_std > 0, 
-                         (df['close'] - rolling_mean) / rolling_std, 
-                         0)
-        
-        current_zscore = zscore[-1]
-        recent_anomalies = np.abs(zscore[-5:]) > threshold
-        sustained_count = np.sum(recent_anomalies)
-        
-        return {
-            'ZS_VAL': round(current_zscore, 2),
-            'ZS_ANOM': abs(current_zscore) > threshold,
-            'ZS_SUST': sustained_count >= 3,
-            'ZS_DIR': 'DN' if current_zscore < -threshold else 'UP' if current_zscore > threshold else 'NM'
-        }
-    
-    def _trend_deviation_analysis(self, df, trend_window=30):
-        """Optimized trend deviation analysis using linear regression"""
-        if len(df) < trend_window:
-            return {}
-        
-        # Use numpy for faster computation
-        trend_data = df.tail(trend_window).copy()
-        time_index = np.arange(len(trend_data))
-        prices = trend_data['close'].values
-        
-        # Fast linear regression using numpy
-        X = np.column_stack([time_index, np.ones(len(time_index))])
-        coeffs = np.linalg.lstsq(X, prices, rcond=None)[0]
-        slope, intercept = coeffs
-        
-        # Calculate residuals and standard error
-        predictions = slope * time_index + intercept
-        residuals = prices - predictions
-        residual_std = np.std(residuals)
-        
-        # Current deviation
-        current_expected = slope * (len(trend_data) - 1) + intercept
-        current_actual = prices[-1]
-        current_deviation = current_actual - current_expected
-        deviation_zscore = current_deviation / residual_std if residual_std > 0 else 0
-        
-        return {
-            'TD_SLOPE': round(slope, 4),
-            'TD_DEV': round(current_deviation, 2),
-            'TD_ZSCORE': round(deviation_zscore, 2),
-            'TD_SIG': abs(deviation_zscore) > 2.0,
-            'TD_DIR': 'BL' if current_deviation < 0 else 'AB'
-        }
-    
-    def _volatility_breakout_analysis(self, df, window=20, threshold=2.0):
-        """Optimized volatility breakout detection"""
-        if len(df) < window + 1:
-            return {}
-        
-        returns = df['close'].pct_change().dropna()
-        if len(returns) < window:
-            return {}
-        
-        # Vectorized rolling volatility calculation
-        rolling_vol = returns.rolling(window=window).std()
-        
-        current_return = abs(returns.iloc[-1])
-        expected_vol = rolling_vol.iloc[-2]  # Previous day to avoid look-ahead
-        
-        if expected_vol <= 0 or pd.isna(expected_vol):
-            return {}
-        
-        vol_ratio = current_return / expected_vol
-        
-        # Vectorized consecutive breakout count
-        recent_returns = np.abs(returns.iloc[-5:].values)
-        recent_vols = rolling_vol.iloc[-6:-1].values  # Offset by 1 for look-ahead avoidance
-        
-        valid_mask = recent_vols > 0
-        consecutive_count = np.sum((recent_returns[valid_mask] / recent_vols[valid_mask]) > threshold) if np.any(valid_mask) else 0
-        
-        return {
-            'VB_RATIO': round(vol_ratio, 2),
-            'VB_BREAK': vol_ratio > threshold,
-            'VB_CONSEC': int(consecutive_count),
-            'VB_DIR': 'NEG' if returns.iloc[-1] < 0 else 'POS',
-            'VB_STR': min(round(vol_ratio / threshold, 2), 5.0)
-        }
-    
-    def _isolation_forest_analysis(self, df, contamination=0.1):
-        """Optimized isolation forest anomaly detection"""
-        if len(df) < 20:
-            return {}
-        
-        # Vectorized feature creation
-        returns = df['close'].pct_change()
-        volume_ma = df['volume'].rolling(window=10).mean()
-        price_ma = df['close'].rolling(window=10).mean()
-        volatility = returns.rolling(window=5).std()
-        
-        # Create feature matrix efficiently
-        features_df = pd.DataFrame({
-            'returns': returns,
-            'volume_ratio': df['volume'] / volume_ma,
-            'price_ratio': df['close'] / price_ma,
-            'volatility': volatility
-        }).dropna()
-        
-        if len(features_df) < 20:
-            return {}
-        
-        try:
-            # Fast standardization and ML prediction
-            scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features_df.values)
-            
-            iso_forest = IsolationForest(contamination=contamination, random_state=42, n_jobs=1)
-            anomaly_labels = iso_forest.fit_predict(features_scaled)
-            anomaly_scores = iso_forest.decision_function(features_scaled)
-            
-            current_anomaly = anomaly_labels[-1]
-            current_score = anomaly_scores[-1]
-            anomaly_count = np.sum(anomaly_labels[-5:] == -1)
-            
-            return {
-                'IF_ANOM': current_anomaly == -1,
-                'IF_SCORE': round(current_score, 3),
-                'IF_COUNT': int(anomaly_count),
-                'IF_PERS': anomaly_count >= 3,
-                'IF_STR': round(abs(current_score), 3)
-            }
-        except Exception:
-            return {}
-    
     def enhanced_analysis(self, ticker, dbname):
-        """
-        Optimized comprehensive analysis combining traditional CI with anomaly detection.
-        Returns dictionary with all metrics using acronyms for database storage.
-        """
-        # Get data once and reuse
         df = self.data_manager.get_data(ticker, days_back=90, frequency="daily")
         if df.empty:
             return None
-        
-        # Penny stock check
+
         if df['close'].iloc[-1] <= 5:
             try:
                 del dbname[ticker]
@@ -598,129 +196,26 @@ class CIManager:
             except:
                 print(f"{ticker} is a penny stock. Not adding ticker.")
             return None
-        
-        # Traditional CI calculation (optimized)
+
         ci = df['close'].std() * 2
         mean_price = df['close'].mean()
         lower_bound = mean_price - ci
-        upper_bound = mean_price + ci
-        
+
         try:
             current_price = self.data_manager.get_price(ticker)
             percent_under = (1 - current_price / lower_bound) * 100
-            percent_over = (1 - upper_bound / current_price) * 100
         except:
             print(f"No current price available for {ticker}.")
             return None
-        
-        # Initialize results with traditional CI
-        results = {
-            'CI_UNDER': round(percent_under, 2),
-            'CI_OVER': round(percent_over, 2)
-        }
-        
-        # Run all anomaly detection methods efficiently
-        zs_result = self._rolling_zscore_analysis(df)
-        td_result = self._trend_deviation_analysis(df)
-        vb_result = self._volatility_breakout_analysis(df)
-        if_result = self._isolation_forest_analysis(df)
-        
-        # Merge all results
-        for result_dict in [zs_result, td_result, vb_result, if_result]:
-            results.update(result_dict)
-        
-        # Calculate overall anomaly metrics
-        anomaly_signals = [
-            results.get('ZS_ANOM', False),
-            results.get('TD_SIG', False),
-            results.get('VB_BREAK', False),
-            results.get('IF_ANOM', False)
-        ]
-        
-        anomaly_count = sum(anomaly_signals)
-        results['ANOM_COUNT'] = anomaly_count
-        results['ANOM_STRONG'] = anomaly_count >= 3
-        
-        return results
-    
-    def enhanced_buy_signal(self, rsi, enhanced_results, run_monte_carlo=True):
-        """Enhanced buy signal logic with optional Monte Carlo validation"""
-        if not enhanced_results:
-            return {'stage1': False, 'stage2': False, 'final': False}
-        
-        traditional_under = enhanced_results.get('CI_UNDER', 0)
-        anomaly_count = enhanced_results.get('ANOM_COUNT', 0)
-        
-        # Stage 1: Traditional enhanced buy conditions
-        stage1_buy = False
-        
-        # Strong anomaly buy conditions
-        if (anomaly_count >= 3 and 
-            enhanced_results.get('ZS_DIR') == 'DN' and 
-            enhanced_results.get('TD_DIR') == 'BL' and 
-            rsi < 35):
-            stage1_buy = True
-        
-        # Moderate anomaly buy conditions
-        elif (anomaly_count >= 2 and 
-            enhanced_results.get('VB_DIR') == 'NEG' and 
-            enhanced_results.get('TD_SIG', False) and
-            rsi < 32):
-            stage1_buy = True
-        
-        # Traditional buy condition with anomaly support
-        elif (traditional_under > -1 and rsi < 31 and
-            enhanced_results.get('ZS_DIR') in ['DN', 'NM']):
-            stage1_buy = True
-        
-        # Stage 2: Monte Carlo validation (only if Stage 1 passed)
-        stage2_validation = {'validation': False}
-        if stage1_buy and run_monte_carlo:
-            # This will be called from the main analysis
-            pass
-        
-        return {
-            'stage1': stage1_buy,
-            'stage2': stage2_validation.get('validation', False),
-            'final': stage1_buy,  # Will be updated after Monte Carlo
-            'monte_carlo_data': stage2_validation
-        }
-    
-    def enhanced_short_signal(self, rsi, enhanced_results):
-        """Optimized short signal logic using anomaly data"""
-        if not enhanced_results:
-            return False
-        
-        traditional_over = enhanced_results.get('CI_OVER', 0)
-        anomaly_count = enhanced_results.get('ANOM_COUNT', 0)
-        
-        # Strong anomaly short conditions
-        if (anomaly_count >= 3 and 
-            enhanced_results.get('ZS_DIR') == 'UP' and 
-            enhanced_results.get('TD_DIR') == 'AB' and 
-            rsi > 65):
-            return True
-        
-        # Moderate anomaly short conditions
-        if (anomaly_count >= 2 and 
-            enhanced_results.get('VB_DIR') == 'POS' and 
-            enhanced_results.get('TD_SIG', False) and
-            rsi > 75):
-            return True
-        
-        # Traditional short condition with anomaly support
-        if (traditional_over > -1 and rsi > 79 and
-            enhanced_results.get('ZS_DIR') in ['UP', 'NM']):
-            return True
-        
-        return False
 
+        return {
+            'CI_UNDER': round(percent_under, 2),
+        }
 
 
 class RSIManager:
     def __init__(self, data_manager=None):
         self.data_manager = data_manager or AlpacaDataManager()
-        self.CI = CIManager(self.data_manager)
 
     def rsi_base(self, ticker, days_back, frequency="1D"):
         df = self.data_manager.get_data(ticker, days_back, frequency)
@@ -730,141 +225,19 @@ class RSIManager:
 
         change = df['close'].diff()
         change.dropna(inplace=True)
-        
+
         change_up = change.copy()
         change_down = change.copy()
 
         change_up[change_up < 0] = 0
         change_down[change_down > 0] = 0
-        
+
         mean_up = change_up.rolling(14).mean()
         mean_down = change_down.rolling(14).mean().abs()
-        
+
         rsi = 100 * mean_up / (mean_up + mean_down)
         return rsi, ticker, df
 
     def rsi_calc(self, ticker, date=None):
         rsi, ticker, _ = self.rsi_base(ticker, 720)
         return round(rsi[date]) if date is not None else round(rsi[-1])
-        
-
-    def rsi_accuracy(self, ticker):
-        rsi, ticker, df = self.rsi_base(ticker, 720)
-        df = df['close']
-        #calculate mean + std of both datasets
-        mean_df = np.mean(df)
-        mean_rsi = np.mean(rsi)
-        std_df = np.std(df)
-        std_rsi = np.std(rsi)
-        
-        #standardize data
-        df_standardized = (df - mean_df) / std_df
-        rsi_standardized = (rsi - mean_rsi) / std_rsi
-
-
-        #COSINE SIMIlARITY - penalizes larger differences more heavily
-        df_standardized = df_standardized.iloc[14:] #deleting first 13 numbers due to rolling average producing NAN in rsi
-        rsi_standardized = rsi_standardized.iloc[13:] #deleting first 13 numbers due to rolling average producing NAN in rsi
-        df_standardized = df_standardized.values.reshape(1,-1)
-        rsi_standardized = rsi_standardized.values.reshape(1,-1)
-        cos_accuracy = cosine_similarity(df_standardized, rsi_standardized)[0][0]
-
-
-        #MEAN SQUARED DIFFERENCE - prioritizes relative direction and order of data points more than absolute values
-        MSD = (np.mean(np.square(df_standardized - rsi_standardized)))
-        msd_accuracy = 1 / (1 + MSD)
-
-        return cos_accuracy, msd_accuracy
-
-    def rsi_turnover(self, ticker):
-        rsi, ticker, df = self.rsi_base(ticker, 720)
-    
-        rsi_frame = rsi.iloc[13:]
-        low_threshold = True
-        peak_dates = []   
-        for date, value in rsi_frame.items():
-            if value > 70 and low_threshold == True:
-                peak_dates.append(date)
-                low_threshold = False
-            if value < 30:
-                low_threshold = True
-
-        turnover = []
-        for i in range(len(peak_dates) - 1):
-            date1_obj = datetime.fromisoformat(str(peak_dates[i]))
-            date2_obj = datetime.fromisoformat(str(peak_dates[i + 1]))
-            delta = date2_obj - date1_obj
-            turnover.append(delta.days)
-        average_turnaround = sum(turnover) / len(turnover)
-        return round(average_turnaround, 0)
-
-
-    # Only used for individual calls; remains on yFinance
-    def MA(self, ticker, graph, frequency="1D", days_back = 60, span1=5, span2=20, standardize=False):
-        df = self.data_manager.get_data(ticker, days_back, frequency)
-        
-        if standardize:
-            mean = df['close'].mean()
-            std = df['close'].std()
-            close_data = (df['close'] - mean) / std
-        else:
-            close_data = df['close']
-        
-        MA = pd.DataFrame()
-        MA['ST'] = close_data.ewm(span=span1, adjust=False).mean() 
-        MA['LT'] = close_data.ewm(span=span2, adjust=False).mean()
-        MA.dropna(inplace=True)
-        
-        converging = False
-        latest_date = None
-        converging_li = []    
-        latest_market = None
-        
-        for i in reversed(range(len(MA))):
-            date = MA.index[i] 
-            if i > 0:
-                if MA['ST'].iloc[-1] > MA['LT'].iloc[-1]:
-                    latest_date = date
-                    latest_market = "BULL"
-                    break  
-                elif  MA['ST'].iloc[-1] < MA['LT'].iloc[-1]:
-                    latest_date = date
-                    latest_market = "BEAR"
-                    break 
-                converging_li.append(abs(MA['LT'].iloc[i] - MA['ST'].iloc[i]))
-        
-        converging_li.reverse()
-        if len(converging_li) >= 20 and all(converging_li[i] < converging_li[i-1] for i in range(-1, -21, -1)):
-            converging = True
-        
-        if standardize:
-            MA['ST'] = (MA['ST'] * std) + mean
-            MA['LT'] = (MA['LT'] * std) + mean
-        
-        if graph:
-            plt.figure(figsize=(12, 6))
-            plt.plot(df.index, MA['ST'], label=f'{span1}-day EMA', color='blue')
-            plt.plot(df.index, MA['LT'], label=f'{span2}-day EMA', color='red')
-            plt.plot(df.index, df['close'], label="close Price", alpha=0.5, color='gray')
-            plt.title(f"{ticker} Moving Averages Analysis\n{span1}-day vs {span2}-day EMA")
-            plt.xlabel("Date")
-            plt.ylabel(f"Price ({ticker})")
-            plt.grid(True, alpha=0.3)
-            plt.legend(loc='best')
-            
-            # Add market condition annotation if available
-            if latest_market and latest_date:
-                plt.figtext(0.02, 0.02, f'Market Condition: {latest_market}, {converging}', 
-                          bbox=dict(facecolor='white', alpha=0.8),
-                          fontsize=10)
-            
-            plt.tight_layout()
-            plt.show()
-        
-        if latest_date:
-            latest_date_str = latest_date.strftime('%m-%d')
-            return latest_market, latest_date_str, converging
-        else:
-            print("No recent crossing detected")
-            return None, None, converging
-
