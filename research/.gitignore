@@ -1,0 +1,7 @@
+# Local data store and secrets — never commit these
+data/
+.env
+*.duckdb
+*.duckdb.wal
+__pycache__/
+_introspect.py

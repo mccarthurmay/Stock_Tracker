@@ -4,13 +4,12 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 from datetime import datetime, timedelta
 import pandas as pd
-import warnings
 import pytz
 import os
 import time
 import threading
-from data.fundamentals import FundamentalsManager
-warnings.filterwarnings('ignore')
+import config
+from data.fundamentals import FundamentalsManager\
 
 
 max_requests_per_minute = 200
