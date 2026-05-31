@@ -13,9 +13,11 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone, date
 
+import pandas as pd
+
 from .client import AlpacaResearch
 from .storage import ResearchStore
-from . import ingest, universe, integrity
+from . import ingest, universe, integrity, greeks
 
 
 def _window(days: float) -> tuple[datetime, datetime]:
@@ -79,13 +81,45 @@ def cmd_check(args, store):
     _print_checks(store)
 
 
+_GREEK_VIEW = ["ts", "under_price", "opt_price", "tte_years", "model", "iv",
+               "iv_converged", "delta", "gamma", "vega_pct", "theta_day"]
+
+
+def cmd_greeks(args, store):
+    sym = args.option.upper()
+    r = greeks.compute_for(store, sym, args.timeframe, div_yield=args.q,
+                           bs_max_dte=args.bs_max_dte, crr_steps=args.crr_steps,
+                           price_source=args.price)
+    print(f"{sym}: {r['rows']} rows, {r['converged']}/{r['total']} IV converged, "
+          f"models={r['models']}")
+    df = store.read_option_greeks(sym, args.timeframe)
+    if not df.empty:
+        print(df[_GREEK_VIEW].head(8).to_string(index=False))
+
+
+def cmd_greeks_all(args, store):
+    und = args.underlying.upper()
+    r = greeks.compute_underlying(store, und, args.timeframe, div_yield=args.q,
+                                  bs_max_dte=args.bs_max_dte, crr_steps=args.crr_steps,
+                                  price_source=args.price)
+    print(f"{und}: {r['contracts']} contracts, {r['rows']} rows, "
+          f"{r['converged']}/{r['total']} IV converged, rate_src={r['rate_source']}")
+
+
+def cmd_greeks_sanity(args, store):
+    client = AlpacaResearch()
+    rows = greeks.live_sanity(client, [s.upper() for s in args.symbols],
+                              div_yield=args.q, bs_max_dte=args.bs_max_dte)
+    print(pd.DataFrame(rows).to_string(index=False))
+
+
 def cmd_smoke(args, store):
     symbol = args.symbol.upper()
     tf = args.timeframe
     today = date.today()
     client = AlpacaResearch()
 
-    print(f"[1/5] Snapshotting {symbol} universe (expiring within {args.exp_days} days)...")
+    print(f"[1/6] Snapshotting {symbol} universe (expiring within {args.exp_days} days)...")
     uni = universe.snapshot_universe(
         client, store, symbol,
         expiration_gte=today, expiration_lte=today + timedelta(days=args.exp_days),
@@ -95,7 +129,7 @@ def cmd_smoke(args, store):
         return
     print(f"  {len(uni)} contracts.")
 
-    print(f"[2/5] Ingesting {symbol} {tf} underlying bars (last {args.days}d)...")
+    print(f"[2/6] Ingesting {symbol} {tf} underlying bars (last {args.days}d)...")
     start, end = _window(args.days)
     n_u = ingest.ingest_underlying(client, store, symbol, start, end, tf)
     print(f"  {n_u} underlying bars.")
@@ -106,7 +140,7 @@ def cmd_smoke(args, store):
     spot = store.read_underlying_bars(symbol, tf)["close"].iloc[-1]
     print(f"  Spot ~ {spot:.2f}")
 
-    print("[3/5] Picking nearest-expiry ATM call + put...")
+    print("[3/6] Picking nearest-expiry ATM call + put...")
     expiries = sorted({d for d in uni["expiry"] if d >= today})
     if not expiries:
         print("  No future expiries in window — aborting.")
@@ -124,11 +158,16 @@ def cmd_smoke(args, store):
         print("  No contracts to pull — aborting.")
         return
 
-    print(f"[4/5] Ingesting {tf} option bars for {len(chosen)} contract(s)...")
+    print(f"[4/6] Ingesting {tf} option bars for {len(chosen)} contract(s)...")
     n_o = ingest.ingest_options(client, store, chosen, start, end, tf)
     print(f"  {n_o} option bars.")
 
-    print("[5/5] Verifying point-in-time integrity...")
+    print("[5/6] Self-computing IV + Greeks per bar...")
+    for sym in chosen:
+        g = greeks.compute_for(store, sym, tf)
+        print(f"  {sym}: {g['converged']}/{g['total']} IV converged, models={g['models']}")
+
+    print("[6/6] Verifying point-in-time integrity...")
     ok = _print_checks(store)
 
     print("\nTable counts:")
@@ -181,6 +220,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("check", help="run integrity checks")
     sp.set_defaults(func=cmd_check)
+
+    sp = sub.add_parser("greeks", help="compute IV+Greeks for one option")
+    sp.add_argument("--option", required=True)
+    sp.add_argument("--timeframe", default="1Min")
+    sp.add_argument("--q", type=float, default=0.0, help="continuous dividend yield")
+    sp.add_argument("--bs-max-dte", type=int, default=2, dest="bs_max_dte")
+    sp.add_argument("--crr-steps", type=int, default=160, dest="crr_steps")
+    sp.add_argument("--price", choices=["vwap", "close"], default="vwap")
+    sp.set_defaults(func=cmd_greeks)
+
+    sp = sub.add_parser("greeks-all", help="compute IV+Greeks for all options of an underlying")
+    sp.add_argument("--underlying", required=True)
+    sp.add_argument("--timeframe", default="1Min")
+    sp.add_argument("--q", type=float, default=0.0)
+    sp.add_argument("--bs-max-dte", type=int, default=2, dest="bs_max_dte")
+    sp.add_argument("--crr-steps", type=int, default=160, dest="crr_steps")
+    sp.add_argument("--price", choices=["vwap", "close"], default="vwap")
+    sp.set_defaults(func=cmd_greeks_all)
+
+    sp = sub.add_parser("greeks-sanity", help="compare our IV/Greeks to Alpaca live snapshot")
+    sp.add_argument("symbols", nargs="+")
+    sp.add_argument("--q", type=float, default=0.0)
+    sp.add_argument("--bs-max-dte", type=int, default=2, dest="bs_max_dte")
+    sp.set_defaults(func=cmd_greeks_sanity)
 
     sp = sub.add_parser("smoke", help="end-to-end tiny demo + checks")
     sp.add_argument("--symbol", default="SPY")

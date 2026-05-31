@@ -20,7 +20,9 @@ import pandas as pd
 
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.historical.option import OptionHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest, OptionBarsRequest, OptionSnapshotRequest
+from alpaca.data.requests import (
+    StockBarsRequest, OptionBarsRequest, OptionSnapshotRequest, StockLatestTradeRequest,
+)
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.data.enums import DataFeed, Adjustment, OptionsFeed
 from alpaca.trading.client import TradingClient
@@ -149,6 +151,14 @@ class AlpacaResearch:
             symbol_or_symbols=symbols, feed=OptionsFeed(self.options_feed)
         )
         return self.option.get_option_snapshot(req)
+
+    def stock_latest_trade_price(self, symbol: str) -> float | None:
+        """Latest underlying trade price (spot) for sanity checks."""
+        self.rl.acquire()
+        req = StockLatestTradeRequest(symbol_or_symbols=symbol, feed=self._stock_feed)
+        res = self.stock.get_stock_latest_trade(req)
+        trade = res.get(symbol)
+        return float(trade.price) if trade is not None else None
 
     # -- contract universe --------------------------------------------------
     def list_contracts(self, underlying: str, expiration_gte=None, expiration_lte=None,

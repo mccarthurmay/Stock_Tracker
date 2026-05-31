@@ -47,6 +47,10 @@ python -m research options SPY260619C00500000 --days 5 --timeframe 1Min
 python -m research align --option SPY260619C00500000
 python -m research check          # point-in-time integrity checks
 python -m research counts
+# M2 — self-computed IV + Greeks:
+python -m research greeks --option SPY260619C00500000   # one contract -> option_greeks
+python -m research greeks-all --underlying SPY          # every option in option_bars
+python -m research greeks-sanity SPY260619C00500000     # live self-consistency check
 ```
 
 ## What's stored (DuckDB at `research/data/research.duckdb`)
@@ -56,6 +60,7 @@ python -m research counts
 | `underlying_bars` | (symbol, timeframe, ts) | OHLCV; ts = bar start, UTC |
 | `option_bars` | (option_symbol, timeframe, ts) | OHLCV + parsed contract fields + **`feed`** |
 | `contract_universe` | (option_symbol, as_of_date) | point-in-time snapshot; daily-snapshot OI |
+| `option_greeks` | (option_symbol, timeframe, ts) | self-computed IV + Greeks per bar (M2); labelled approximate |
 | `ingest_log` | one row / pull | audit trail feeding ROADMAP §6.6 |
 
 ## Point-in-time guarantees (enforced by `integrity.py`)
@@ -78,8 +83,39 @@ A bar labelled `t` covers `[t, t+timeframe)` and is only *knowable* at
 - History begins ~Feb 2024; underlying adjustment uses today's factors (mild
   lookahead, documented).
 
-## Next: M2
+## M2 — self-computed IV + Greeks (done)
 
-Self-computed IV + Greeks per bar (Black-Scholes for 0DTE; American for
-longer-dated), sanity-checked against `client.option_snapshots()` live values.
-IV-derived features are Phase-B-only for *belief* (ROADMAP §3).
+[pricing.py](pricing.py) prices and inverts IV; [greeks.py](greeks.py) routes
+each bar by DTE and writes `option_greeks`; [rates.py](rates.py) supplies a
+point-in-time risk-free rate from FRED (`DGS1MO`, with a constant fallback).
+
+- **Model by DTE bucket** (ROADMAP §2b): Black-Scholes for 0/1DTE (vectorized,
+  essentially exact there); American CRR binomial for longer-dated.
+- **IV inversion**: vectorized Newton with a Brent fallback. Prints outside
+  no-arbitrage bounds give `iv=NaN`, `iv_converged=False` — expected, not a bug.
+- **TTE** is measured to 16:00 America/New_York on the expiry date.
+- **Price used** is the bar VWAP (less single-print noise), falling back to close.
+- **Greek units stored**: `delta`, `gamma`, `vega_pct` (per 1 vol point),
+  `theta_day` (per calendar day), `rho_pct` (per 1% rate).
+
+Validated by: textbook BS values, exact put-call parity, exact IV round-trip
+(incl. 0DTE), CRR sanity, and on real stored bars IV round-trips to the input
+price with delta/gamma matching an independent recompute.
+
+> **Confirmed feed limitation:** the free indicative feed returns **no IV,
+> Greeks, or trades** — only quotes (verified: a 500-contract SPY chain had 0
+> IV / 0 Greeks / 0 trades, 500 quotes). So (a) self-computing Greeks is
+> mandatory, not optional, and (b) a true *vendor* IV/Greeks comparison is a
+> **Phase-B** activity (ORATS/Polygon). `greeks-sanity` therefore does a live
+> self-consistency check (our IV/Greeks from the quote mid; ATM delta ≈ ±0.5),
+> with the `alpaca_*` columns null on the free tier.
+
+Everything here is approximate and IV-derived features remain **Phase-B-only
+for belief** (ROADMAP §3).
+
+## Next: M3
+
+Indicator library + hypothesis registry: pure parameterized indicator
+functions over underlying and option/Greek series, each tagged with the data
+phase at which its output may be trusted, plus the executed-configuration
+counter that feeds the multiple-testing correction (ROADMAP §3, §4).

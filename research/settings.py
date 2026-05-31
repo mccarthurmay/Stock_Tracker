@@ -42,8 +42,8 @@ MAX_REQUESTS_PER_MINUTE = int(os.getenv("ALPACA_MAX_RPM", "180"))
 UNDERLYING_ADJUSTMENT = os.getenv("ALPACA_ADJUSTMENT", "split").lower()
 
 
-def _source_backend_credentials() -> None:
-    """Populate ALPACA_* env vars by executing backend/config.py.
+def source_backend_env() -> None:
+    """Populate ALPACA_* / FRED_* env vars by executing backend/config.py.
 
     backend/config.py is a gitignored script that sets os.environ for the
     Alpaca (and FRED) keys. Executing it only mutates the environment; it does
@@ -62,7 +62,7 @@ def get_credentials() -> tuple[str, str]:
     """Return (key, secret) from env, research/.env, or backend/config.py."""
     key, secret = os.getenv("ALPACA_KEY"), os.getenv("ALPACA_SECRET")
     if not key or not secret:
-        _source_backend_credentials()
+        source_backend_env()
         key, secret = os.getenv("ALPACA_KEY"), os.getenv("ALPACA_SECRET")
     if not key or not secret:
         raise RuntimeError(

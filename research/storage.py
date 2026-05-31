@@ -37,6 +37,12 @@ UNIVERSE_COLS = [
     "status", "tradable", "size", "open_interest", "open_interest_date",
     "close_price", "close_price_date", "as_of_date",
 ]
+GREEKS_COLS = [
+    "option_symbol", "underlying", "expiry", "strike", "opt_type", "timeframe",
+    "ts", "under_price", "opt_price", "price_source", "dte_days", "tte_years",
+    "rate", "div_yield", "model", "iv", "iv_converged", "iv_residual",
+    "delta", "gamma", "vega_pct", "theta_day", "rho_pct", "feed", "computed_at",
+]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS underlying_bars (
@@ -88,6 +94,35 @@ CREATE TABLE IF NOT EXISTS contract_universe (
     close_price_date   DATE,
     as_of_date         DATE    NOT NULL,
     PRIMARY KEY (option_symbol, as_of_date)
+);
+
+CREATE TABLE IF NOT EXISTS option_greeks (
+    option_symbol VARCHAR     NOT NULL,
+    underlying    VARCHAR,
+    expiry        DATE,
+    strike        DOUBLE,
+    opt_type      VARCHAR,
+    timeframe     VARCHAR     NOT NULL,
+    ts            TIMESTAMPTZ NOT NULL,
+    under_price   DOUBLE,
+    opt_price     DOUBLE,
+    price_source  VARCHAR,
+    dte_days      INTEGER,
+    tte_years     DOUBLE,
+    rate          DOUBLE,
+    div_yield     DOUBLE,
+    model         VARCHAR,
+    iv            DOUBLE,
+    iv_converged  BOOLEAN,
+    iv_residual   DOUBLE,
+    delta         DOUBLE,
+    gamma         DOUBLE,
+    vega_pct      DOUBLE,
+    theta_day     DOUBLE,
+    rho_pct       DOUBLE,
+    feed          VARCHAR,
+    computed_at   TIMESTAMPTZ,
+    PRIMARY KEY (option_symbol, timeframe, ts)
 );
 
 CREATE SEQUENCE IF NOT EXISTS ingest_log_seq START 1;
@@ -148,6 +183,9 @@ class ResearchStore:
     def upsert_universe(self, df: pd.DataFrame) -> int:
         return self._upsert("contract_universe", df, UNIVERSE_COLS)
 
+    def upsert_option_greeks(self, df: pd.DataFrame) -> int:
+        return self._upsert("option_greeks", df, GREEKS_COLS)
+
     def log_ingest(self, kind: str, symbol: Optional[str], timeframe: Optional[str],
                    start_ts, end_ts, feed: Optional[str], rows_written: int,
                    note: str = "") -> None:
@@ -171,6 +209,25 @@ class ResearchStore:
             [option_symbol, timeframe],
         ).df()
 
+    def read_option_greeks(self, option_symbol: str, timeframe: str) -> pd.DataFrame:
+        return self.con.execute(
+            "SELECT * FROM option_greeks WHERE option_symbol = ? AND timeframe = ? ORDER BY ts",
+            [option_symbol, timeframe],
+        ).df()
+
+    def option_symbols(self, underlying: str | None = None) -> list[str]:
+        """Distinct option symbols present in option_bars (optionally filtered)."""
+        if underlying:
+            rows = self.con.execute(
+                "SELECT DISTINCT option_symbol FROM option_bars WHERE underlying = ? ORDER BY 1",
+                [underlying],
+            ).fetchall()
+        else:
+            rows = self.con.execute(
+                "SELECT DISTINCT option_symbol FROM option_bars ORDER BY 1"
+            ).fetchall()
+        return [r[0] for r in rows]
+
     def latest_universe(self, underlying: str) -> pd.DataFrame:
         return self.con.execute(
             "SELECT * FROM contract_universe WHERE underlying = ? "
@@ -181,6 +238,7 @@ class ResearchStore:
 
     def table_counts(self) -> dict[str, int]:
         out = {}
-        for t in ("underlying_bars", "option_bars", "contract_universe", "ingest_log"):
+        for t in ("underlying_bars", "option_bars", "option_greeks",
+                  "contract_universe", "ingest_log"):
             out[t] = self.con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
         return out
