@@ -142,44 +142,61 @@ def bs_iv(price, S, K, T, r, q, is_call, tol=1e-7, max_iter=64):
 
 
 # ----------------------------------------------------- American (CRR binomial)
-def crr_price(S, K, T, r, q, sigma, is_call, steps=160):
-    """American option price via a Cox-Ross-Rubinstein tree (scalar)."""
+def _crr_core(S, K, T, r, q, sigma, is_call, steps=160):
+    """American price + tree-based delta/gamma/theta (scalar).
+
+    delta/gamma/theta are read off the first tree layers, which is far more
+    accurate than differencing the whole price (bump-reprice corrupts gamma).
+    vega/rho are added by bump-and-reprice in crr_greeks (those are smooth).
+    Returns (price, delta, gamma, theta_year).
+    """
     if T <= 0 or sigma <= 0:
-        intrinsic = (S - K) if is_call else (K - S)
-        return max(intrinsic, 0.0)
+        intrinsic = max((S - K) if is_call else (K - S), 0.0)
+        return intrinsic, np.nan, np.nan, np.nan
     dt = T / steps
     u = np.exp(sigma * np.sqrt(dt))
     d = 1.0 / u
     disc = np.exp(-r * dt)
-    p = (np.exp((r - q) * dt) - d) / (u - d)
-    p = min(max(p, 0.0), 1.0)  # guard against tiny-dt overshoot
+    p = min(max((np.exp((r - q) * dt) - d) / (u - d), 0.0), 1.0)
 
     j = np.arange(steps + 1)
     ST = S * u**j * d**(steps - j)
-    values = np.maximum((ST - K) if is_call else (K - ST), 0.0)
+    V = np.maximum((ST - K) if is_call else (K - ST), 0.0)
+    cap: dict[int, np.ndarray] = {}
     for i in range(steps - 1, -1, -1):
         j = np.arange(i + 1)
         ST = S * u**j * d**(i - j)
-        cont = disc * (p * values[1:i + 2] + (1.0 - p) * values[0:i + 1])
+        cont = disc * (p * V[1:i + 2] + (1.0 - p) * V[0:i + 1])
         ex = np.maximum((ST - K) if is_call else (K - ST), 0.0)
-        values = np.maximum(cont, ex)
-    return float(values[0])
+        V = np.maximum(cont, ex)
+        if i <= 2:
+            cap[i] = V
+
+    price = float(cap[0][0])
+    if 2 not in cap:  # steps < 2
+        return price, np.nan, np.nan, np.nan
+    Su, Sd = S * u, S * d
+    Suu, Sdd = S * u * u, S * d * d
+    delta = (cap[1][1] - cap[1][0]) / (Su - Sd)
+    gamma = (((cap[2][2] - cap[2][1]) / (Suu - S) -
+              (cap[2][1] - cap[2][0]) / (S - Sdd)) / (0.5 * (Suu - Sdd)))
+    theta = (cap[2][1] - cap[0][0]) / (2.0 * dt)  # per year (negative for long)
+    return price, float(delta), float(gamma), float(theta)
+
+
+def crr_price(S, K, T, r, q, sigma, is_call, steps=160):
+    """American option price via a Cox-Ross-Rubinstein tree (scalar)."""
+    return _crr_core(S, K, T, r, q, sigma, is_call, steps)[0]
 
 
 def crr_greeks(S, K, T, r, q, sigma, is_call, steps=160):
-    """American Greeks by bump-and-reprice (scalar), raw analytic units."""
-    hS = S * 1e-3
-    dv, dr_, hT = 1e-3, 1e-4, min(1.0 / YEAR_DAYS, T * 0.5)
-
-    def P(s=S, sig=sigma, rr=r, t=T):
-        return crr_price(s, K, t, rr, q, sig, is_call, steps)
-
-    p0 = P()
-    delta = (P(s=S + hS) - P(s=S - hS)) / (2 * hS)
-    gamma = (P(s=S + hS) - 2 * p0 + P(s=S - hS)) / (hS * hS)
-    vega = (P(sig=sigma + dv) - P(sig=sigma - dv)) / (2 * dv)
-    rho = (P(rr=r + dr_) - P(rr=r - dr_)) / (2 * dr_)
-    theta = (P(t=T - hT) - p0) / hT * -1.0 if hT > 0 else np.nan  # dPrice/dT per year
+    """American Greeks (scalar): delta/gamma/theta from the tree, vega/rho by bump."""
+    _, delta, gamma, theta = _crr_core(S, K, T, r, q, sigma, is_call, steps)
+    dv, dr_ = 1e-3, 1e-4
+    vega = (crr_price(S, K, T, r, q, sigma + dv, is_call, steps) -
+            crr_price(S, K, T, r, q, sigma - dv, is_call, steps)) / (2 * dv)
+    rho = (crr_price(S, K, T, r + dr_, q, sigma, is_call, steps) -
+           crr_price(S, K, T, r - dr_, q, sigma, is_call, steps)) / (2 * dr_)
     return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta, "rho": rho}
 
 

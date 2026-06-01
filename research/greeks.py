@@ -147,13 +147,13 @@ def compute_for(store, option_symbol: str, timeframe: str = "1Min",
 
 def live_sanity(client, symbols: list[str], rate_provider: RateProvider | None = None,
                 div_yield: float = 0.0, bs_max_dte: int = 2, crr_steps: int = 160) -> list[dict]:
-    """Self-consistency check of our IV/Greeks against a live snapshot.
+    """Coarse cross-check of our IV/Greeks against a live Alpaca snapshot.
 
-    NOTE: the free indicative feed returns NO IV/Greeks/trades (only quotes),
-    so the alpaca_* columns are null on the free tier and a true vendor
-    comparison is a Phase-B activity (ROADMAP §2d). On the free tier this still
-    confirms the live path works and the numbers are sane (ATM delta ~ +/-0.5).
-    Option price is the latest trade if present, else the quote mid.
+    The indicative feed does carry latest IV/Greeks/trades for liquid
+    contracts, but they are latest-only approximations (and stale/asymmetric
+    when markets are closed), so this is a sanity check, not ground truth -- a
+    trustworthy comparison is a Phase-B vendor activity (ROADMAP §2d). Option
+    price is the latest trade if present, else the quote mid.
     """
     rp = rate_provider or RateProvider()
     snaps = client.option_snapshots(symbols)
@@ -209,6 +209,7 @@ def live_sanity(client, symbols: list[str], rate_provider: RateProvider | None =
             "our_iv": round(our_iv, 4) if np.isfinite(our_iv) else None,
             "alpaca_delta": getattr(ag, "delta", None),
             "our_delta": round(float(our_g["delta"]), 4) if our_g else None,
+            "alpaca_gamma": getattr(ag, "gamma", None),
             "our_gamma": round(float(our_g["gamma"]), 5) if our_g else None,
             "our_vega_pct": round(float(our_g["vega"]) / 100, 4) if our_g else None,
             "our_theta_day": round(float(our_g["theta"]) / pricing.YEAR_DAYS, 4) if our_g else None,

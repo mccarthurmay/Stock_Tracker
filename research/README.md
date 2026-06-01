@@ -99,16 +99,19 @@ point-in-time risk-free rate from FRED (`DGS1MO`, with a constant fallback).
   `theta_day` (per calendar day), `rho_pct` (per 1% rate).
 
 Validated by: textbook BS values, exact put-call parity, exact IV round-trip
-(incl. 0DTE), CRR sanity, and on real stored bars IV round-trips to the input
-price with delta/gamma matching an independent recompute.
+(incl. 0DTE); on real stored bars IV round-trips to the input price with
+delta/gamma matching an independent recompute; and the CRR tree's
+delta/gamma/theta match Black-Scholes to <0.2% for short-dated contracts.
 
-> **Confirmed feed limitation:** the free indicative feed returns **no IV,
-> Greeks, or trades** — only quotes (verified: a 500-contract SPY chain had 0
-> IV / 0 Greeks / 0 trades, 500 quotes). So (a) self-computing Greeks is
-> mandatory, not optional, and (b) a true *vendor* IV/Greeks comparison is a
-> **Phase-B** activity (ORATS/Polygon). `greeks-sanity` therefore does a live
-> self-consistency check (our IV/Greeks from the quote mid; ATM delta ≈ ±0.5),
-> with the `alpaca_*` columns null on the free tier.
+> **On the feed and the live snapshot:** the free indicative feed *does* carry
+> latest IV/Greeks/trades for liquid contracts (a full SPY chain returned
+> ~12.3k of ~14.6k contracts with IV+Greeks). But those snapshot values are
+> *latest-only* (no history) and on the indicative feed are approximations, so
+> `greeks-sanity` is a coarse live cross-check, not ground truth — and during
+> closed markets its IV/delta fields are stale/asymmetric. A trustworthy
+> IV/Greeks comparison is a **Phase-B** activity on vendor data (ORATS/Polygon).
+> Self-computing per-bar Greeks remains mandatory because **no historical**
+> IV/Greeks series exists on Alpaca (ROADMAP §2a).
 
 Everything here is approximate and IV-derived features remain **Phase-B-only
 for belief** (ROADMAP §3).
