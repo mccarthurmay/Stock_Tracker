@@ -125,6 +125,24 @@ CREATE TABLE IF NOT EXISTS option_greeks (
     PRIMARY KEY (option_symbol, timeframe, ts)
 );
 
+-- Executed-configuration ledger (ROADMAP §4, §6.5). Every distinct backtest
+-- configuration actually run is recorded here; the COUNT of distinct
+-- config_hash values is the N fed into the multiple-testing correction (DSR /
+-- White's Reality Check). Counting registered hypotheses instead would be
+-- anti-conservative -- this captures the garden of forking paths.
+CREATE TABLE IF NOT EXISTS config_runs (
+    config_hash  VARCHAR     NOT NULL,
+    hypothesis   VARCHAR,
+    phase        VARCHAR,
+    params_json  VARCHAR,
+    dataset      VARCHAR,
+    split        VARCHAR,
+    first_run_ts TIMESTAMPTZ NOT NULL,
+    last_run_ts  TIMESTAMPTZ NOT NULL,
+    run_count    BIGINT      NOT NULL,
+    PRIMARY KEY (config_hash)
+);
+
 CREATE SEQUENCE IF NOT EXISTS ingest_log_seq START 1;
 CREATE TABLE IF NOT EXISTS ingest_log (
     id           BIGINT DEFAULT nextval('ingest_log_seq'),
@@ -186,6 +204,39 @@ class ResearchStore:
     def upsert_option_greeks(self, df: pd.DataFrame) -> int:
         return self._upsert("option_greeks", df, GREEKS_COLS)
 
+    def record_config_run(self, config_hash: str, hypothesis: str, phase: str,
+                          params_json: str, dataset: str = "", split: str = "") -> int:
+        """Upsert one executed configuration; return its cumulative run_count.
+
+        Idempotent on config_hash: re-running the same config bumps run_count
+        and last_run_ts but does not inflate the *distinct-config* count that
+        the multiple-testing correction uses.
+        """
+        existing = self.con.execute(
+            "SELECT run_count FROM config_runs WHERE config_hash = ?", [config_hash]
+        ).fetchone()
+        if existing is None:
+            self.con.execute(
+                "INSERT INTO config_runs (config_hash, hypothesis, phase, params_json, "
+                "dataset, split, first_run_ts, last_run_ts, run_count) "
+                "VALUES (?, ?, ?, ?, ?, ?, now(), now(), 1)",
+                [config_hash, hypothesis, phase, params_json, dataset, split],
+            )
+            return 1
+        self.con.execute(
+            "UPDATE config_runs SET last_run_ts = now(), run_count = run_count + 1 "
+            "WHERE config_hash = ?", [config_hash],
+        )
+        return int(existing[0]) + 1
+
+    def distinct_config_count(self, phase: Optional[str] = None) -> int:
+        """N for the multiple-testing correction: distinct configs executed."""
+        if phase:
+            return self.con.execute(
+                "SELECT count(*) FROM config_runs WHERE phase = ?", [phase]
+            ).fetchone()[0]
+        return self.con.execute("SELECT count(*) FROM config_runs").fetchone()[0]
+
     def log_ingest(self, kind: str, symbol: Optional[str], timeframe: Optional[str],
                    start_ts, end_ts, feed: Optional[str], rows_written: int,
                    note: str = "") -> None:
@@ -239,6 +290,6 @@ class ResearchStore:
     def table_counts(self) -> dict[str, int]:
         out = {}
         for t in ("underlying_bars", "option_bars", "option_greeks",
-                  "contract_universe", "ingest_log"):
+                  "contract_universe", "config_runs", "ingest_log"):
             out[t] = self.con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
         return out

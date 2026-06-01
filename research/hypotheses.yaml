@@ -1,0 +1,77 @@
+# Hypothesis registry (ROADMAP §4) — the anti-data-mining core.
+#
+# RULES (enforced by hypotheses.py, fail-closed):
+#   * Every hypothesis needs a real economic rationale (>=15 chars, but write a
+#     sentence — "why should this work?"). No rationale -> rejected.
+#   * expected_direction in {long, short, long_or_short}.
+#   * indicators must exist in the registry. Any IV-derived (phase-B) indicator
+#     makes the whole hypothesis phase-B (not believable on Alpaca data).
+#   * Keep this set SMALL and reasoned (tens, not thousands). Brute-forcing the
+#     combinatorial space is the primary failure mode (ROADMAP §0, §4).
+#   * Every config actually backtested is counted (config_runs) and feeds the
+#     multiple-testing correction. Adding a sweep value multiplies the count.
+#
+# This seed set is intentionally tiny. Expand only with a written story.
+
+version: 1
+hypotheses:
+  - id: oversold_mean_reversion
+    rationale: >
+      Short-horizon intraday selloffs in liquid underlyings often overshoot and
+      partially revert as liquidity providers fade the move; a low RSI marks
+      that exhaustion. Long-premium expresses the bounce with defined risk.
+    expected_direction: long
+    indicators:
+      - name: rsi
+        sweep: {window: [7, 14]}
+    notes: >
+      Classic and heavily mined — expect it to die under costs/multiple-testing.
+      Included as a baseline the apparatus should be able to reject.
+
+  - id: trend_pullback_continuation
+    rationale: >
+      In an established intraday uptrend (price above its moving average),
+      shallow pullbacks tend to resume rather than reverse, because trend
+      followers re-enter. Combine trend filter with a momentum dip.
+    expected_direction: long
+    indicators:
+      - name: price_vs_sma
+        sweep: {window: [20, 50]}
+      - name: rsi
+        params: {window: 14}
+
+  - id: volatility_squeeze_breakout
+    rationale: >
+      A contraction in Bollinger bandwidth (a "squeeze") reflects coiling
+      realized vol that historically precedes range expansion; long premium
+      benefits from the subsequent move regardless of direction.
+    expected_direction: long_or_short
+    indicators:
+      - name: bollinger_bw
+        sweep: {window: [10, 20]}
+      - name: realized_vol
+        params: {window: 20}
+
+  - id: gamma_scalp_zone
+    rationale: >
+      Near-ATM short-dated options carry the highest gamma, so small underlying
+      moves produce outsized delta swings; entries are filtered to a high-gamma,
+      near-the-money, low-DTE regime where that convexity is largest.
+    expected_direction: long_or_short
+    indicators:
+      - name: gamma
+      - name: moneyness
+      - name: dte
+
+  - id: iv_overpriced_fade
+    rationale: >
+      When self-computed IV sits in the top of its recent range it may be rich
+      relative to realized, favoring short premium. PHASE-B: IV from indicative
+      trade prints is noisy and mean-reversion here is partly an artifact, so
+      this is only believable on vendor IV data.
+    expected_direction: short
+    indicators:
+      - name: iv_rank
+        sweep: {window: [30, 60]}
+      - name: realized_vol
+        params: {window: 20}

@@ -13,11 +13,15 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone, date
 
+import json
+
 import pandas as pd
 
 from .client import AlpacaResearch
 from .storage import ResearchStore
-from . import ingest, universe, integrity, greeks
+from . import ingest, universe, integrity, greeks, hypotheses, features, registry
+# Importing indicators registers them as a side effect.
+from . import indicators  # noqa: F401
 
 
 def _window(days: float) -> tuple[datetime, datetime]:
@@ -111,6 +115,64 @@ def cmd_greeks_sanity(args, store):
     rows = greeks.live_sanity(client, [s.upper() for s in args.symbols],
                               div_yield=args.q, bs_max_dte=args.bs_max_dte)
     print(pd.DataFrame(rows).to_string(index=False))
+
+
+def cmd_indicators(args, store):
+    specs = registry.by_layer(args.layer) if args.layer else registry.all_specs()
+    print(f"{len(specs)} indicators"
+          + (f" in layer '{args.layer}'" if args.layer else "") + ":")
+    for s in specs:
+        rng = f" sweep={s.param_ranges}" if s.param_ranges else ""
+        print(f"  [{s.phase}] {s.name:16s} {s.layer:11s} params={s.params}{rng}")
+        print(f"       {s.description}")
+
+
+def cmd_hypotheses(args, store):
+    hyps = hypotheses.load()
+    summ = hypotheses.summarize(hyps)
+    print(f"{summ['hypotheses']} hypotheses validated  "
+          f"(phase A={summ['phase_A']}, phase B={summ['phase_B']})  "
+          f"-> {summ['total_configs']} total configs\n")
+    for h in hyps:
+        print(f"  [{h.phase}] {h.id}  ({h.expected_direction}, {len(h.configs())} configs)")
+        print(f"       uses: {', '.join(u.name for u in h.indicators)}")
+
+
+def cmd_features(args, store):
+    sym = args.option.upper()
+    df = features.feature_frame(store, sym, args.timeframe)
+    if df.empty:
+        print(f"No data for {sym} (ingest bars + compute greeks first).")
+        return
+    if args.hypothesis:
+        hyps = {h.id: h for h in hypotheses.load()}
+        if args.hypothesis not in hyps:
+            print(f"Unknown hypothesis {args.hypothesis!r}; known: {sorted(hyps)}")
+            return
+        h = hyps[args.hypothesis]
+        config = h.configs()[0]  # first concrete config for the preview
+        df = features.compute_for_config(df, config)
+        cols = ["ts"] + list(config.keys())
+        chash = hypotheses.config_hash(h.id, config)
+        if args.record:
+            n = store.record_config_run(chash, h.id, h.phase,
+                                        json.dumps(config, default=str),
+                                        dataset=sym, split="dev")
+            print(f"recorded config {chash} for {h.id} (run_count={n}, phase={h.phase})")
+        print(f"\n{h.id} [{h.phase}] config {chash}: {config}")
+    else:
+        names = args.indicators or ["rsi", "price_vs_sma", "realized_vol"]
+        df = features.compute(df, names)
+        cols = ["ts"] + names
+    print(df[cols].tail(args.tail).to_string(index=False))
+
+
+def cmd_config_count(args, store):
+    total = store.distinct_config_count()
+    a = store.distinct_config_count("A")
+    b = store.distinct_config_count("B")
+    print(f"Distinct configurations executed (feeds multiple-testing correction):")
+    print(f"  total={total}  phase A={a}  phase B={b}")
 
 
 def cmd_smoke(args, store):
@@ -244,6 +306,25 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--q", type=float, default=0.0)
     sp.add_argument("--bs-max-dte", type=int, default=2, dest="bs_max_dte")
     sp.set_defaults(func=cmd_greeks_sanity)
+
+    sp = sub.add_parser("indicators", help="list registered indicators")
+    sp.add_argument("--layer", default=None, help="filter by layer")
+    sp.set_defaults(func=cmd_indicators)
+
+    sp = sub.add_parser("hypotheses", help="validate + list hypotheses.yaml")
+    sp.set_defaults(func=cmd_hypotheses)
+
+    sp = sub.add_parser("features", help="compute indicators onto an option's bars")
+    sp.add_argument("--option", required=True)
+    sp.add_argument("--timeframe", default="1Min")
+    sp.add_argument("--indicators", nargs="*", help="indicator names (default: a few)")
+    sp.add_argument("--hypothesis", default=None, help="compute one hypothesis's first config")
+    sp.add_argument("--record", action="store_true", help="record the config in the run ledger")
+    sp.add_argument("--tail", type=int, default=8)
+    sp.set_defaults(func=cmd_features)
+
+    sp = sub.add_parser("config-count", help="distinct executed configs (for §6 correction)")
+    sp.set_defaults(func=cmd_config_count)
 
     sp = sub.add_parser("smoke", help="end-to-end tiny demo + checks")
     sp.add_argument("--symbol", default="SPY")

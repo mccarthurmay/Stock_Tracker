@@ -51,6 +51,12 @@ python -m research counts
 python -m research greeks --option SPY260619C00500000   # one contract -> option_greeks
 python -m research greeks-all --underlying SPY          # every option in option_bars
 python -m research greeks-sanity SPY260619C00500000     # live self-consistency check
+# M3 — indicators + hypothesis registry:
+python -m research indicators [--layer momentum]        # list registered indicators
+python -m research hypotheses                           # validate + list hypotheses.yaml
+python -m research features --option SPY260619C00500000 --indicators rsi roc
+python -m research features --option SPY260619C00500000 --hypothesis gamma_scalp_zone --record
+python -m research config-count                         # distinct executed configs (§6 correction)
 ```
 
 ## What's stored (DuckDB at `research/data/research.duckdb`)
@@ -61,6 +67,7 @@ python -m research greeks-sanity SPY260619C00500000     # live self-consistency 
 | `option_bars` | (option_symbol, timeframe, ts) | OHLCV + parsed contract fields + **`feed`** |
 | `contract_universe` | (option_symbol, as_of_date) | point-in-time snapshot; daily-snapshot OI |
 | `option_greeks` | (option_symbol, timeframe, ts) | self-computed IV + Greeks per bar (M2); labelled approximate |
+| `config_runs` | (config_hash) | executed-configuration ledger (M3); distinct count feeds ROADMAP §6.5 |
 | `ingest_log` | one row / pull | audit trail feeding ROADMAP §6.6 |
 
 ## Point-in-time guarantees (enforced by `integrity.py`)
@@ -116,9 +123,44 @@ delta/gamma/theta match Black-Scholes to <0.2% for short-dated contracts.
 Everything here is approximate and IV-derived features remain **Phase-B-only
 for belief** (ROADMAP §3).
 
-## Next: M3
+## M3 — indicator library + hypothesis registry (done)
 
-Indicator library + hypothesis registry: pure parameterized indicator
-functions over underlying and option/Greek series, each tagged with the data
-phase at which its output may be trusted, plus the executed-configuration
-counter that feeds the multiple-testing correction (ROADMAP §3, §4).
+The anti-data-mining core (ROADMAP §3, §4).
+
+- [registry.py](registry.py): `@register` decorator + `IndicatorSpec`. Each
+  indicator declares inputs, default params, sweep ranges, layer, and **data
+  phase** ('A' = believable on Alpaca data; 'B' = IV-derived, Phase-B-only).
+- [indicators.py](indicators.py): 19 pure, **causal** indicators across trend /
+  momentum / volatility / volume / greek / pricing / iv layers. No spread/flow
+  indicators — no historical quotes exist on Alpaca.
+- [hypotheses.py](hypotheses.py) + [hypotheses.yaml](hypotheses.yaml): the
+  registry. Every hypothesis MUST declare a written economic rationale, an
+  expected direction, and its indicators. Validation is **strict and
+  fail-closed** — no rationale / bad direction / unknown indicator is rejected.
+  A hypothesis using any phase-'B' indicator is itself phase 'B'.
+- [features.py](features.py): compute registered indicators onto an option's
+  aligned bars + Greeks.
+- `config_runs` table: every distinct backtested configuration is recorded;
+  the **distinct** count (idempotent on `config_hash`) is the N fed to the
+  multiple-testing correction (ROADMAP §6.5). Counting registered hypotheses
+  instead would be anti-conservative — this captures the garden of forking
+  paths (universe, params, split, …).
+
+Validated: known indicator values; a **no-lookahead** test (each rolling
+indicator's value at t is unchanged when future rows are truncated); strict
+hypothesis rejection of bad input; deterministic config hashing; and the
+ledger's distinct-vs-repeat counting (re-running a config bumps `run_count`
+but not the distinct count).
+
+> **Discipline reminder (ROADMAP §0, §4):** keep `hypotheses.yaml` small and
+> reasoned (tens, not thousands). Adding a sweep value multiplies the executed
+> config count and raises the bar the result must clear. The seed set is tiny
+> and includes a deliberately over-mined baseline (`oversold_mean_reversion`)
+> the apparatus should be able to reject.
+
+## Next: M4
+
+Event-driven backtester with the always-on cost model (worse-side fills,
+modeled-spread sweep, fat-tailed slippage), the signal-on-close-`t` →
+fill-`t+1`-open invariant, a trade log + equity curve, and `metrics.py`
+(expectancy + risk constraints; never win rate alone) — ROADMAP §1, §5.

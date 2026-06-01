@@ -3,4 +3,6 @@
 alpaca-py>=0.30.0
 duckdb>=1.0.0
 pandas>=2.0.0
+scipy>=1.10.0
+PyYAML>=6.0
 python-dotenv>=1.0.0
