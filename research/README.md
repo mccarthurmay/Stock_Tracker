@@ -334,6 +334,50 @@ test says **no robust intraday long-premium edge** for a retail account, across
 generic and structural signals, under realistic costs. Believing otherwise
 would require vendor data (Phase B) and a mechanism these signals don't capture.
 
+### Short premium (2026-06-01): the engine generalized to selling
+
+The backtester was generalized to **short premium** (`position: short_premium`
+on a hypothesis → engine `side = -1`: entry sells below mid, exit buys back
+above mid, P&L = `side·(exit−entry)`, and stop/TP key off the *signed* position
+P&L so a short is "stopped" when the option price **rises**). Three short-vol
+hypotheses were added with written rationale: `short_high_iv`,
+`short_theta_midday`, `short_low_rvol_calm`. (16 unit tests pin the P&L signs,
+stop/TP direction, and fill sides; long behaviour is unchanged.)
+
+| hypothesis | phase | trades | effN | expectancy | SR/t | DSR | surv |
+|---|---|---|---|---|---|---|---|
+| short_high_iv (w=30) | B | 1599 | 1079.6 | −27.02 | −0.47 | 0.00 | no |
+| short_high_iv (w=60) | B | 1366 | 949.1 | −27.61 | −0.45 | 0.00 | no |
+| short_theta_midday | A | 518 | 264.1 | −36.69 | −0.33 | 0.00 | no |
+| short_low_rvol_calm (w=10) | A | 586 | 320.3 | −37.68 | −0.42 | 0.00 | no |
+| short_low_rvol_calm (w=20) | A | 436 | 237.3 | −33.93 | −0.40 | 0.00 | no |
+
+**SURVIVORS: still none** (full set: 11 hypotheses, 18 configs, Reality Check
+p = 1.000). But the *reason* short premium failed overturned the prior — and is
+the interesting result:
+
+- I expected the classic theta profile (high win rate, positive expectancy,
+  rejected by the **negative-skew tail check**). Instead these have a **~21%
+  win rate and negative expectancy** — they fail the *first* gate.
+- Cost is only ~$1.30/trade (vs the $27 loss); short premium is **not** a cost
+  story. Gross expectancy is already ≈ −26.
+- Mechanism (diagnosed from the trade distribution): intraday short ATM premium
+  is **short-gamma with negligible theta capture**. Over 5-minute holds a
+  multi-day option's decay is tiny but its gamma exposure to the underlying's
+  moves is large — so you're short realized vol with almost no decay offset and
+  lose on the moves. A take-profit at 50% of credit barely fires (the IV signal
+  flips flat first) and doesn't help.
+- The "win small / blow up" negative-skew profile the objective guards against
+  **requires holding to harvest theta over days**, which intraday 5-min trading
+  on near-ATM weeklies structurally cannot do. The skew check *did* also fire
+  (skew −0.85 to −0.99, worst trade −$438, drawdown 100%), but it wasn't even
+  needed — expectancy alone killed it.
+
+Net: across **long and short** premium, generic, structural, and vol-based
+signals — 11 hypotheses, 18 configs, effective-N up to ~1,080 — **no robust
+intraday-options edge survives realistic costs and multiple-testing
+correction**. That is the project's honest verdict on free data.
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /

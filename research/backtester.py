@@ -31,12 +31,17 @@ from .costs import CostModel
 @dataclass
 class BacktestConfig:
     contracts: int = 1
-    stop_loss_frac: float = 0.5      # exit if premium falls 50% from entry
-    take_profit_frac: float | None = 1.0  # exit if premium doubles
+    side: int = +1                   # +1 = long premium (buy), -1 = short premium (sell)
+    stop_loss_frac: float = 0.5      # exit if position P&L falls -stop_loss_frac of premium
+    take_profit_frac: float | None = 1.0  # exit if position P&L gains +take_profit_frac
     max_hold_bars: int | None = 60   # force-exit after N bars
     price_col: str = "opt_close"     # mid proxy to fill against (next-open ideally)
     open_col: str = "opt_open"       # next-bar open used for fills
     seed: int = 0
+
+    def __post_init__(self):
+        if self.side not in (+1, -1):
+            raise ValueError(f"side must be +1 (long) or -1 (short), got {self.side}")
 
 
 def _moneyness_abs(row) -> float:
@@ -58,6 +63,7 @@ def run_backtest(frame: pd.DataFrame, signal: pd.Series,
     """
     cm = cost_model or CostModel()
     cfg = config or BacktestConfig()
+    side = cfg.side
     rng = np.random.default_rng(cfg.seed)
 
     df = frame.reset_index(drop=True)
@@ -81,9 +87,14 @@ def run_backtest(frame: pd.DataFrame, signal: pd.Series,
         if pos is not None and i > pos["entry_i"]:
             close_i = float(df.at[i, cfg.price_col])
             entry = pos["entry_price"]
-            stop_hit = close_i <= entry * (1 - cfg.stop_loss_frac)
+            # Position P&L as a fraction of premium, signed by side: for a long
+            # (side=+1) price-down is a loss; for a short (side=-1) price-UP is
+            # the loss. Stop/TP key off this signed fraction so they flip
+            # correctly. (entry guarded > 0 so the ratio is well-defined.)
+            pnl_frac = side * (close_i / entry - 1.0) if entry > 0 else 0.0
+            stop_hit = pnl_frac <= -cfg.stop_loss_frac
             tp_hit = (cfg.take_profit_frac is not None
-                      and close_i >= entry * (1 + cfg.take_profit_frac))
+                      and pnl_frac >= cfg.take_profit_frac)
             held = i - pos["entry_i"]
             max_hit = cfg.max_hold_bars is not None and held >= cfg.max_hold_bars
             sig_exit = sig.iat[i] == 0
@@ -98,10 +109,13 @@ def run_backtest(frame: pd.DataFrame, signal: pd.Series,
                 fi = i if no_next else i + 1
                 fill_mid = _open(fi)
                 is_stop = reason == "stop"
+                # Exiting reverses direction: cm.exit_fill takes the ENTRY side
+                # and internally flips it (a long sells out, a short buys back).
                 exit_px = float(cm.exit_fill(fill_mid, df.at[fi, "dte_days"],
-                                             _moneyness_abs(df.loc[fi]), side=+1,
+                                             _moneyness_abs(df.loc[fi]), side=side,
                                              is_stop=is_stop, rng=rng))
-                gross = (exit_px - pos["entry_fill"]) * cfg.contracts * cm.contract_multiplier
+                # P&L signed by side: long earns exit-entry, short earns entry-exit.
+                gross = side * (exit_px - pos["entry_fill"]) * cfg.contracts * cm.contract_multiplier
                 exit_comm = cm.commission(cfg.contracts)
                 net = gross - exit_comm - pos["entry_commission"]
                 equity += gross - exit_comm  # entry commission already debited
@@ -120,7 +134,7 @@ def run_backtest(frame: pd.DataFrame, signal: pd.Series,
             j = i + 1
             entry_mid = _open(j)
             entry_px = float(cm.entry_fill(entry_mid, df.at[j, "dte_days"],
-                                           _moneyness_abs(df.loc[j]), side=+1))
+                                           _moneyness_abs(df.loc[j]), side=side))
             entry_comm = cm.commission(cfg.contracts)
             equity -= entry_comm
             pos = {
@@ -129,7 +143,7 @@ def run_backtest(frame: pd.DataFrame, signal: pd.Series,
                 "record": {
                     "option_symbol": (df.at[j, "option_symbol"]
                                       if "option_symbol" in df.columns else None),
-                    "side": "long", "contracts": cfg.contracts,
+                    "side": "long" if side == +1 else "short", "contracts": cfg.contracts,
                     "signal_i": i, "signal_ts": df.at[i, "ts"],
                     "entry_i": j, "entry_ts": df.at[j, "ts"],
                     "entry_mid": entry_mid, "entry_fill": round(entry_px, 4),

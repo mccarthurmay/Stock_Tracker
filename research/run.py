@@ -16,6 +16,8 @@ command, used only on a candidate that already cleared everything else.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pandas as pd
 
@@ -33,6 +35,8 @@ def _pooled_validation_trades(store, hyp, config, symbols, timeframe,
     Returns (trade_log, per_trade_returns).
     """
     logs = []
+    # honor the hypothesis's position (long vs short premium) on the engine side
+    cfg = dataclasses.replace(bt_cfg, side=hyp.side)
     for sym in symbols:
         frame, sig = signals.signal_for_hypothesis(store, hyp, config, sym, timeframe)
         if frame.empty:
@@ -45,7 +49,7 @@ def _pooled_validation_trades(store, hyp, config, symbols, timeframe,
             continue
         res = backtester.run_backtest(sub_f, sub_s,
                                       cost_model=CostModel(spread_mult=spread_mult),
-                                      config=bt_cfg)
+                                      config=cfg)
         if not res["trade_log"].empty:
             logs.append(res["trade_log"])
     if not logs:

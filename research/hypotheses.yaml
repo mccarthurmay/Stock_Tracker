@@ -114,3 +114,53 @@ hypotheses:
     indicators:
       - name: overnight_gap
       - name: minutes_since_open
+
+  # --- SHORT-PREMIUM hypotheses (position: short_premium -> the engine SELLS
+  #     the option and collects the credit). This is where positive expectancy
+  #     usually lives -- you earn theta instead of paying it -- BUT it carries a
+  #     "win small, blow up" NEGATIVE-SKEW tail: many small gains, rare large
+  #     losses when the underlying moves against an unhedged short. The whole
+  #     point of running these is to watch the objective's skew/tail check
+  #     (ROADMAP §1) reject a strategy a naive win-rate optimizer would love.
+  #     Caveat: naked short premium has undefined max loss; per-trade returns
+  #     here use the credit collected as denominator, which FLATTERS risk-adjusted
+  #     metrics -- so DSR/Sharpe are NOT the right lens. Judge on skew, drawdown,
+  #     and worst-trade.
+
+  - id: short_high_iv
+    rationale: >
+      When self-computed IV sits high in its recent range, options are priced
+      for more movement than typically realizes, so selling that premium and
+      letting it decay has positive *gross* expected value. PHASE-B for belief:
+      IV from indicative trade prints is noisy. Expect the negative-skew tail to
+      show up as the underlying occasionally runs against the short.
+    expected_direction: short
+    position: short_premium
+    indicators:
+      - name: iv_rank
+        sweep: {window: [30, 60]}
+
+  - id: short_theta_midday
+    rationale: >
+      Theta decay on short-dated options is steepest as expiry approaches, and
+      the midday session is typically the calmest (lowest realized vol) part of
+      the day. Selling near-dated premium midday harvests decay during the
+      quietest window. The tail risk is an afternoon trend day.
+    expected_direction: short
+    position: short_premium
+    indicators:
+      - name: time_of_day_bucket
+      - name: dte
+
+  - id: short_low_rvol_calm
+    rationale: >
+      When recent realized volatility is in the bottom quartile of its range,
+      the market is calm and option premium tends to be rich relative to the
+      small moves that follow; selling into that calm collects theta. The
+      danger is precisely that calm precedes the occasional volatility spike --
+      the classic short-vol negative-skew profile the objective must catch.
+    expected_direction: short
+    position: short_premium
+    indicators:
+      - name: realized_vol
+        sweep: {window: [10, 20]}

@@ -31,6 +31,7 @@ from .settings import RESEARCH_DIR
 
 HYPOTHESES_PATH = RESEARCH_DIR / "hypotheses.yaml"
 _DIRECTIONS = ("long", "short", "long_or_short")
+_POSITIONS = ("long_premium", "short_premium")
 _REQUIRED = ("id", "rationale", "expected_direction", "indicators")
 
 
@@ -48,11 +49,17 @@ class Hypothesis:
     expected_direction: str
     indicators: tuple[IndicatorUse, ...]
     notes: str = ""
+    position: str = "long_premium"   # 'long_premium' (buy) or 'short_premium' (sell)
 
     @property
     def phase(self) -> str:
         return "B" if any(registry.get(u.name).phase == "B"
                           for u in self.indicators) else "A"
+
+    @property
+    def side(self) -> int:
+        """Backtester side: +1 long premium, -1 short premium."""
+        return -1 if self.position == "short_premium" else +1
 
     def configs(self) -> list[dict]:
         """Expand swept params into concrete per-indicator configurations."""
@@ -91,6 +98,9 @@ def _validate_one(raw: dict, idx: int) -> Hypothesis:
         raise ValueError(f"{where}: rationale too thin — give a real economic story")
     if raw["expected_direction"] not in _DIRECTIONS:
         raise ValueError(f"{where}: expected_direction must be one of {_DIRECTIONS}")
+    position = raw.get("position", "long_premium")
+    if position not in _POSITIONS:
+        raise ValueError(f"{where}: position must be one of {_POSITIONS}")
 
     uses = []
     for ind in raw["indicators"]:
@@ -106,6 +116,7 @@ def _validate_one(raw: dict, idx: int) -> Hypothesis:
         id=str(raw["id"]), rationale=str(raw["rationale"]).strip(),
         expected_direction=raw["expected_direction"],
         indicators=tuple(uses), notes=str(raw.get("notes", "")),
+        position=position,
     )
 
 

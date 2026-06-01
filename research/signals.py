@@ -48,6 +48,21 @@ def _entry_rule(hyp_id: str, df: pd.DataFrame) -> pd.Series:
         # only the calls/puts side is set by expected_direction; fire on a
         # meaningful up-gap, early in the session before it fills
         return ((df["overnight_gap"] > 0.003) & (df["minutes_since_open"].between(5, 120))).astype(int)
+
+    # --- short-premium entries (position: short_premium -> engine SELLS). The
+    #     entry condition just says "when to open the short"; the side is set by
+    #     the hypothesis's position field, not here.
+    if hyp_id == "short_high_iv":
+        ivr = next((c for c in df.columns if c.startswith("iv_rank")), "iv_rank")
+        return (df[ivr] > 0.7).astype(int)
+    if hyp_id == "short_theta_midday":
+        # sell premium midday, when intraday realized vol is calmest and theta
+        # bleeds steadily into the afternoon
+        return ((df["time_of_day_bucket"] == 1) & (df["dte"] <= 2)).astype(int)
+    if hyp_id == "short_low_rvol_calm":
+        rv = next((c for c in df.columns if c.startswith("realized_vol")), "realized_vol")
+        calm = df[rv].rolling(60, min_periods=20).apply(lambda w: (w.iloc[-1] <= w).mean(), raw=False)
+        return (calm < 0.25).astype(int)
     return z
 
 
