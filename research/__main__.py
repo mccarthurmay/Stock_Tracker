@@ -20,7 +20,7 @@ import pandas as pd
 from .client import AlpacaResearch
 from .storage import ResearchStore
 from . import (ingest, universe, integrity, greeks, hypotheses, features, registry,
-               signals, metrics as metrics_mod, backtester, validation, stats)
+               signals, metrics as metrics_mod, backtester, validation, stats, run)
 from .costs import CostModel
 # Importing indicators registers them as a side effect.
 from . import indicators  # noqa: F401
@@ -237,6 +237,60 @@ def cmd_backtest_runs(args, store):
     cols = ["run_ts", "hypothesis", "phase", "dataset", "spread_mult", "n_trades",
             "effective_n", "expectancy", "max_drawdown", "passed"]
     print(df[cols].to_string(index=False))
+
+
+def cmd_run_all(args, store):
+    """M6: run the full reasoned hypothesis set and report survivors honestly."""
+    if args.symbols:
+        symbols = [s.upper() for s in args.symbols]
+    else:
+        symbols = store.option_symbols(args.underlying.upper() if args.underlying else None)
+    if not symbols:
+        print("No option symbols in store. Ingest bars (and greeks) first.")
+        return
+    bt_cfg = backtester.BacktestConfig(max_hold_bars=args.max_hold,
+                                       take_profit_frac=(None if args.take_profit < 0 else args.take_profit),
+                                       stop_loss_frac=args.stop)
+    print(f"M6: running reasoned hypothesis set over {len(symbols)} contract(s), "
+          f"spread×{args.spread} ...\n")
+    out = run.run_all(store, symbols, timeframe=args.timeframe, spread_mult=args.spread,
+                      bt_cfg=bt_cfg, dsr_threshold=args.dsr_threshold)
+    rep = out["report"]
+    if rep.empty:
+        print("No configs produced results (insufficient data).")
+        return
+
+    print(f"{out['n_hypotheses']} hypotheses, {out['n_configs']} configs, "
+          f"N_trials(distinct)={out['n_trials']}\n")
+    print(f"{'hypothesis':>28} {'phase':>5} {'cfg':>10} {'trades':>7} {'effN':>6} "
+          f"{'expect':>9} {'SR/t':>7} {'DSR':>6} {'obj':>4} {'surv':>5}")
+    for _, r in rep.iterrows():
+        print(f"{r['hypothesis']:>28} {r['phase']:>5} {r['config_hash'][:8]:>10} "
+              f"{int(r['n_trades']):7d} {r['effective_n']:6.1f} {r['expectancy']:9.3f} "
+              f"{r['sharpe_per_trade']:7.2f} {r.get('dsr', 0):6.2f} "
+              f"{'Y' if r['objective_pass'] else 'n':>4} "
+              f"{'YES' if r.get('survives') else 'no':>5}")
+
+    rc = out["reality_check"]
+    print(f"\nWhite's Reality Check over {rc['n_strategies']} configs: "
+          f"best={rc['best']}  p={rc['p_value']:.3f}  "
+          f"({'no strategy beats luck at 5%' if rc['p_value'] > 0.05 else 'best beats luck at 5%'})")
+
+    n_surv = len(out["survivors"])
+    print(f"\n{'='*64}")
+    if n_surv == 0:
+        print("SURVIVORS: none. This is the expected, correct outcome (ROADMAP §0).")
+        print("No robust edge found in the reasoned set under realistic costs +")
+        print("multiple-testing correction. That is a success, not a failure.")
+    else:
+        print(f"SURVIVORS: {n_surv} config(s) cleared objective + DSR>{args.dsr_threshold}.")
+        print("Treat with SUSPICION: this is Phase-A indicative data. A survivor is")
+        print("only a CANDIDATE for the one-shot holdout, then Phase-B vendor data")
+        print("and forward testing (ROADMAP §6.6, §7). Do NOT believe it yet.")
+        for _, r in out["survivors"].iterrows():
+            print(f"  - {r['hypothesis']} {r['config_hash'][:8]}: "
+                  f"expectancy={r['expectancy']:.3f} DSR={r['dsr']:.3f} {r['config']}")
+    print('='*64)
 
 
 def _resolve_hyp(args):
@@ -622,6 +676,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--force-show", action="store_true", dest="force_show",
                     help="show prior result without attempting to re-open")
     sp.set_defaults(func=cmd_holdout)
+
+    sp = sub.add_parser("run-all", help="M6: run the reasoned hypothesis set, report survivors")
+    sp.add_argument("--underlying", default=None, help="run over all stored options of this underlying")
+    sp.add_argument("--symbols", nargs="*", help="explicit option symbols (overrides --underlying)")
+    sp.add_argument("--timeframe", default="1Min")
+    sp.add_argument("--spread", type=float, default=1.0)
+    sp.add_argument("--stop", type=float, default=0.5)
+    sp.add_argument("--take-profit", type=float, default=-1.0, dest="take_profit")
+    sp.add_argument("--max-hold", type=int, default=30, dest="max_hold")
+    sp.add_argument("--dsr-threshold", type=float, default=0.95, dest="dsr_threshold")
+    sp.set_defaults(func=cmd_run_all)
 
     sp = sub.add_parser("smoke", help="end-to-end tiny demo + checks")
     sp.add_argument("--symbol", default="SPY")

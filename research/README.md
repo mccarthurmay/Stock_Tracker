@@ -244,8 +244,55 @@ live run and fixed (falls back to Gaussian SR variance → DSR ≈ 0).
 > are same-regime. This exercises the machinery but is **not** a real
 > out-of-regime test — that is Phase B on deep vendor history (ROADMAP §6.1, §6.4).
 
-## Next: M6+
+## M6 — run the reasoned hypothesis set (done; result: no edge)
 
-Run the full reasoned hypothesis set and honestly report survivors (expect
-few/none); then Phase-B re-validation on vendor data, paper/forward testing,
-and only-then a small live deployment with hard risk controls — ROADMAP §M6–M9.
+[run.py](run.py) + the `run-all` command run EVERY hypothesis × config × the
+option universe through the M4/M5 pipeline: features computed causally per
+contract, validation-window trades pooled across contracts, then judged on the
+frozen objective, the **Deflated Sharpe Ratio** (deflated by the true
+distinct-config count), and **White's Reality Check** across all configs.
+
+```bash
+python -m research run-all --underlying SPY            # over all stored SPY options
+python -m research run-all --symbols SPY...C... SPY...P...   # explicit basket
+```
+
+### First run (2026-06-01), 42 SPY contracts × 7 trading days (2026-05-20→05-29)
+
+| hypothesis | phase | trades | effN | expectancy | SR/trade | DSR | survives |
+|---|---|---|---|---|---|---|---|
+| oversold_mean_reversion (w=7) | A | 294 | 28.9 | −27.21 | −1.10 | 0.00 | no |
+| oversold_mean_reversion (w=14) | A | 88 | 11.6 | −32.13 | −1.05 | 0.00 | no |
+| trend_pullback_continuation (w=20) | A | 65 | 23.5 | −24.06 | −1.27 | 0.00 | no |
+| trend_pullback_continuation (w=50) | A | 126 | 25.5 | −23.40 | −1.12 | 0.00 | no |
+| volatility_squeeze_breakout (w=10) | A | 152 | 25.5 | −19.82 | −0.98 | 0.00 | no |
+| volatility_squeeze_breakout (w=20) | A | 109 | 17.4 | −21.60 | −0.95 | 0.00 | no |
+| gamma_scalp_zone | A | 0 | 0.0 | — | — | 0.00 | no |
+| iv_overpriced_fade (w=30) | B | 274 | 36.4 | −19.83 | −1.04 | 0.00 | no |
+| iv_overpriced_fade (w=60) | B | 153 | 25.0 | −17.45 | −0.91 | 0.00 | no |
+
+White's Reality Check over 8 configs: **p = 1.000** — the best-of-N is
+indistinguishable from luck.
+
+**SURVIVORS: none.** This is the expected, correct outcome (ROADMAP §0): no
+robust edge in the reasoned set under realistic costs + multiple-testing
+correction. The over-mined baselines all have negative expectancy net of costs
+and negative per-trade Sharpe; the effective-N column (12–36 vs 65–294 raw)
+shows the heavy serial correlation the deflator is built to catch.
+
+Notes: `gamma_scalp_zone` produced **0 trades** — its conjunction (high gamma
+AND |moneyness|<0.01 AND DTE≤2) is too tight for this basket; that's a
+signal-definition observation, not an edge. And even a survivor here would be
+**Phase-A-only** on indicative data — not believable until Phase B.
+
+## Next: M7–M9 (not core engineering)
+
+- **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /
+  Polygon / CBOE); this is the real experiment (needs a paid source).
+- **M8** — paper/forward test on an Alpaca paper account; compare realized vs
+  modeled spread.
+- **M9** — conditional small live deploy with hard risk controls.
+
+With no Phase-A survivor, there is nothing to carry into M7 from this run — the
+honest stopping point. Expanding `hypotheses.yaml` requires a written economic
+story per the §4 discipline (and raises the multiple-testing bar).
