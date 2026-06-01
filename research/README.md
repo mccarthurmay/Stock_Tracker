@@ -60,6 +60,12 @@ python -m research config-count                         # distinct executed conf
 # M4 — backtester + cost model + objective:
 python -m research backtest --hypothesis oversold_mean_reversion --option SPY260619C00500000
 python -m research backtest-runs --hypothesis oversold_mean_reversion
+# M5 — validation harness (where edges die):
+python -m research validate --hypothesis oversold_mean_reversion --option SPY260619C00500000
+python -m research walk-forward --hypothesis oversold_mean_reversion --option SPY260619C00500000 --folds 4
+python -m research sensitivity --hypothesis oversold_mean_reversion --option SPY260619C00500000
+python -m research reality-check --hypothesis oversold_mean_reversion --option SPY260619C00500000
+python -m research holdout --hypothesis oversold_mean_reversion --option SPY260619C00500000  # ONCE
 ```
 
 ## What's stored (DuckDB at `research/data/research.duckdb`)
@@ -72,6 +78,7 @@ python -m research backtest-runs --hypothesis oversold_mean_reversion
 | `option_greeks` | (option_symbol, timeframe, ts) | self-computed IV + Greeks per bar (M2); labelled approximate |
 | `config_runs` | (config_hash) | executed-configuration ledger (M3); distinct count feeds ROADMAP §6.5 |
 | `backtest_runs` | one row / run | per spread-sweep-level metrics + objective verdict (M4) |
+| `holdout_log` | (hypothesis, dataset) | open-exactly-once guard (M5); a 2nd open is refused |
 | `ingest_log` | one row / pull | audit trail feeding ROADMAP §6.6 |
 
 ## Point-in-time guarantees (enforced by `integrity.py`)
@@ -200,9 +207,45 @@ lookahead bug was found by the timing test and fixed (uniform t→t+1 rule).
 > free indicative feed even a *passing* result would not be believable — that's
 > Phase B.
 
-## Next: M5
+## M5 — validation harness (done)
 
-Validation harness: train/validation/holdout split, walk-forward, parameter-
-sensitivity (plateau-not-spike), purged+embargoed CV / block bootstrap for
-effective N, and the multiple-testing correction (Deflated Sharpe / White's
-Reality Check) driven by the `config_runs` distinct-config count — ROADMAP §6.
+ROADMAP §6, "where most edges should die."
+
+- [stats.py](stats.py): the multiple-testing core. Probabilistic Sharpe Ratio,
+  expected-max-Sharpe of N trials, the **Deflated Sharpe Ratio** (PSR against
+  that data-mined benchmark), and **White's Reality Check** (stationary
+  block-bootstrap p-value for the best of N). The N is the **distinct-config
+  count from `config_runs`** (ROADMAP §4) — not the hypothesis count.
+- [validation.py](validation.py): chronological **train/validation/holdout**
+  splits (no shuffle, no leakage; holdout is the most-recent slice), rolling/
+  anchored **walk-forward** windows, and **parameter sensitivity** (a real edge
+  is a broad plateau, not a spike — curve-fit detector).
+- `holdout_log` + `holdout` command: the holdout is **opened exactly once**; a
+  second open is refused at the storage layer (ROADMAP §6.1).
+- Commands: `validate` (train/val + DSR, holdout locked), `walk-forward`,
+  `sensitivity`, `reality-check`, `holdout`.
+
+Validated: PSR ≈ 0.5 at its own SR and monotone in the benchmark; E[max SR]
+grows with N; a **noise** strategy among 200 trials gets **DSR ≈ 0** while a
+genuine strong edge with few trials clears DSR > 0.95; Reality Check gives a
+large p under the null and a small p when one real winner is planted; splits
+are disjoint/ordered/holdout-newest; the open-once guard refuses a re-open. A
+PSR `sqrt`-of-negative bug (→ `nan` for strongly negative SR) was found on the
+live run and fixed (falls back to Gaussian SR variance → DSR ≈ 0).
+
+> **What the apparatus does on real data:** the over-mined
+> `oversold_mean_reversion` baseline is rejected through **every** lens — train,
+> validation, DSR (deflated by the distinct-config N), sensitivity, reality
+> check, and finally the one-shot holdout (failing all four objective
+> constraints). Rejection is the success case (ROADMAP prior).
+
+> **Shallow-history caveat (real, observed):** the stored demo bars span ~one
+> day, so train/val/holdout collapse onto the same date and walk-forward folds
+> are same-regime. This exercises the machinery but is **not** a real
+> out-of-regime test — that is Phase B on deep vendor history (ROADMAP §6.1, §6.4).
+
+## Next: M6+
+
+Run the full reasoned hypothesis set and honestly report survivors (expect
+few/none); then Phase-B re-validation on vendor data, paper/forward testing,
+and only-then a small live deployment with hard risk controls — ROADMAP §M6–M9.

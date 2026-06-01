@@ -173,6 +173,21 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
     PRIMARY KEY (id)
 );
 
+-- Holdout-open guard (ROADMAP §6.1, §6.6). The holdout is touched EXACTLY
+-- ONCE, at the very end. Every open is recorded here; opening the same
+-- (hypothesis, dataset) holdout a second time is a protocol violation the
+-- harness refuses, so a survivor can't be quietly re-tested until it passes.
+CREATE TABLE IF NOT EXISTS holdout_log (
+    hypothesis  VARCHAR     NOT NULL,
+    dataset     VARCHAR     NOT NULL,
+    opened_ts   TIMESTAMPTZ NOT NULL,
+    config_hash VARCHAR,
+    expectancy  DOUBLE,
+    passed      BOOLEAN,
+    reasons     VARCHAR,
+    PRIMARY KEY (hypothesis, dataset)
+);
+
 CREATE SEQUENCE IF NOT EXISTS ingest_log_seq START 1;
 CREATE TABLE IF NOT EXISTS ingest_log (
     id           BIGINT DEFAULT nextval('ingest_log_seq'),
@@ -275,6 +290,31 @@ class ResearchStore:
              m.return_skew, m.worst_trade, passed, reasons],
         )
 
+    def holdout_already_opened(self, hypothesis: str, dataset: str) -> Optional[dict]:
+        """Return the prior holdout open for (hypothesis, dataset), or None."""
+        row = self.con.execute(
+            "SELECT opened_ts, config_hash, expectancy, passed, reasons "
+            "FROM holdout_log WHERE hypothesis = ? AND dataset = ?",
+            [hypothesis, dataset],
+        ).fetchone()
+        if row is None:
+            return None
+        return {"opened_ts": row[0], "config_hash": row[1], "expectancy": row[2],
+                "passed": row[3], "reasons": row[4]}
+
+    def record_holdout_open(self, *, hypothesis: str, dataset: str, config_hash: str,
+                            expectancy: float, passed: bool, reasons: str) -> None:
+        """Record a holdout open. Fails if it was already opened (open-once)."""
+        if self.holdout_already_opened(hypothesis, dataset) is not None:
+            raise RuntimeError(
+                f"holdout for ({hypothesis}, {dataset}) was already opened — "
+                "the holdout is opened EXACTLY ONCE (ROADMAP §6.1). Refusing.")
+        self.con.execute(
+            "INSERT INTO holdout_log (hypothesis, dataset, opened_ts, config_hash, "
+            "expectancy, passed, reasons) VALUES (?, ?, now(), ?, ?, ?, ?)",
+            [hypothesis, dataset, config_hash, expectancy, passed, reasons],
+        )
+
     def read_backtest_runs(self, hypothesis: Optional[str] = None) -> pd.DataFrame:
         if hypothesis:
             return self.con.execute(
@@ -344,6 +384,7 @@ class ResearchStore:
     def table_counts(self) -> dict[str, int]:
         out = {}
         for t in ("underlying_bars", "option_bars", "option_greeks",
-                  "contract_universe", "config_runs", "backtest_runs", "ingest_log"):
+                  "contract_universe", "config_runs", "backtest_runs",
+                  "holdout_log", "ingest_log"):
             out[t] = self.con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
         return out

@@ -20,7 +20,7 @@ import pandas as pd
 from .client import AlpacaResearch
 from .storage import ResearchStore
 from . import (ingest, universe, integrity, greeks, hypotheses, features, registry,
-               signals, metrics as metrics_mod, backtester)
+               signals, metrics as metrics_mod, backtester, validation, stats)
 from .costs import CostModel
 # Importing indicators registers them as a side effect.
 from . import indicators  # noqa: F401
@@ -239,6 +239,183 @@ def cmd_backtest_runs(args, store):
     print(df[cols].to_string(index=False))
 
 
+def _resolve_hyp(args):
+    hyps = {h.id: h for h in hypotheses.load()}
+    if args.hypothesis not in hyps:
+        print(f"Unknown hypothesis {args.hypothesis!r}; known: {sorted(hyps)}")
+        return None
+    return hyps[args.hypothesis]
+
+
+def cmd_validate(args, store):
+    """Evaluate on train + validation (NOT holdout), report DSR vs distinct-N."""
+    h = _resolve_hyp(args)
+    if h is None:
+        return
+    config = h.configs()[args.config_idx]
+    sym = args.option.upper()
+    frame, _ = signals.signal_for_hypothesis(store, h, config, sym, args.timeframe)
+    if frame.empty:
+        print(f"No data for {sym}.")
+        return
+    splits = validation.chronological_splits(frame["ts"])
+    bt_cfg = backtester.BacktestConfig(max_hold_bars=args.max_hold,
+                                       take_profit_frac=(None if args.take_profit < 0 else args.take_profit),
+                                       stop_loss_frac=args.stop)
+    print(f"{h.id} [{h.phase}] config {hypotheses.config_hash(h.id, config)} on {sym}")
+    print(f"  splits: train {splits['train'].start.date()}..{splits['train'].end.date()} | "
+          f"val ..{splits['validation'].end.date()} | HOLDOUT LOCKED ..{splits['holdout'].end.date()}\n")
+    print(f"{'split':>11} {'trades':>7} {'effN':>6} {'expect':>9} {'sharpe':>7} {'maxDD':>7} {'pass':>5}")
+    last_m = None
+    for name in ("train", "validation"):
+        m = validation.evaluate_split(store, h, config, sym, splits[name],
+                                      args.timeframe, args.spread, bt_cfg)
+        v = metrics_mod.passes_objective(m)
+        print(f"{name:>11} {m.n_trades:7d} {m.effective_n:6.1f} {m.expectancy:9.3f} "
+              f"{m.sharpe:7.2f} {m.max_drawdown*100:6.1f}% {'YES' if v.passed else 'no':>5}")
+        last_m = m
+
+    # Deflated Sharpe on validation, deflated by the distinct-config count.
+    res = backtester.run_backtest(
+        frame[splits['validation'].mask(frame['ts'])].reset_index(drop=True),
+        signals.signal_for_hypothesis(store, h, config, sym, args.timeframe)[1][
+            splits['validation'].mask(frame['ts'])].reset_index(drop=True),
+        cost_model=CostModel(spread_mult=args.spread), config=bt_cfg)
+    r = metrics_mod.per_trade_returns(res["trade_log"])
+    n_trials = max(store.distinct_config_count(), 1)
+    sr, _, _ = stats.sharpe_stats(r)
+    dsr = stats.deflated_sharpe_ratio(sr, r, n_trials)
+    print(f"\nDeflated Sharpe (validation), N_trials={n_trials} distinct configs:")
+    print(f"  per-trade SR={sr:.3f}  must beat E[max]={dsr['benchmark_sr']:.3f}  "
+          f"-> DSR={dsr['dsr']:.3f}  (n_obs={dsr['n_obs']})")
+    print(f"  {'SURVIVES' if (dsr['dsr'] or 0) > 0.95 else 'does NOT survive'} the "
+          f"data-mining-adjusted bar (DSR>0.95).")
+    print(f"\nReminder: holdout NOT opened here. On the indicative free feed a "
+          f"pass is still Phase-A only (ROADMAP sec 2d).")
+
+
+def cmd_walk_forward(args, store):
+    h = _resolve_hyp(args)
+    if h is None:
+        return
+    config = h.configs()[args.config_idx]
+    sym = args.option.upper()
+    frame, _ = signals.signal_for_hypothesis(store, h, config, sym, args.timeframe)
+    if frame.empty:
+        print(f"No data for {sym}.")
+        return
+    folds = validation.walk_forward_windows(frame["ts"], n_folds=args.folds,
+                                            anchored=args.anchored)
+    bt_cfg = backtester.BacktestConfig(max_hold_bars=args.max_hold,
+                                       take_profit_frac=(None if args.take_profit < 0 else args.take_profit),
+                                       stop_loss_frac=args.stop)
+    print(f"{h.id} walk-forward, {len(folds)} folds ({'anchored' if args.anchored else 'rolling'}) on {sym}")
+    print(f"  NOTE: ~one regime in Alpaca history -> few, same-regime folds; "
+          f"interpret cautiously (ROADMAP sec 6.4)\n")
+    print(f"{'fold':>5} {'test window':>23} {'trades':>7} {'expect':>9} {'sharpe':>7} {'pass':>5}")
+    for k, fold in enumerate(folds):
+        m = validation.evaluate_split(store, h, config, sym, fold["test"],
+                                      args.timeframe, args.spread, bt_cfg)
+        v = metrics_mod.passes_objective(m)
+        win = f"{fold['test'].start.date()}..{fold['test'].end.date()}"
+        print(f"{k:5d} {win:>23} {m.n_trades:7d} {m.expectancy:9.3f} "
+              f"{m.sharpe:7.2f} {'YES' if v.passed else 'no':>5}")
+
+
+def cmd_sensitivity(args, store):
+    h = _resolve_hyp(args)
+    if h is None:
+        return
+    sym = args.option.upper()
+    bt_cfg = backtester.BacktestConfig(max_hold_bars=args.max_hold,
+                                       take_profit_frac=(None if args.take_profit < 0 else args.take_profit),
+                                       stop_loss_frac=args.stop)
+    df = validation.parameter_sensitivity(store, h, sym, split=None,
+                                          timeframe=args.timeframe,
+                                          spread_mult=args.spread, bt_cfg=bt_cfg)
+    if df.empty:
+        print(f"No data for {sym}.")
+        return
+    print(f"{h.id} parameter sensitivity on {sym} ({len(df)} configs):")
+    print(f"  a real edge is a broad PLATEAU, not a spike (ROADMAP sec 6.3)\n")
+    for _, row in df.iterrows():
+        print(f"  {row['config_hash']}  expectancy={row['expectancy']:9.3f}  "
+              f"sharpe={row['sharpe']:6.2f}  n={int(row['n_trades'])}  {row['config']}")
+    if "is_spiky" in df.attrs:
+        verdict = "SPIKY (curve-fit risk)" if df.attrs["is_spiky"] else "plateau-like"
+        print(f"\n  spread of expectancy across configs={df.attrs['plateau_spread']:.3f} "
+              f"-> {verdict}")
+
+
+def cmd_reality_check(args, store):
+    """White's Reality Check across all configs of a hypothesis (best-of-N)."""
+    h = _resolve_hyp(args)
+    if h is None:
+        return
+    sym = args.option.upper()
+    bt_cfg = backtester.BacktestConfig(max_hold_bars=args.max_hold,
+                                       take_profit_frac=(None if args.take_profit < 0 else args.take_profit),
+                                       stop_loss_frac=args.stop)
+    candidates = {}
+    for cfg in h.configs():
+        frame, sig = signals.signal_for_hypothesis(store, h, cfg, sym, args.timeframe)
+        if frame.empty:
+            continue
+        res = backtester.run_backtest(frame, sig, cost_model=CostModel(spread_mult=args.spread),
+                                      config=bt_cfg)
+        r = metrics_mod.per_trade_returns(res["trade_log"])
+        if r.size >= 2:
+            candidates[hypotheses.config_hash(h.id, cfg)] = r
+    if not candidates:
+        print(f"No usable configs/trades for {sym}.")
+        return
+    rc = stats.whites_reality_check(candidates, n_boot=args.n_boot, seed=0)
+    print(f"{h.id} White's Reality Check over {rc['n_strategies']} configs on {sym}:")
+    print(f"  best config={rc['best']}  best_mean_return={rc.get('best_mean', 0):.4f}")
+    print(f"  bootstrap p-value={rc['p_value']:.3f}  (n_boot={rc['n_boot']})")
+    print(f"  => best survivor is {'NOT ' if rc['p_value'] > 0.05 else ''}"
+          f"distinguishable from luck at 5%.")
+
+
+def cmd_holdout(args, store):
+    """Open the holdout EXACTLY ONCE (ROADMAP sec 6.1). Refuses a second open."""
+    h = _resolve_hyp(args)
+    if h is None:
+        return
+    config = h.configs()[args.config_idx]
+    chash = hypotheses.config_hash(h.id, config)
+    sym = args.option.upper()
+    prior = store.holdout_already_opened(h.id, sym)
+    if prior is not None and not args.force_show:
+        print(f"REFUSED: holdout for ({h.id}, {sym}) was already opened at "
+              f"{prior['opened_ts']} (expectancy={prior['expectancy']}, "
+              f"passed={prior['passed']}). The holdout is opened EXACTLY ONCE.")
+        return
+    if prior is not None:
+        print(f"(showing prior holdout result; not re-opening)\n  {prior}")
+        return
+    frame, _ = signals.signal_for_hypothesis(store, h, config, sym, args.timeframe)
+    if frame.empty:
+        print(f"No data for {sym}.")
+        return
+    splits = validation.chronological_splits(frame["ts"])
+    bt_cfg = backtester.BacktestConfig(max_hold_bars=args.max_hold,
+                                       take_profit_frac=(None if args.take_profit < 0 else args.take_profit),
+                                       stop_loss_frac=args.stop)
+    m = validation.evaluate_split(store, h, config, sym, splits["holdout"],
+                                  args.timeframe, args.spread, bt_cfg)
+    v = metrics_mod.passes_objective(m)
+    store.record_holdout_open(hypothesis=h.id, dataset=sym, config_hash=chash,
+                              expectancy=m.expectancy, passed=v.passed,
+                              reasons=" | ".join(v.reasons))
+    print(f"HOLDOUT OPENED ONCE for {h.id} on {sym} (now locked):")
+    print(f"  trades={m.n_trades} effN={m.effective_n} expectancy={m.expectancy:.3f} "
+          f"maxDD={m.max_drawdown:.1%} skew={m.return_skew:.2f}")
+    for r in v.reasons:
+        print(f"    {r}")
+    print(f"  => {'CANDIDATE (survives holdout)' if v.passed else 'rejected on holdout - log the lesson, move on'}")
+
+
 def cmd_smoke(args, store):
     symbol = args.symbol.upper()
     tf = args.timeframe
@@ -409,6 +586,42 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("backtest-runs", help="show recorded backtest runs")
     sp.add_argument("--hypothesis", default=None)
     sp.set_defaults(func=cmd_backtest_runs)
+
+    def _add_eval_args(p, with_idx=True):
+        p.add_argument("--hypothesis", required=True)
+        p.add_argument("--option", required=True)
+        p.add_argument("--timeframe", default="1Min")
+        if with_idx:
+            p.add_argument("--config-idx", type=int, default=0, dest="config_idx")
+        p.add_argument("--spread", type=float, default=1.0)
+        p.add_argument("--stop", type=float, default=0.5)
+        p.add_argument("--take-profit", type=float, default=1.0, dest="take_profit")
+        p.add_argument("--max-hold", type=int, default=60, dest="max_hold")
+
+    sp = sub.add_parser("validate", help="train/val split eval + Deflated Sharpe (holdout LOCKED)")
+    _add_eval_args(sp)
+    sp.set_defaults(func=cmd_validate)
+
+    sp = sub.add_parser("walk-forward", help="rolling/anchored walk-forward folds")
+    _add_eval_args(sp)
+    sp.add_argument("--folds", type=int, default=4)
+    sp.add_argument("--anchored", action="store_true")
+    sp.set_defaults(func=cmd_walk_forward)
+
+    sp = sub.add_parser("sensitivity", help="parameter-sensitivity (plateau-not-spike)")
+    _add_eval_args(sp, with_idx=False)
+    sp.set_defaults(func=cmd_sensitivity)
+
+    sp = sub.add_parser("reality-check", help="White's Reality Check over a hypothesis's configs")
+    _add_eval_args(sp, with_idx=False)
+    sp.add_argument("--n-boot", type=int, default=2000, dest="n_boot")
+    sp.set_defaults(func=cmd_reality_check)
+
+    sp = sub.add_parser("holdout", help="open the holdout EXACTLY ONCE")
+    _add_eval_args(sp)
+    sp.add_argument("--force-show", action="store_true", dest="force_show",
+                    help="show prior result without attempting to re-open")
+    sp.set_defaults(func=cmd_holdout)
 
     sp = sub.add_parser("smoke", help="end-to-end tiny demo + checks")
     sp.add_argument("--symbol", default="SPY")

@@ -148,6 +148,24 @@ def compute_metrics(trade_log: pd.DataFrame, equity_curve: pd.DataFrame | None =
     )
 
 
+def per_trade_returns(trade_log: pd.DataFrame) -> np.ndarray:
+    """Per-trade return = net P&L / capital at risk (entry premium × mult × size).
+
+    For long premium the capital at risk is the premium paid, so this is a
+    clean fractional return for Sharpe-based stats (stats.py). Falls back to
+    net_pnl if entry fields are missing.
+    """
+    if trade_log is None or trade_log.empty:
+        return np.array([])
+    if {"entry_fill", "contracts"}.issubset(trade_log.columns):
+        capital = (trade_log["entry_fill"].astype(float)
+                   * trade_log["contracts"].astype(float) * 100.0)
+        capital = capital.replace(0, np.nan)
+        r = (trade_log["net_pnl"].astype(float) / capital)
+        return r.to_numpy(float)
+    return trade_log["net_pnl"].astype(float).to_numpy()
+
+
 def _max_drawdown_fraction(equity: pd.Series) -> float:
     """Max peak-to-trough drawdown as a positive fraction of the peak.
 
