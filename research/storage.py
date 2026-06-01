@@ -143,6 +143,36 @@ CREATE TABLE IF NOT EXISTS config_runs (
     PRIMARY KEY (config_hash)
 );
 
+-- One row per backtest run (per spread-sweep level). Stores the headline
+-- metrics + the objective verdict so results are auditable and a run can never
+-- be silently re-run-until-it-passes. Linked to config_runs via config_hash.
+CREATE SEQUENCE IF NOT EXISTS backtest_runs_seq START 1;
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id            BIGINT DEFAULT nextval('backtest_runs_seq'),
+    run_ts        TIMESTAMPTZ NOT NULL,
+    config_hash   VARCHAR,
+    hypothesis    VARCHAR,
+    phase         VARCHAR,
+    dataset       VARCHAR,
+    split         VARCHAR,
+    spread_mult   DOUBLE,
+    n_trades      BIGINT,
+    effective_n   DOUBLE,
+    win_rate      DOUBLE,
+    expectancy    DOUBLE,
+    profit_factor DOUBLE,
+    total_pnl     DOUBLE,
+    sharpe        DOUBLE,
+    sortino       DOUBLE,
+    calmar        DOUBLE,
+    max_drawdown  DOUBLE,
+    return_skew   DOUBLE,
+    worst_trade   DOUBLE,
+    passed        BOOLEAN,
+    reasons       VARCHAR,
+    PRIMARY KEY (id)
+);
+
 CREATE SEQUENCE IF NOT EXISTS ingest_log_seq START 1;
 CREATE TABLE IF NOT EXISTS ingest_log (
     id           BIGINT DEFAULT nextval('ingest_log_seq'),
@@ -229,6 +259,30 @@ class ResearchStore:
         )
         return int(existing[0]) + 1
 
+    def record_backtest_run(self, *, config_hash, hypothesis, phase, dataset, split,
+                            spread_mult, metrics, passed, reasons) -> None:
+        """Persist a backtest run's metrics + objective verdict (ROADMAP §5/§6)."""
+        m = metrics
+        self.con.execute(
+            "INSERT INTO backtest_runs (run_ts, config_hash, hypothesis, phase, "
+            "dataset, split, spread_mult, n_trades, effective_n, win_rate, expectancy, "
+            "profit_factor, total_pnl, sharpe, sortino, calmar, max_drawdown, "
+            "return_skew, worst_trade, passed, reasons) VALUES "
+            "(now(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [config_hash, hypothesis, phase, dataset, split, spread_mult,
+             m.n_trades, m.effective_n, m.win_rate, m.expectancy, m.profit_factor,
+             m.total_pnl, m.sharpe, m.sortino, m.calmar, m.max_drawdown,
+             m.return_skew, m.worst_trade, passed, reasons],
+        )
+
+    def read_backtest_runs(self, hypothesis: Optional[str] = None) -> pd.DataFrame:
+        if hypothesis:
+            return self.con.execute(
+                "SELECT * FROM backtest_runs WHERE hypothesis = ? ORDER BY run_ts, spread_mult",
+                [hypothesis],
+            ).df()
+        return self.con.execute("SELECT * FROM backtest_runs ORDER BY run_ts").df()
+
     def distinct_config_count(self, phase: Optional[str] = None) -> int:
         """N for the multiple-testing correction: distinct configs executed."""
         if phase:
@@ -290,6 +344,6 @@ class ResearchStore:
     def table_counts(self) -> dict[str, int]:
         out = {}
         for t in ("underlying_bars", "option_bars", "option_greeks",
-                  "contract_universe", "config_runs", "ingest_log"):
+                  "contract_universe", "config_runs", "backtest_runs", "ingest_log"):
             out[t] = self.con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
         return out

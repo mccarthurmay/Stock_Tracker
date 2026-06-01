@@ -57,6 +57,9 @@ python -m research hypotheses                           # validate + list hypoth
 python -m research features --option SPY260619C00500000 --indicators rsi roc
 python -m research features --option SPY260619C00500000 --hypothesis gamma_scalp_zone --record
 python -m research config-count                         # distinct executed configs (§6 correction)
+# M4 — backtester + cost model + objective:
+python -m research backtest --hypothesis oversold_mean_reversion --option SPY260619C00500000
+python -m research backtest-runs --hypothesis oversold_mean_reversion
 ```
 
 ## What's stored (DuckDB at `research/data/research.duckdb`)
@@ -68,6 +71,7 @@ python -m research config-count                         # distinct executed conf
 | `contract_universe` | (option_symbol, as_of_date) | point-in-time snapshot; daily-snapshot OI |
 | `option_greeks` | (option_symbol, timeframe, ts) | self-computed IV + Greeks per bar (M2); labelled approximate |
 | `config_runs` | (config_hash) | executed-configuration ledger (M3); distinct count feeds ROADMAP §6.5 |
+| `backtest_runs` | one row / run | per spread-sweep-level metrics + objective verdict (M4) |
 | `ingest_log` | one row / pull | audit trail feeding ROADMAP §6.6 |
 
 ## Point-in-time guarantees (enforced by `integrity.py`)
@@ -158,9 +162,47 @@ but not the distinct count).
 > and includes a deliberately over-mined baseline (`oversold_mean_reversion`)
 > the apparatus should be able to reject.
 
-## Next: M4
+## M4 — backtester + cost model + objective (done)
 
-Event-driven backtester with the always-on cost model (worse-side fills,
-modeled-spread sweep, fat-tailed slippage), the signal-on-close-`t` →
-fill-`t+1`-open invariant, a trade log + equity curve, and `metrics.py`
-(expectancy + risk constraints; never win rate alone) — ROADMAP §1, §5.
+ROADMAP §1 (frozen objective) and §5 (event-driven backtest with realistic costs).
+
+- [metrics.py](metrics.py): expectancy, profit factor, Sharpe/Sortino/Calmar,
+  max drawdown, skew, **effective sample size** (deflated for autocorrelation +
+  overlap), and `passes_objective` — the frozen gate. The objective is
+  **expectancy + risk constraints, never win rate alone**; it returns the
+  reasons each constraint passed/failed so a result is never silently accepted.
+- [costs.py](costs.py): always-on cost model. Fills cross the **worse side** of
+  a *modeled* spread (no historical quotes exist); `spread_mult` is a first-
+  class **swept** parameter; stops add **fat-tailed** slippage. `CostModel.zero()`
+  exists for tests only — production runs never disable costs.
+- [backtester.py](backtester.py): event-driven, **one uniform no-lookahead
+  rule** — everything observed at the close of bar *t* (entry signal, stop,
+  take-profit, max-hold, flat-exit) executes at the **open of bar t+1**. Outputs
+  a trade log (with signal/entry/exit timestamps so the invariant is auditable)
+  and an equity curve.
+- [signals.py](signals.py): maps each hypothesis config to a transparent,
+  causal +1/0 entry rule (the engine is the point, not the signal).
+
+The `backtest` command sweeps the spread and records every level in
+`backtest_runs` (and the config once in `config_runs`). **Costs always on; the
+worst-case spread is the honest read.**
+
+Validated: the timing invariant (entry fixed when future bars truncated); a
+zero-cost round-trip nets exactly 0 while costs strictly reduce P&L; wider
+spread is monotonically worse; metrics math on a known log; the objective gate
+rejects tiny-N and negative-skew "win-small/blow-up" profiles. A same-bar-fill
+lookahead bug was found by the timing test and fixed (uniform t→t+1 rule).
+
+> **What the apparatus is supposed to do:** on stored SPY data the over-mined
+> `oversold_mean_reversion` baseline **fails the objective at every spread
+> level** (negative expectancy + negative skew), worsening as the spread
+> widens. That rejection is success, not failure (ROADMAP prior). And on the
+> free indicative feed even a *passing* result would not be believable — that's
+> Phase B.
+
+## Next: M5
+
+Validation harness: train/validation/holdout split, walk-forward, parameter-
+sensitivity (plateau-not-spike), purged+embargoed CV / block bootstrap for
+effective N, and the multiple-testing correction (Deflated Sharpe / White's
+Reality Check) driven by the `config_runs` distinct-config count — ROADMAP §6.

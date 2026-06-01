@@ -19,7 +19,9 @@ import pandas as pd
 
 from .client import AlpacaResearch
 from .storage import ResearchStore
-from . import ingest, universe, integrity, greeks, hypotheses, features, registry
+from . import (ingest, universe, integrity, greeks, hypotheses, features, registry,
+               signals, metrics as metrics_mod, backtester)
+from .costs import CostModel
 # Importing indicators registers them as a side effect.
 from . import indicators  # noqa: F401
 
@@ -175,6 +177,68 @@ def cmd_config_count(args, store):
     print(f"  total={total}  phase A={a}  phase B={b}")
 
 
+def cmd_backtest(args, store):
+    hyps = {h.id: h for h in hypotheses.load()}
+    if args.hypothesis not in hyps:
+        print(f"Unknown hypothesis {args.hypothesis!r}; known: {sorted(hyps)}")
+        return
+    h = hyps[args.hypothesis]
+    config = h.configs()[args.config_idx]
+    chash = hypotheses.config_hash(h.id, config)
+    sym = args.option.upper()
+
+    frame, sig = signals.signal_for_hypothesis(store, h, config, sym, args.timeframe)
+    if frame.empty:
+        print(f"No data for {sym} (ingest bars + compute greeks first).")
+        return
+    n_sig = int(sig.sum())
+    print(f"Hypothesis {h.id} [{h.phase}] config {chash}  dataset={sym}")
+    print(f"  config={config}")
+    print(f"  entry signals: {n_sig} of {len(sig)} bars\n")
+
+    bt_cfg = backtester.BacktestConfig(
+        contracts=args.contracts, stop_loss_frac=args.stop,
+        take_profit_frac=(None if args.take_profit < 0 else args.take_profit),
+        max_hold_bars=args.max_hold)
+
+    # Record the executed configuration ONCE (distinct-config ledger, §6.5),
+    # then sweep the modeled spread (§5). Each sweep level is its own run row.
+    store.record_config_run(chash, h.id, h.phase,
+                            __import__("json").dumps(config, default=str),
+                            dataset=sym, split=args.split)
+
+    sweep = args.spread_sweep or [0.5, 1.0, 1.5, 2.0]
+    print(f"{'spreadx':>7} {'trades':>7} {'effN':>6} {'win%':>6} {'expect':>9} "
+          f"{'PF':>6} {'maxDD':>7} {'skew':>6} {'pass':>5}")
+    for mult in sweep:
+        cm = CostModel(spread_mult=mult)
+        res = backtester.run_backtest(frame, sig, cost_model=cm, config=bt_cfg)
+        m = metrics_mod.compute_metrics(res["trade_log"], res["equity_curve"])
+        verdict = metrics_mod.passes_objective(m)
+        store.record_backtest_run(
+            config_hash=chash, hypothesis=h.id, phase=h.phase, dataset=sym,
+            split=args.split, spread_mult=mult, metrics=m, passed=verdict.passed,
+            reasons=" | ".join(verdict.reasons))
+        print(f"{mult:7.2f} {m.n_trades:7d} {m.effective_n:6.1f} "
+              f"{m.win_rate*100:6.1f} {m.expectancy:9.3f} {m.profit_factor:6.2f} "
+              f"{m.max_drawdown*100:6.1f}% {m.return_skew:6.2f} "
+              f"{'YES' if verdict.passed else 'no':>5}")
+
+    print(f"\nObjective is expectancy + risk constraints, never win rate alone.")
+    print(f"On the free indicative feed a positive result is NOT believable "
+          f"(Phase-A; ROADMAP sec 2d). Worst-case spread is the honest read.")
+
+
+def cmd_backtest_runs(args, store):
+    df = store.read_backtest_runs(args.hypothesis)
+    if df.empty:
+        print("No backtest runs recorded yet.")
+        return
+    cols = ["run_ts", "hypothesis", "phase", "dataset", "spread_mult", "n_trades",
+            "effective_n", "expectancy", "max_drawdown", "passed"]
+    print(df[cols].to_string(index=False))
+
+
 def cmd_smoke(args, store):
     symbol = args.symbol.upper()
     tf = args.timeframe
@@ -325,6 +389,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("config-count", help="distinct executed configs (for §6 correction)")
     sp.set_defaults(func=cmd_config_count)
+
+    sp = sub.add_parser("backtest", help="backtest a hypothesis with the always-on cost model + spread sweep")
+    sp.add_argument("--hypothesis", required=True)
+    sp.add_argument("--option", required=True)
+    sp.add_argument("--timeframe", default="1Min")
+    sp.add_argument("--config-idx", type=int, default=0, dest="config_idx",
+                    help="which concrete config of the hypothesis to run")
+    sp.add_argument("--contracts", type=int, default=1)
+    sp.add_argument("--stop", type=float, default=0.5, help="stop-loss fraction of entry premium")
+    sp.add_argument("--take-profit", type=float, default=1.0, dest="take_profit",
+                    help="take-profit fraction (-1 to disable)")
+    sp.add_argument("--max-hold", type=int, default=60, dest="max_hold")
+    sp.add_argument("--split", default="dev")
+    sp.add_argument("--spread-sweep", type=float, nargs="*", dest="spread_sweep",
+                    help="spread multipliers to sweep (default 0.5 1.0 1.5 2.0)")
+    sp.set_defaults(func=cmd_backtest)
+
+    sp = sub.add_parser("backtest-runs", help="show recorded backtest runs")
+    sp.add_argument("--hypothesis", default=None)
+    sp.set_defaults(func=cmd_backtest_runs)
 
     sp = sub.add_parser("smoke", help="end-to-end tiny demo + checks")
     sp.add_argument("--symbol", default="SPY")
