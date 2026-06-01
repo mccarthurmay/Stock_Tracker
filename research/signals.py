@@ -37,6 +37,17 @@ def _entry_rule(hyp_id: str, df: pd.DataFrame) -> pd.Series:
     if hyp_id == "iv_overpriced_fade":
         ivr = next((c for c in df.columns if c.startswith("iv_rank")), "iv_rank")
         return (df[ivr] > 0.8).astype(int)
+    if hyp_id == "opening_range_breakout":
+        orp = next((c for c in df.columns if c.startswith("opening_range_pos")), "opening_range_pos")
+        # break above the OR high, but only after the OR window has closed
+        return ((df[orp] > 1.0) & (df["minutes_since_open"] >= 30)).astype(int)
+    if hyp_id == "power_hour_momentum":
+        pvs = next((c for c in df.columns if c.startswith("price_vs_sma")), "price_vs_sma")
+        return ((df["time_of_day_bucket"] == 2) & (df[pvs] > 0)).astype(int)
+    if hyp_id == "gap_fade_reversion":
+        # only the calls/puts side is set by expected_direction; fire on a
+        # meaningful up-gap, early in the session before it fills
+        return ((df["overnight_gap"] > 0.003) & (df["minutes_since_open"].between(5, 120))).astype(int)
     return z
 
 

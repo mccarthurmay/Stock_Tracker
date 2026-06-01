@@ -75,3 +75,42 @@ hypotheses:
         sweep: {window: [30, 60]}
       - name: realized_vol
         params: {window: 20}
+
+  # --- Structural hypotheses (intraday-options-specific mechanisms, not
+  #     textbook oscillators). These are the productive direction after the M6
+  #     "no edge" result on generic indicators.
+
+  - id: opening_range_breakout
+    rationale: >
+      The first 30 minutes set an intraday range as overnight orders clear;
+      a decisive break of the opening-range high reflects genuine directional
+      order flow that often continues through midday, and long calls capture
+      that continuation with defined risk. Entry only after the OR window closes.
+    expected_direction: long
+    indicators:
+      - name: opening_range_pos
+        sweep: {or_minutes: [15, 30]}
+      - name: minutes_since_open
+
+  - id: power_hour_momentum
+    rationale: >
+      In the last trading hour, index funds and 0DTE hedgers rebalance into the
+      close, which tends to extend the prevailing intraday trend; entering with
+      that late-day drift (price above its short MA during power hour) rides
+      flow that is structural rather than informational.
+    expected_direction: long
+    indicators:
+      - name: time_of_day_bucket
+      - name: price_vs_sma
+        params: {window: 20}
+
+  - id: gap_fade_reversion
+    rationale: >
+      Large overnight gaps in a liquid index ETF frequently retrace intraday as
+      the gap over-reacts to overnight headlines and liquidity is thin at the
+      open; fading an up-gap with puts targets that mean reversion toward the
+      prior close. Defined-risk long premium caps the trend-day tail.
+    expected_direction: short
+    indicators:
+      - name: overnight_gap
+      - name: minutes_since_open

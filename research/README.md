@@ -285,6 +285,55 @@ AND |moneyness|<0.01 AND DTE≤2) is too tight for this basket; that's a
 signal-definition observation, not an edge. And even a survivor here would be
 **Phase-A-only** on indicative data — not believable until Phase B.
 
+### Deep run (2026-06-01), 234 SPY contracts × 565 trading days × 5-min (Feb 2024 → May 2026)
+
+Built via [historical.py](historical.py) `deep-ingest`: point-in-time
+front-week ATM contract construction (each week's call+put picked from the
+*then* spot — survivorship-safe, no peeking). 85k+ option bars over ~2.3 years
+and multiple regimes, at 5-min to cut intraday trade overlap. Added 4 structural
+indicators and 3 **structural** hypotheses (opening-range breakout, power-hour
+momentum, gap-fade) — the productive direction after generic indicators failed.
+
+```bash
+python -m research deep-ingest --underlying SPY --timeframe 5Min
+python -m research greeks-all  --underlying SPY --timeframe 5Min --bs-max-dte 5
+python -m research run-all     --underlying SPY --timeframe 5Min
+```
+
+| hypothesis | phase | trades | effN | expectancy | SR/trade | DSR | surv |
+|---|---|---|---|---|---|---|---|
+| oversold_mean_reversion (w=7) | A | 939 | 512.9 | −31.27 | −0.38 | 0.00 | no |
+| oversold_mean_reversion (w=14) | A | 446 | 247.7 | −27.16 | −0.30 | 0.00 | no |
+| trend_pullback_continuation (w=20) | A | 207 | 118.4 | −31.69 | −0.82 | 0.00 | no |
+| trend_pullback_continuation (w=50) | A | 379 | 217.0 | −28.62 | −0.63 | 0.00 | no |
+| volatility_squeeze_breakout (w=10) | A | 518 | 280.4 | −29.06 | −0.40 | 0.00 | no |
+| volatility_squeeze_breakout (w=20) | A | 355 | 197.8 | −30.47 | −0.28 | 0.00 | no |
+| gamma_scalp_zone | A | 516 | 273.1 | −19.12 | −0.15 | 0.00 | no |
+| iv_overpriced_fade (w=30) | B | 1412 | 977.8 | −29.40 | −0.69 | 0.00 | no |
+| iv_overpriced_fade (w=60) | B | 1244 | 893.0 | −31.45 | −0.59 | 0.00 | no |
+| **opening_range_breakout (15)** | A | 527 | 274.2 | −25.34 | −0.57 | 0.00 | no |
+| **opening_range_breakout (30)** | A | 497 | 257.6 | −24.43 | −0.61 | 0.00 | no |
+| **power_hour_momentum** | A | 249 | 136.0 | −36.25 | −0.67 | 0.00 | no |
+| **gap_fade_reversion** | A | 77 | 39.0 | −34.15 | −0.03 | 0.00 | no |
+
+White's Reality Check over 13 configs: best = `gap_fade_reversion`, **p = 1.000**.
+
+**SURVIVORS: none — and now the verdict is trustworthy.** Unlike the 7-day run,
+effective-N is 39–977 (real samples, not a small-sample fluke), and the data
+spans ~2.3 years / multiple regimes. Every config loses money net of costs. The
+**structural hypotheses fared no better** than the textbook ones — the prior
+that intraday structure (open/close/gap effects) would help was tested and
+**rejected by the data**. The cost drag (theta + modeled spread on long
+premium) is the dominant term, exactly as the §1 cost-hurdle pre-check warned.
+`gamma_scalp_zone` now trades 516× (deep data fixed the empty filter) and still
+loses. The least-bad gross is `gap_fade_reversion` (SR/trade −0.03) but it is
+negative after costs and indistinguishable from luck.
+
+This is the honest endpoint of the free-data project: a well-powered Phase-A
+test says **no robust intraday long-premium edge** for a retail account, across
+generic and structural signals, under realistic costs. Believing otherwise
+would require vendor data (Phase B) and a mechanism these signals don't capture.
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /

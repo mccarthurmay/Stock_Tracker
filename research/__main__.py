@@ -20,7 +20,8 @@ import pandas as pd
 from .client import AlpacaResearch
 from .storage import ResearchStore
 from . import (ingest, universe, integrity, greeks, hypotheses, features, registry,
-               signals, metrics as metrics_mod, backtester, validation, stats, run)
+               signals, metrics as metrics_mod, backtester, validation, stats, run,
+               historical)
 from .costs import CostModel
 # Importing indicators registers them as a side effect.
 from . import indicators  # noqa: F401
@@ -237,6 +238,21 @@ def cmd_backtest_runs(args, store):
     cols = ["run_ts", "hypothesis", "phase", "dataset", "spread_mult", "n_trades",
             "effective_n", "expectancy", "max_drawdown", "passed"]
     print(df[cols].to_string(index=False))
+
+
+def cmd_deep_ingest(args, store):
+    """Deep historical ingest via PIT front-week ATM contract construction."""
+    client = AlpacaResearch()
+    start = _date(args.start) if args.start else date(2024, 2, 5)
+    end = _date(args.end) if args.end else None
+    print(f"Deep-ingesting front-week ATM {args.underlying.upper()} from {start} "
+          f"at {args.timeframe} (PIT contract construction)...")
+    r = historical.deep_ingest(client, store, underlying=args.underlying.upper(),
+                               start_date=start, end_date=end, timeframe=args.timeframe)
+    print(f"  weeks={r['weeks']} contracts={r['contracts']} "
+          f"option_bars={r['option_bars']} underlying_bars={r['underlying_bars']} "
+          f"skipped_weeks={r['skipped_weeks']}")
+    print("Now run: greeks-all, then run-all.")
 
 
 def cmd_run_all(args, store):
@@ -676,6 +692,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--force-show", action="store_true", dest="force_show",
                     help="show prior result without attempting to re-open")
     sp.set_defaults(func=cmd_holdout)
+
+    sp = sub.add_parser("deep-ingest", help="deep PIT historical ingest (front-week ATM)")
+    sp.add_argument("--underlying", default="SPY")
+    sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2024-02-05)")
+    sp.add_argument("--end", default=None, help="YYYY-MM-DD (default yesterday)")
+    sp.add_argument("--timeframe", default="5Min")
+    sp.set_defaults(func=cmd_deep_ingest)
 
     sp = sub.add_parser("run-all", help="M6: run the reasoned hypothesis set, report survivors")
     sp.add_argument("--underlying", default=None, help="run over all stored options of this underlying")

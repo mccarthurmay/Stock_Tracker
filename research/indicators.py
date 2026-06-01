@@ -189,3 +189,58 @@ def iv_change(df, window=1):
 def iv_rank(df, window=60):
     return df["iv"].rolling(window, min_periods=window).apply(
         lambda w: (w.iloc[-1] >= w).mean(), raw=False)
+
+
+# ----------------------------------------------------------------- structure (phase A)
+# These read the underlying bar's CLOCK and intraday price path, not textbook
+# oscillators. They target intraday-options-specific structural effects.
+
+@register(name="minutes_since_open", layer="structure", inputs=["ts"], params={},
+          description="Minutes since the 13:30 UTC (09:30 ET) cash open, per bar.")
+def minutes_since_open(df):
+    t = pd.to_datetime(df["ts"]).dt.tz_convert("America/New_York")
+    mins = (t.dt.hour - 9) * 60 + (t.dt.minute - 30)
+    return mins.clip(lower=0).astype(float)
+
+
+@register(name="time_of_day_bucket", layer="structure", inputs=["ts"], params={},
+          description="0=open hr, 1=midday, 2=power hour (last hr to 16:00 ET).")
+def time_of_day_bucket(df):
+    t = pd.to_datetime(df["ts"]).dt.tz_convert("America/New_York")
+    mins = (t.dt.hour - 9) * 60 + (t.dt.minute - 30)
+    return pd.cut(mins, bins=[-1, 60, 330, 10_000], labels=[0, 1, 2]).astype(float)
+
+
+@register(name="opening_range_pos", layer="structure",
+          inputs=["ts", "under_close"], params={"or_minutes": 30},
+          param_ranges={"or_minutes": [15, 30, 60]},
+          description="Position of price vs the day's opening range "
+                      "(>1 = broke above OR high, <0 = below OR low).")
+def opening_range_pos(df, or_minutes=30):
+    t = pd.to_datetime(df["ts"]).dt.tz_convert("America/New_York")
+    day = t.dt.date
+    mins = (t.dt.hour - 9) * 60 + (t.dt.minute - 30)
+    in_or = (mins >= 0) & (mins < or_minutes)
+    p = df["under_close"]
+    # opening-range high/low per day, using ONLY the first `or_minutes` (causal:
+    # once the OR window closes the levels are fixed and known for the rest of day)
+    or_hi = p.where(in_or).groupby(day).cummax().groupby(day).ffill()
+    or_lo = p.where(in_or).groupby(day).cummin().groupby(day).ffill()
+    rng = (or_hi - or_lo).replace(0, np.nan)
+    return (p - or_lo) / rng
+
+
+@register(name="overnight_gap", layer="structure",
+          inputs=["ts", "under_close"], params={},
+          description="Fractional gap of today's first bar vs prior day's last "
+                      "close; constant within the day (a daily structural state).")
+def overnight_gap(df):
+    t = pd.to_datetime(df["ts"]).dt.tz_convert("America/New_York")
+    day = t.dt.date
+    first = df.groupby(day)["under_close"].transform("first")
+    prev_last = df.groupby(day)["under_close"].transform("last").groupby(day).first()
+    # map each day to the PRIOR day's last close (causal: known at today's open)
+    daily_last = df.groupby(day)["under_close"].last()
+    prior = daily_last.shift(1)
+    gap = first / pd.Series(day.values, index=df.index).map(prior) - 1.0
+    return gap
