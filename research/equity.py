@@ -38,7 +38,8 @@ import pandas as pd
 
 
 # ----------------------------------------------------------------- prices
-def monthly_total_return_panel(client, tickers, start, end, feed="sip") -> pd.DataFrame:
+def monthly_total_return_panel(client, tickers, start, end, feed="sip",
+                               progress_every: int = 200) -> pd.DataFrame:
     """Wide DataFrame of month-end split+div-adjusted closes (index=month-end,
     columns=tickers). One API pull per ticker; total-return proxy via 'all'.
     Uses the SIP feed by default — free-tier historical SIP goes back to 2016
@@ -46,16 +47,16 @@ def monthly_total_return_panel(client, tickers, start, end, feed="sip") -> pd.Da
     series = {}
     s = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
     e = datetime(end.year, end.month, end.day, tzinfo=timezone.utc)
-    for t in tickers:
+    for i, t in enumerate(tickers, 1):
         try:
             df = client.stock_bars(t, s, e, "1Day", adjustment="all", feed=feed)
         except Exception:
-            continue
-        if df.empty:
-            continue
-        px = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
-        # month-end last observation
-        series[t] = px.resample("ME").last()
+            df = None
+        if df is not None and not df.empty:
+            px = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
+            series[t] = px.resample("ME").last()   # month-end last observation
+        if progress_every and i % progress_every == 0:
+            print(f"  prices {i}/{len(tickers)} pulled ({len(series)} with data)", flush=True)
     if not series:
         return pd.DataFrame()
     return pd.DataFrame(series).sort_index()
@@ -124,7 +125,7 @@ def run_equity_backtest(prices: pd.DataFrame, factor_fn, cfg: EquityConfig | Non
     cfg = cfg or EquityConfig()
     fkw = factor_kwargs or {}
     idx = prices.index
-    rets = prices.pct_change()           # month-over-month total return
+    rets = prices.pct_change(fill_method=None)   # month-over-month total return
     prev_w: dict[str, float] = {}
     out = []
 

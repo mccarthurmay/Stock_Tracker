@@ -495,13 +495,47 @@ in the strategy's favour** — 28 names that all survived to 2026 — so a Sharp
 here is exactly what proving it requires."** The long-short being flat is itself
 a tell: most of the long-only return is market beta, not factor alpha.
 
-The last remaining prerequisite is the #1 one: a **point-in-time, delisted-aware
-universe** (today's `smp500.txt` excludes everything that failed). With
-filing-lag now enforced and 2016+ SIP history available, that survivorship-free
-universe is the single thing standing between this and a trustworthy verdict —
-and it's the hard one to get free (a historical-constituents source, or paid
-data). The framework has done its job: it took an attractive-looking real
-strategy and told you precisely why you can't believe it *yet*.
+### Broad-universe run (~4,100 names with EDGAR data, 125 periods, 2016-2026)
+
+To shrink the *which-names* selection bias, the same strategy was re-run over a
+**6,808-ticker** universe ([complete_list_api_valid.txt](../backend/storage/ticker_lists/complete_list_api_valid.txt)
+— every symbol in `complete_list.txt` with Alpaca SIP history; ~4,100 had usable
+filing-lagged EDGAR fundamentals → **~270k point-in-time factor rows**). Memory
+held flat via a streaming per-ticker EDGAR fetch (no unbounded cache).
+
+| config | periods | annRet | annSR | maxDD | skew | DSR | survives |
+|---|---|---|---|---|---|---|---|
+| long-only (top 30%) | 124 | +19.2% | 0.86 | 31.6% | +1.59 | 0.00 | no |
+| long-short (top−bottom 30%) | 124 | **−21.6%** | **−0.45** | **93.0%** | −1.30 | 0.00 | no |
+
+This is the **most informative equity result in the project**, and it sharpens
+the 30-name finding two ways:
+
+1. **The apparent edge shrank with breadth.** Long-only fell from Sharpe 1.28
+   (30 cherry-picked mega-caps) to **0.86** on thousands of names — exactly what
+   you'd expect as survivorship/selection bias washes out. Still DSR 0.00.
+2. **The long-short is catastrophic: −21.6%/yr, 93% drawdown.** The long-short
+   leg *isolates the factor from market beta*, and it is strongly negative. So
+   the long-only's +19% was **essentially all market beta** (being long stocks
+   in a 2016-2026 bull market); the quality-value tilt added **no alpha — it
+   detracted**. A naive backtester reporting only the long-only ("+19%, holds up
+   on holdout") would entirely miss that there is no factor edge underneath.
+
+**Verdict across both equity runs:** the FF quality-value screen, tested with
+filing-lagged fundamentals over a decade, shows **no factor alpha beyond market
+beta** on this (still survivorship-biased) universe — and the bias works in the
+strategy's *favour*, so the real number is if anything worse. This is now closer
+to "no edge" than "unproven."
+
+The one prerequisite still not met is a **point-in-time, delisted-aware
+universe**: `complete_list.txt` (and `smp500.txt`) list only *currently* traded
+names, so dead companies are absent. (Alpaca SIP itself *does* retain delisted
+tickers' bars — verified: FRC/TWTR/WeWork data ends at their death dates — so a
+truly survivorship-free run is achievable with a *source* list that includes the
+dead names; that historical-constituents list is the hard-to-get free piece.)
+Adding the failed names would only lower the result further, reinforcing the
+verdict. The framework did its job: it took an attractive-looking screen, showed
+the apparent return was beta not alpha, and refused to bless it.
 
 ## Next: M7–M9 (not core engineering)
 

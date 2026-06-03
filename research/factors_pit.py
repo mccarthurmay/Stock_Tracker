@@ -36,9 +36,12 @@ _MIN_INTERVAL = 0.12  # stay under EDGAR's 10 req/s
 class PITFundamentals:
     """As-of EDGAR fundamentals with per-CIK companyfacts caching."""
 
-    def __init__(self):
+    def __init__(self, cache_facts: bool = True):
         self._cik_map: dict | None = None
         self._facts: dict[str, dict] = {}
+        # at large universe sizes each companyfacts JSON is multi-MB; caching
+        # all of them exhausts memory. cache_facts=False frees each after use.
+        self._cache_facts = cache_facts
         self._last_req = 0.0
 
     # -- http ---------------------------------------------------------------
@@ -65,12 +68,15 @@ class PITFundamentals:
         cik = self._cik(ticker)
         if not cik:
             return None
-        if cik not in self._facts:
-            try:
-                self._facts[cik] = self._get(_FACTS_URL.format(cik=cik))
-            except Exception:
-                self._facts[cik] = {}
-        return self._facts[cik] or None
+        if self._cache_facts and cik in self._facts:
+            return self._facts[cik] or None
+        try:
+            facts = self._get(_FACTS_URL.format(cik=cik))
+        except Exception:
+            facts = {}
+        if self._cache_facts:
+            self._facts[cik] = facts
+        return facts or None
 
     # -- as-of concept extraction ------------------------------------------
     @staticmethod
@@ -147,6 +153,10 @@ class PITFundamentals:
         facts = self._facts_for(ticker)
         if not facts:
             return None
+        return self.factors_from(facts, as_of, price)
+
+    def factors_from(self, facts: dict, as_of: date, price: float) -> dict | None:
+        """factors_asof given ALREADY-fetched facts (avoids per-date refetch)."""
         equity, _ = self._asof_annual(facts, "StockholdersEquity", as_of)
         if equity is None:
             equity, _ = self._asof_annual(
@@ -171,31 +181,46 @@ class PITFundamentals:
                 "shares": shares, "mcap": mcap}
 
 
-def build_factor_panel(prices, rebalance_dates, pit: "PITFundamentals | None" = None):
+def build_factor_panel(prices, rebalance_dates, pit: "PITFundamentals | None" = None,
+                       progress_every: int = 100):
     """Long-form panel of PIT FF factors at each rebalance date.
 
     prices: wide DataFrame (index=month-end ts, columns=tickers) of total-return
             adjusted closes (from equity.monthly_total_return_panel).
-    Returns a DataFrame with columns [date, ticker, BM, OP, INV, mcap]; one row
-    per (rebalance date, ticker) that has a usable as-of filing and a price.
+    Returns a DataFrame with columns [date, ticker, BM, OP, INV, mcap].
+
+    STREAMING by ticker: fetch each ticker's companyfacts once, compute all its
+    rebalance dates, then drop it. With pit.cache_facts=False this keeps memory
+    flat over thousands of names (each companyfacts JSON is multi-MB).
     """
     import pandas as pd
-    pit = pit or PITFundamentals()
-    rows = []
+    pit = pit or PITFundamentals(cache_facts=False)
+    # precompute the price row position for each rebalance date once
+    date_pos = []
     for d in rebalance_dates:
-        dd = d.date() if hasattr(d, "date") else d
-        # price row at/just before d
         pos = prices.index.get_indexer([d], method="ffill")[0]
-        if pos < 0:
-            continue
-        prow = prices.iloc[pos]
-        for tkr in prices.columns:
-            px = prow.get(tkr)
-            if px is None or pd.isna(px):
-                continue
-            f = pit.factors_asof(tkr, dd, float(px))
-            if f is None:
-                continue
-            rows.append({"date": d, "ticker": tkr, "BM": f["BM"],
-                         "OP": f["OP"], "INV": f["INV"], "mcap": f["mcap"]})
+        if pos >= 0:
+            date_pos.append((d, d.date() if hasattr(d, "date") else d, pos))
+
+    rows = []
+    tickers = list(prices.columns)
+    have_facts = 0
+    for n, tkr in enumerate(tickers, 1):
+        facts = pit._facts_for(tkr)
+        if facts:
+            have_facts += 1
+            col = prices[tkr]
+            for d, dd, pos in date_pos:
+                px = col.iat[pos]
+                if px is None or pd.isna(px):
+                    continue
+                f = pit.factors_from(facts, dd, float(px))
+                if f is None:
+                    continue
+                rows.append({"date": d, "ticker": tkr, "BM": f["BM"],
+                             "OP": f["OP"], "INV": f["INV"], "mcap": f["mcap"]})
+        del facts
+        if progress_every and n % progress_every == 0:
+            print(f"  EDGAR {n}/{len(tickers)} tickers ({have_facts} with facts, "
+                  f"{len(rows)} factor rows)", flush=True)
     return pd.DataFrame(rows)

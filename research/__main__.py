@@ -363,8 +363,8 @@ def cmd_equity_ff(args, store):
     if prices.empty or prices.shape[0] < 12:
         print("Not enough price history."); return
     print(f"Price panel: {prices.shape[1]} names x {prices.shape[0]} month-ends.")
-    print("Fetching filing-lagged EDGAR fundamentals (cached per CIK)...", flush=True)
-    pit = factors_pit.PITFundamentals()
+    print("Fetching filing-lagged EDGAR fundamentals (streaming, ~0.12s/CIK)...", flush=True)
+    pit = factors_pit.PITFundamentals(cache_facts=False)  # flat memory over 1000s of names
     panel = factors_pit.build_factor_panel(prices, list(prices.index), pit)
     if panel.empty:
         print("No PIT fundamentals assembled (EDGAR coverage?)."); return

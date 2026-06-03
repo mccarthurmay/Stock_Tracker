@@ -171,4 +171,5 @@ def read_ticker_list(path) -> list[str]:
     """Read a ticker-list file (one symbol per line; tolerant of CRLF/blanks)."""
     from pathlib import Path
     raw = Path(path).read_text().replace("\r", "\n")
-    return [ln.strip().upper() for ln in raw.split("\n") if ln.strip()]
+    return [ln.strip().upper() for ln in raw.split("\n")
+            if ln.strip() and not ln.lstrip().startswith("#")]
