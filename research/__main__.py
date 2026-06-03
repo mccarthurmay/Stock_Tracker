@@ -21,7 +21,7 @@ from .client import AlpacaResearch
 from .storage import ResearchStore
 from . import (ingest, universe, integrity, greeks, hypotheses, features, registry,
                signals, metrics as metrics_mod, backtester, validation, stats, run,
-               historical, scan)
+               historical, scan, equity)
 from .costs import CostModel
 # Importing indicators registers them as a side effect.
 from . import indicators  # noqa: F401
@@ -271,6 +271,75 @@ def cmd_scan_ingest(args, store):
     out = historical.scan_ingest(client, store, tickers, start, end, args.timeframe)
     print(f"\nDone: {out['with_data']}/{out['tickers']} tickers returned option data.")
     print("Now run: greeks-all per ticker (or scan-greeks), then scan-run.")
+
+
+def cmd_equity_smoke(args, store):
+    """Smoke-test the long-horizon factor backtest on real prices.
+
+    Uses 12-1 MOMENTUM (computable lookahead-free from prices alone) to prove
+    the plumbing: rebalance loop -> period returns -> DSR + monthly objective +
+    train/holdout. The FF quality-value composite is the real target but needs
+    filing-lagged fundamentals + a survivorship-free universe + deep history
+    (see equity.py TODOs) — not available on the free tier.
+    """
+    client = AlpacaResearch()
+    tickers = historical.read_ticker_list(args.file) if args.file else \
+        ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "XOM", "JNJ",
+         "PG", "HD", "BAC", "KO", "PFE", "CVX", "WMT", "DIS", "CSCO", "INTC", "T"]
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else (end - timedelta(days=args.years * 365 + 400))
+    print(f"Equity smoke: 12-1 momentum over {len(tickers)} names, "
+          f"{start}..{end}, monthly rebalance.\n")
+    print("NOTE: today's ticker list has SURVIVORSHIP BIAS (no delisted names) "
+          "and prices are split+div adjusted but ~2yr deep only — this proves\n"
+          "the engine, it is NOT a trustworthy factor result (ROADMAP §12).\n")
+
+    prices = equity.monthly_total_return_panel(client, tickers, start, end)
+    if prices.empty or prices.shape[0] < 6:
+        print("Not enough monthly price history pulled.")
+        return
+    print(f"Price panel: {prices.shape[1]} names x {prices.shape[0]} month-ends "
+          f"({prices.index[0].date()}..{prices.index[-1].date()})\n")
+
+    # Honest trial counting: every (config) we evaluate is a trial for DSR.
+    configs = [("long_only", equity.EquityConfig(quantile=0.3, long_short=False)),
+               ("long_short", equity.EquityConfig(quantile=0.3, long_short=True))]
+    n_trials = len(configs)
+
+    print(f"{'config':>12} {'periods':>7} {'annRet':>8} {'annSR':>7} {'maxDD':>7} "
+          f"{'skew':>6} {'DSR':>6} {'obj':>4} {'surv':>5}")
+    results = {}
+    for name, cfg in configs:
+        bt = equity.run_equity_backtest(prices, equity.momentum_factor, cfg)
+        if bt.empty:
+            print(f"{name:>12}  (no periods)"); continue
+        ev = equity.evaluate(bt, n_trials)
+        results[name] = (bt, ev)
+        print(f"{name:>12} {ev['n_periods']:7d} {ev['ann_return']*100:7.1f}% "
+              f"{ev['sharpe_annual']:7.2f} {ev['max_drawdown']*100:6.1f}% "
+              f"{ev['skew']:6.2f} {ev['dsr']:6.2f} "
+              f"{'Y' if ev['objective_pass'] else 'n':>4} "
+              f"{'YES' if ev['survives'] else 'no':>5}")
+
+    # train/holdout split on the best config's return series (open holdout once)
+    if results:
+        best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
+        bt, _ = results[best]
+        sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
+        tr = bt[sp["train"].mask(bt["date"])]
+        ho = bt[sp["holdout"].mask(bt["date"])]
+        print(f"\nHoldout check on best config ({best}), opened once:")
+        for label, seg in [("train", tr), ("HOLDOUT", ho)]:
+            if seg.empty:
+                continue
+            ev = equity.evaluate(seg, n_trials)
+            print(f"  {label:>8}: periods={ev['n_periods']} annRet={ev['ann_return']*100:.1f}% "
+                  f"annSR={ev['sharpe_annual']:.2f} maxDD={ev['max_drawdown']*100:.1f}%")
+
+    print("\nSame apparatus as the options work: Sharpe deflated by trial count, "
+          "monthly-re-frozen objective, holdout opened once. With only ~2 configs "
+          "and ~2yr of data, DSR/holdout are under-powered — a real FF study needs "
+          "decades + survivorship-free PIT data (the equity.py TODOs).")
 
 
 def cmd_scan_run(args, store):
@@ -778,6 +847,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--lookback-days", type=int, default=95, dest="lookback_days")
     sp.add_argument("--timeframe", default="5Min")
     sp.set_defaults(func=cmd_scan_ingest)
+
+    sp = sub.add_parser("equity-smoke", help="long-horizon factor backtest (12-1 momentum) + DSR/holdout")
+    sp.add_argument("--file", default=None, help="ticker-list file (default: 20 large caps)")
+    sp.add_argument("--start", default=None, help="YYYY-MM-DD")
+    sp.add_argument("--end", default=None, help="YYYY-MM-DD")
+    sp.add_argument("--years", type=int, default=2, help="approx history depth if --start omitted")
+    sp.set_defaults(func=cmd_equity_smoke)
 
     sp = sub.add_parser("scan-run", help="run CALL hypotheses across a ticker universe; DSR-deflate + holdout")
     sp.add_argument("--file", default=None, help="ticker-list file (default: all stored)")

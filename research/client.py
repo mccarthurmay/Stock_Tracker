@@ -103,12 +103,15 @@ class AlpacaResearch:
 
     # -- underlying ---------------------------------------------------------
     def stock_bars(self, symbol: str, start: datetime, end: datetime,
-                   timeframe: str) -> pd.DataFrame:
+                   timeframe: str, adjustment: str | None = None) -> pd.DataFrame:
         self.rl.acquire()
+        # 'all' = split + dividend adjusted (total-return proxy) for equity
+        # backtests; default keeps the configured adjustment for options work.
+        adj = Adjustment(adjustment) if adjustment else self._adjustment
         req = StockBarsRequest(
             symbol_or_symbols=symbol, start=start, end=end,
             timeframe=parse_timeframe(timeframe),
-            adjustment=self._adjustment, feed=self._stock_feed,
+            adjustment=adj, feed=self._stock_feed,
         )
         recs = _bars_to_records(self.stock.get_stock_bars(req), symbol)
         df = pd.DataFrame(recs)

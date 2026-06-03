@@ -412,6 +412,50 @@ which here was decisive. (Telling, too: only **1 of 3,614** trials cleared even
 positive in-sample expectancy — for retail intraday calls, costs dominate so
 thoroughly that the search space barely produces *apparent* winners.)
 
+## Long-horizon equity factor backtest (2026-06-03)
+
+The same noise apparatus — Deflated Sharpe, walk-forward, the frozen objective —
+ports directly to **long-term, monthly-rebalanced stock-picking** (the
+Fama-French quality-value direction the screener in `backend/` is built around).
+[equity.py](equity.py) adds a cross-sectional rebalance engine:
+
+- A **factor source** maps (ticker, date) → a score using only data knowable at
+  `date`. Two are provided: `momentum_factor` (12-1 month return, computable
+  lookahead-free from prices alone) and `ff_composite_factor`
+  (`z(BM)+z(OP)−z(INV)` from SEC fundamentals — the real target).
+- Monthly: rank the universe, long the top quantile (optionally short the
+  bottom), equal-weight, hold to next rebalance, charge turnover cost.
+- Output is a **period-return series** → fed straight into `stats` (DSR) and a
+  monthly-**re-frozen** objective (`evaluate()`): ≥24 periods, positive mean,
+  drawdown ≤35%, and DSR>0.95 deflated by the distinct-config count.
+
+```bash
+python -m research equity-smoke --years 2          # 12-1 momentum, 20 large caps
+```
+
+**Smoke result (20 mega-caps, 25 monthly periods, 12-1 momentum):** long-only
+showed annualized Sharpe **1.35**, +30%/yr, and *passed* the monthly objective —
+but **DSR = 0.16 → does not survive**, and that refusal is correct:
+
+- **Survivorship bias dominates** — these are names that are *still* mega-caps
+  in 2026, so momentum among known winners is almost guaranteed to look good.
+  `smp500.txt` is a *current*-membership list (no delisted names); a real study
+  needs a point-in-time, survivorship-free universe (`equity.py` TODO).
+- **Tiny sample** — 25 monthly returns can't distinguish skill from luck; DSR's
+  `√(n−1)` keeps confidence low even at SR 1.35. A naive backtester would have
+  said "Sharpe 1.35, ship it"; the apparatus says "unproven."
+
+So the plumbing is validated and the engine refuses to bless a survivorship-
+inflated 2-year result. A trustworthy FF factor study needs three things the
+free tier lacks (and `equity.py` flags as hard prerequisites): **(1)** a PIT
+delisted-aware universe, **(2)** **filing-lagged** fundamentals (use a 10-K only
+after its `filed` date — `fundamentals.py` tracks it but `get_fundamentals`
+returns latest), and **(3)** **decades** of history (Alpaca is 2024+; Ken
+French's library + Stooq/Tiingo are the free deep sources). Long-horizon
+strategies are *easier* to overfit and *harder* to validate (few independent
+bets), which is exactly why the t-stat hurdle in the factor literature rose
+from ~2.0 to ~3.0 once trial-counting was applied.
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /
