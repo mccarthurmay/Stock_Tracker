@@ -450,8 +450,11 @@ inflated 2-year result. A trustworthy FF factor study needs three things the
 free tier lacks (and `equity.py` flags as hard prerequisites): **(1)** a PIT
 delisted-aware universe, **(2)** **filing-lagged** fundamentals (use a 10-K only
 after its `filed` date — `fundamentals.py` tracks it but `get_fundamentals`
-returns latest), and **(3)** **decades** of history (Alpaca is 2024+; Ken
-French's library + Stooq/Tiingo are the free deep sources). Long-horizon
+returns latest), and **(3)** **decades** of history. (Free Alpaca *stock* bars
+on the IEX feed go back to ~mid-2020 — ~5 yrs, verified — not 2024; the Feb-2024
+limit is *options* only. But ~5 yrs of one regime is still far too shallow for a
+factor study, which wants multiple cycles.) Ken French's library + Stooq/Tiingo
+are the free deep sources. Long-horizon
 strategies are *easier* to overfit and *harder* to validate (few independent
 bets), which is exactly why the t-stat hurdle in the factor literature rose
 from ~2.0 to ~3.0 once trial-counting was applied.
