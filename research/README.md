@@ -462,6 +462,47 @@ strategies are *easier* to overfit and *harder* to validate (few independent
 bets), which is exactly why the t-stat hurdle in the factor literature rose
 from ~2.0 to ~3.0 once trial-counting was applied.
 
+### The real Fama-French quality-value strategy, filing-lagged (2026-06-03)
+
+[factors_pit.py](factors_pit.py) closes the #2 prerequisite — **filing-lag**.
+It reads SEC EDGAR `companyfacts` and, for any rebalance date, uses only 10-K
+values whose `filed` date ≤ that date (the live `FundamentalsManager` returns
+*latest* values, which is lookahead). Verified: AAPL's as-of BM falls 0.56
+(2018) → 0.03 (2021) → 0.02 (2024) as different filings become knowable — no
+peeking. [equity.py](equity.py) `ff_composite_factor_fn` then scores each date
+cross-sectionally as **z(BM) + z(OP) − z(INV)** (cheaper + more profitable +
+more conservative — the academically-signed factors the `backend/` screener
+uses).
+
+```bash
+python -m research equity-ff --start 2016-01-01 --end 2026-06-01
+```
+
+**Result (30 large caps, 28 with EDGAR data, 124 monthly periods, 2016-2026):**
+
+| config | periods | annRet | annSR | maxDD | DSR | obj | survives |
+|---|---|---|---|---|---|---|---|
+| long-only (top 30%) | 124 | +23.4% | **1.28** | 18.3% | 0.06 | pass | **no** |
+| long-short (top−bottom 30%) | 124 | +1.4% | 0.17 | 33.0% | 0.00 | pass | no |
+
+Long-only quality-value looks *genuinely attractive* — Sharpe 1.28 over a
+decade including 2018/2020/2022, and it even **strengthens on the holdout**
+(Sharpe 1.51). A naive quant would ship it. **DSR = 0.06 → does not survive**,
+and the reason is specific and correct: the universe is **survivorship-biased
+in the strategy's favour** — 28 names that all survived to 2026 — so a Sharpe
+~1.3 from a couple of configs on hand-picked survivors is within what selection
++ luck produce. This is *not* "no edge"; it's **"promising, not yet proven, and
+here is exactly what proving it requires."** The long-short being flat is itself
+a tell: most of the long-only return is market beta, not factor alpha.
+
+The last remaining prerequisite is the #1 one: a **point-in-time, delisted-aware
+universe** (today's `smp500.txt` excludes everything that failed). With
+filing-lag now enforced and 2016+ SIP history available, that survivorship-free
+universe is the single thing standing between this and a trustworthy verdict —
+and it's the hard one to get free (a historical-constituents source, or paid
+data). The framework has done its job: it took an attractive-looking real
+strategy and told you precisely why you can't believe it *yet*.
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /

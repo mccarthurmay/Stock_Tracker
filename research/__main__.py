@@ -342,6 +342,78 @@ def cmd_equity_smoke(args, store):
           "PIT membership + filing-lagged fundamentals (the equity.py TODOs).")
 
 
+def cmd_equity_ff(args, store):
+    """The REAL Fama-French quality-value strategy: z(BM)+z(OP)-z(INV), monthly
+    rebalanced, with FILING-LAGGED fundamentals (no lookahead) over 2016+ SIP."""
+    from . import factors_pit
+    client = AlpacaResearch()
+    tickers = historical.read_ticker_list(args.file) if args.file else \
+        ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "XOM", "JNJ",
+         "PG", "HD", "BAC", "KO", "PFE", "CVX", "WMT", "DIS", "CSCO", "INTC", "T",
+         "VZ", "MRK", "ABBV", "PEP", "ORCL", "COST", "MCD", "NKE", "TXN", "UNH"]
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    print(f"FF quality-value: z(BM)+z(OP)-z(INV), {len(tickers)} names, {start}..{end},")
+    print("monthly rebalance, filing-lagged EDGAR fundamentals (no lookahead), SIP prices.\n")
+    print("CAVEAT: filing-lag IS enforced; SURVIVORSHIP is NOT (today's large caps).")
+    print("So this is the real strategy on real PIT fundamentals, but the universe")
+    print("is still biased — treat a 'pass' as provisional (ROADMAP §12).\n")
+
+    prices = equity.monthly_total_return_panel(client, tickers, start, end)
+    if prices.empty or prices.shape[0] < 12:
+        print("Not enough price history."); return
+    print(f"Price panel: {prices.shape[1]} names x {prices.shape[0]} month-ends.")
+    print("Fetching filing-lagged EDGAR fundamentals (cached per CIK)...", flush=True)
+    pit = factors_pit.PITFundamentals()
+    panel = factors_pit.build_factor_panel(prices, list(prices.index), pit)
+    if panel.empty:
+        print("No PIT fundamentals assembled (EDGAR coverage?)."); return
+    print(f"Factor panel: {len(panel)} (date,ticker) rows, "
+          f"{panel['ticker'].nunique()} names with EDGAR data.\n")
+
+    factor_fn = equity.ff_composite_factor_fn(panel)
+    configs = [("long_only", equity.EquityConfig(quantile=0.3, long_short=False)),
+               ("long_short", equity.EquityConfig(quantile=0.3, long_short=True))]
+    n_trials = len(configs)
+    print(f"{'config':>12} {'periods':>7} {'annRet':>8} {'annSR':>7} {'maxDD':>7} "
+          f"{'skew':>6} {'DSR':>6} {'obj':>4} {'surv':>5}")
+    results = {}
+    for name, cfg in configs:
+        bt = equity.run_equity_backtest(prices, factor_fn, cfg)
+        if bt.empty:
+            print(f"{name:>12}  (no periods)"); continue
+        ev = equity.evaluate(bt, n_trials)
+        results[name] = (bt, ev)
+        print(f"{name:>12} {ev['n_periods']:7d} {ev['ann_return']*100:7.1f}% "
+              f"{ev['sharpe_annual']:7.2f} {ev['max_drawdown']*100:6.1f}% "
+              f"{ev['skew']:6.2f} {ev['dsr']:6.2f} "
+              f"{'Y' if ev['objective_pass'] else 'n':>4} "
+              f"{'YES' if ev['survives'] else 'no':>5}")
+
+    if results:
+        best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
+        bt, _ = results[best]
+        sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
+        print(f"\nHoldout check on best config ({best}), opened once:")
+        for label, seg in [("train", bt[sp["train"].mask(bt["date"])]),
+                           ("HOLDOUT", bt[sp["holdout"].mask(bt["date"])])]:
+            if seg.empty:
+                continue
+            ev = equity.evaluate(seg, n_trials)
+            print(f"  {label:>8}: periods={ev['n_periods']} annRet={ev['ann_return']*100:.1f}% "
+                  f"annSR={ev['sharpe_annual']:.2f} maxDD={ev['max_drawdown']*100:.1f}%")
+    n_surv = sum(1 for _, (_, ev) in results.items() if ev["survives"])
+    print(f"\n{'='*66}")
+    if n_surv == 0:
+        print("No config survives DSR. Even the real quality-value strategy on")
+        print("filing-lagged data doesn't clear the data-mining-adjusted bar here")
+        print("(and the universe is still survivorship-biased in its FAVOR).")
+    else:
+        print(f"{n_surv} config(s) survive DSR — provisional only: the universe is")
+        print("still survivorship-biased. Next gate is a PIT delisted-aware universe.")
+    print('='*66)
+
+
 def cmd_scan_run(args, store):
     """Run the call-option hypotheses across a ticker-list universe; show the
     in-sample winners, the DSR deflation, and the holdout on the apparent best."""
@@ -854,6 +926,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--end", default=None, help="YYYY-MM-DD")
     sp.add_argument("--years", type=int, default=2, help="approx history depth if --start omitted")
     sp.set_defaults(func=cmd_equity_smoke)
+
+    sp = sub.add_parser("equity-ff", help="real FF quality-value strategy (filing-lagged) + DSR/holdout")
+    sp.add_argument("--file", default=None, help="ticker-list file (default: 30 large caps)")
+    sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
+    sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
+    sp.set_defaults(func=cmd_equity_ff)
 
     sp = sub.add_parser("scan-run", help="run CALL hypotheses across a ticker universe; DSR-deflate + holdout")
     sp.add_argument("--file", default=None, help="ticker-list file (default: all stored)")

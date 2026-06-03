@@ -75,21 +75,26 @@ def momentum_factor(prices: pd.DataFrame, date, lookback=12, skip=1) -> pd.Serie
     return (p_now / p_then - 1.0).dropna()
 
 
-def ff_composite_factor(fundamentals_panel: pd.DataFrame, date) -> pd.Series:
-    """z(BM) + z(OP) - z(INV) from filing-lagged SEC fundamentals.
+def ff_composite_factor_fn(panel: pd.DataFrame):
+    """Build a factor_fn(prices, date) -> score from a PIT factor panel.
 
-    TODO(point-in-time): `fundamentals_panel` must already be filtered so each
-      (ticker, factor) value comes from a 10-K with filed <= `date`. The current
-      FundamentalsManager returns LATEST values (no as-of). Enforcing the filing
-      lag is a prerequisite before this is run — otherwise it is lookahead.
-    TODO(survivorship): the ticker set feeding this must be PIT membership
-      including delisted names; a current-constituents file is biased.
+    `panel` is the filing-lagged output of factors_pit.build_factor_panel
+    (columns date, ticker, BM, OP, INV). At each date we cross-sectionally
+    z-score the names available THEN and return:  z(BM) + z(OP) - z(INV)
+    (cheaper + more profitable + more conservative). Filing-lag is already
+    enforced upstream; survivorship is NOT (universe must be PIT — see TODO).
     """
-    g = fundamentals_panel
-    if g.empty:
-        return pd.Series(dtype=float)
-    z = lambda col: (g[col] - g[col].mean()) / g[col].std(ddof=0)
-    return (z("BM") + z("OP") - z("INV")).dropna()
+    by_date = {d: g for d, g in panel.groupby("date")} if not panel.empty else {}
+
+    def factor_fn(prices, date, **_):
+        g = by_date.get(date)
+        if g is None or len(g) < 3:
+            return pd.Series(dtype=float)
+        z = lambda col: (g[col] - g[col].mean()) / g[col].std(ddof=0)
+        score = (z("BM") + z("OP") - z("INV"))
+        return pd.Series(score.values, index=g["ticker"].values).dropna()
+
+    return factor_fn
 
 
 # ----------------------------------------------------------------- backtest
