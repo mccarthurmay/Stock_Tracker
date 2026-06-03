@@ -38,15 +38,17 @@ import pandas as pd
 
 
 # ----------------------------------------------------------------- prices
-def monthly_total_return_panel(client, tickers, start, end) -> pd.DataFrame:
+def monthly_total_return_panel(client, tickers, start, end, feed="sip") -> pd.DataFrame:
     """Wide DataFrame of month-end split+div-adjusted closes (index=month-end,
-    columns=tickers). One API pull per ticker; total-return proxy via 'all'."""
+    columns=tickers). One API pull per ticker; total-return proxy via 'all'.
+    Uses the SIP feed by default — free-tier historical SIP goes back to 2016
+    (IEX only ~mid-2020), the multi-regime depth a factor study needs."""
     series = {}
     s = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
     e = datetime(end.year, end.month, end.day, tzinfo=timezone.utc)
     for t in tickers:
         try:
-            df = client.stock_bars(t, s, e, "1Day", adjustment="all")
+            df = client.stock_bars(t, s, e, "1Day", adjustment="all", feed=feed)
         except Exception:
             continue
         if df.empty:

@@ -433,28 +433,31 @@ Fama-French quality-value direction the screener in `backend/` is built around).
 python -m research equity-smoke --years 2          # 12-1 momentum, 20 large caps
 ```
 
-**Smoke result (20 mega-caps, 25 monthly periods, 12-1 momentum):** long-only
-showed annualized Sharpe **1.35**, +30%/yr, and *passed* the monthly objective —
-but **DSR = 0.16 → does not survive**, and that refusal is correct:
+**Smoke result (20 mega-caps, 112 monthly periods over 2016-2026, 12-1
+momentum):** long-only showed annualized Sharpe **1.11**, +22%/yr, and *passed*
+the monthly objective — but **DSR ≈ 0.01 → does not survive**, and that refusal
+is correct:
 
 - **Survivorship bias dominates** — these are names that are *still* mega-caps
   in 2026, so momentum among known winners is almost guaranteed to look good.
   `smp500.txt` is a *current*-membership list (no delisted names); a real study
   needs a point-in-time, survivorship-free universe (`equity.py` TODO).
-- **Tiny sample** — 25 monthly returns can't distinguish skill from luck; DSR's
-  `√(n−1)` keeps confidence low even at SR 1.35. A naive backtester would have
-  said "Sharpe 1.35, ship it"; the apparatus says "unproven."
+- **Deep sample, still unproven** — with 112 monthly returns spanning the 2018,
+  2020 and 2022 stress regimes, the DSR verdict is now *well-powered*: the
+  refusal is no longer "too few points" but "this Sharpe is what survivorship +
+  data-mining would produce." A naive backtester would have said "Sharpe 1.1,
+  ship it"; the apparatus says "unproven." (More data made DSR *more* confident
+  in rejecting, not less.)
 
 So the plumbing is validated and the engine refuses to bless a survivorship-
-inflated 2-year result. A trustworthy FF factor study needs three things the
-free tier lacks (and `equity.py` flags as hard prerequisites): **(1)** a PIT
-delisted-aware universe, **(2)** **filing-lagged** fundamentals (use a 10-K only
-after its `filed` date — `fundamentals.py` tracks it but `get_fundamentals`
-returns latest), and **(3)** **decades** of history. (Free Alpaca *stock* bars
-on the IEX feed go back to ~mid-2020 — ~5 yrs, verified — not 2024; the Feb-2024
-limit is *options* only. But ~5 yrs of one regime is still far too shallow for a
-factor study, which wants multiple cycles.) Ken French's library + Stooq/Tiingo
-are the free deep sources. Long-horizon
+inflated result even with a decade of data. A trustworthy FF factor study needs
+**(1)** a PIT delisted-aware universe and **(2)** **filing-lagged** fundamentals
+(use a 10-K only after its `filed` date — `fundamentals.py` tracks it but
+`get_fundamentals` returns latest). History depth is *not* the blocker: free
+Alpaca **stock** bars via the **SIP** feed go back to **2016** (~9 yrs, verified
+— the IEX feed only reaches ~mid-2020, and the Feb-2024 limit is *options*
+only). Ken French's library + Stooq/Tiingo remain useful for going beyond 2016.
+Long-horizon
 strategies are *easier* to overfit and *harder* to validate (few independent
 bets), which is exactly why the t-stat hurdle in the factor literature rose
 from ~2.0 to ~3.0 once trial-counting was applied.

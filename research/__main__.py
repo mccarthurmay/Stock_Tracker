@@ -289,10 +289,10 @@ def cmd_equity_smoke(args, store):
     end = _date(args.end) if args.end else date.today()
     start = _date(args.start) if args.start else (end - timedelta(days=args.years * 365 + 400))
     print(f"Equity smoke: 12-1 momentum over {len(tickers)} names, "
-          f"{start}..{end}, monthly rebalance.\n")
-    print("NOTE: today's ticker list has SURVIVORSHIP BIAS (no delisted names) "
-          "and prices are split+div adjusted but ~2yr deep only — this proves\n"
-          "the engine, it is NOT a trustworthy factor result (ROADMAP §12).\n")
+          f"{start}..{end}, monthly rebalance (SIP feed, total-return adjusted).\n")
+    print("NOTE: today's ticker list has SURVIVORSHIP BIAS (no delisted names) — "
+          "this proves the engine and the DSR/holdout wiring; it is NOT a\n"
+          "trustworthy factor result until the universe is point-in-time (ROADMAP §12).\n")
 
     prices = equity.monthly_total_return_panel(client, tickers, start, end)
     if prices.empty or prices.shape[0] < 6:
@@ -337,9 +337,9 @@ def cmd_equity_smoke(args, store):
                   f"annSR={ev['sharpe_annual']:.2f} maxDD={ev['max_drawdown']*100:.1f}%")
 
     print("\nSame apparatus as the options work: Sharpe deflated by trial count, "
-          "monthly-re-frozen objective, holdout opened once. With only ~2 configs "
-          "and ~2yr of data, DSR/holdout are under-powered — a real FF study needs "
-          "decades + survivorship-free PIT data (the equity.py TODOs).")
+          "monthly-re-frozen objective, holdout opened once. The deep SIP history "
+          "(2016+) gives a real sample; the binding limit now is survivorship-free "
+          "PIT membership + filing-lagged fundamentals (the equity.py TODOs).")
 
 
 def cmd_scan_run(args, store):

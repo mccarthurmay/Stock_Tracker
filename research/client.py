@@ -103,15 +103,20 @@ class AlpacaResearch:
 
     # -- underlying ---------------------------------------------------------
     def stock_bars(self, symbol: str, start: datetime, end: datetime,
-                   timeframe: str, adjustment: str | None = None) -> pd.DataFrame:
+                   timeframe: str, adjustment: str | None = None,
+                   feed: str | None = None) -> pd.DataFrame:
         self.rl.acquire()
         # 'all' = split + dividend adjusted (total-return proxy) for equity
         # backtests; default keeps the configured adjustment for options work.
         adj = Adjustment(adjustment) if adjustment else self._adjustment
+        # Feed override: the free tier serves SIP *historical* bars (>15 min old)
+        # back to 2016, vs IEX which only goes ~mid-2020. Equity backtests pass
+        # feed='sip' for deep history; options work keeps the configured default.
+        f = DataFeed(feed) if feed else self._stock_feed
         req = StockBarsRequest(
             symbol_or_symbols=symbol, start=start, end=end,
             timeframe=parse_timeframe(timeframe),
-            adjustment=adj, feed=self._stock_feed,
+            adjustment=adj, feed=f,
         )
         recs = _bars_to_records(self.stock.get_stock_bars(req), symbol)
         df = pd.DataFrame(recs)
