@@ -62,6 +62,78 @@ def monthly_total_return_panel(client, tickers, start, end, feed="sip",
     return pd.DataFrame(series).sort_index()
 
 
+def daily_price_panel(client, tickers, start, end, feed="sip",
+                      progress_every: int = 200) -> pd.DataFrame:
+    """Wide DAILY total-return-adjusted close panel (index=daily ts, cols=tickers).
+
+    The CI mean-reversion signal (from backend/analysis.py) needs a ~90-DAY
+    rolling mean/std, so monthly bars aren't enough — this keeps daily history.
+    Resample to month-end with `month_end()` to get the return panel."""
+    series = {}
+    s = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+    e = datetime(end.year, end.month, end.day, tzinfo=timezone.utc)
+    for i, t in enumerate(tickers, 1):
+        try:
+            df = client.stock_bars(t, s, e, "1Day", adjustment="all", feed=feed)
+        except Exception:
+            df = None
+        if df is not None and not df.empty:
+            series[t] = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
+        if progress_every and i % progress_every == 0:
+            print(f"  daily prices {i}/{len(tickers)} ({len(series)} with data)", flush=True)
+    return pd.DataFrame(series).sort_index() if series else pd.DataFrame()
+
+
+def month_end(daily: pd.DataFrame) -> pd.DataFrame:
+    """Month-end last observation from a daily panel (for forward returns)."""
+    return daily.resample("ME").last()
+
+
+def ci_factor_fn(daily: pd.DataFrame, lookback_days=90, n_std=2.0):
+    """The screener's CI signal as a cross-sectional factor (point-in-time).
+
+    Mirrors backend/analysis.py: lower_bound = mean − n_std·std over the last
+    `lookback_days`; a name is a "buy" when its price sits below that band, and
+    *more below* = stronger. The cross-sectional score is −z = −(price−mean)/std,
+    so the top quantile = the names furthest below their own CI band (the biggest
+    dips). Uses only daily data ≤ `date`, so no lookahead. (n_std is kept for a
+    thresholded variant; the rank form already favours the most-below names.)"""
+    def factor_fn(prices, date, **_):
+        win = daily.loc[:date]
+        if win.empty:
+            return pd.Series(dtype=float)
+        win = win.tail(lookback_days)
+        if len(win) < int(lookback_days * 0.5):
+            return pd.Series(dtype=float)
+        mean = win.mean()
+        std = win.std().replace(0, np.nan)
+        price = win.iloc[-1]
+        z = (price - mean) / std
+        return (-z).dropna()          # higher = further below band = stronger buy
+    return factor_fn
+
+
+def ci_ma_factor_fn(daily: pd.DataFrame, ci_lookback=90, ma_window=200):
+    """Avenue 2: buy the dip ONLY in an uptrend. Among names whose price is above
+    their `ma_window`-day moving average (MA bullish), rank by how far below the
+    CI band they are (−z). Non-uptrend names are excluded. Point-in-time."""
+    def factor_fn(prices, date, **_):
+        win = daily.loc[:date]
+        if win.empty:
+            return pd.Series(dtype=float)
+        w_ci = win.tail(ci_lookback)
+        if len(w_ci) < int(ci_lookback * 0.5):
+            return pd.Series(dtype=float)
+        mean = w_ci.mean()
+        std = w_ci.std().replace(0, np.nan)
+        price = win.iloc[-1]
+        z = (price - mean) / std
+        ma = win.tail(ma_window).mean()
+        score = (-z).where(price > ma)   # eligible only if in uptrend
+        return score.dropna()
+    return factor_fn
+
+
 # ----------------------------------------------------------------- factor sources
 def momentum_factor(prices: pd.DataFrame, date, lookback=12, skip=1) -> pd.Series:
     """12-1 momentum: total return from t-lookback to t-skip (skip the most

@@ -414,6 +414,80 @@ def cmd_equity_ff(args, store):
     print('='*66)
 
 
+def cmd_equity_ci(args, store):
+    """Backtest the screener's CI mean-reversion signal (backend/analysis.py) as
+    a cross-sectional strategy, sweeping the lookback window + an MA-combo, with
+    every variant counted as a DSR trial (the overfitting guard for 'which window
+    works'). CI = buy names trading below their own mean-n*std band."""
+    client = AlpacaResearch()
+    tickers = historical.read_ticker_list(args.file) if args.file else \
+        ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "XOM", "JNJ",
+         "PG", "HD", "BAC", "KO", "PFE", "CVX", "WMT", "DIS", "CSCO", "INTC", "T",
+         "VZ", "MRK", "ABBV", "PEP", "ORCL", "COST", "MCD", "NKE", "TXN", "UNH"]
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    print(f"CI mean-reversion backtest, {len(tickers)} names, {start}..{end}, monthly rebalance.")
+    print("Signal = buy names below their (mean - n*std) price band; rank by how far below.")
+    print("CAVEAT: prices only (no fundamentals), but universe is still NOT survivorship-free.\n")
+
+    daily = equity.daily_price_panel(client, tickers, start, end)
+    if daily.empty or daily.shape[0] < 250:
+        print("Not enough daily history."); return
+    prices = equity.month_end(daily)
+    print(f"Daily panel: {daily.shape[1]} names x {daily.shape[0]} days "
+          f"-> {prices.shape[0]} month-ends.\n")
+
+    # Avenue 1: sweep lookback windows. Avenue 2: CI+MA combo. long-only & L/S.
+    # EVERY entry below is one DSR trial.
+    ls = args.long_short
+    variants = []
+    for lb in args.windows:
+        variants.append((f"CI{lb}", equity.ci_factor_fn(daily, lookback_days=lb)))
+    for lb in args.windows:
+        variants.append((f"CI{lb}+MA{args.ma}", equity.ci_ma_factor_fn(daily, ci_lookback=lb, ma_window=args.ma)))
+    n_trials = len(variants) * (2 if ls else 1)
+
+    cfg_lo = equity.EquityConfig(quantile=args.quantile, long_short=False)
+    cfg_ls = equity.EquityConfig(quantile=args.quantile, long_short=True)
+    print(f"Sweeping {len(variants)} signal variants x {'2 (long-only+L/S)' if ls else '1 (long-only)'} "
+          f"= {n_trials} trials (each deflates the DSR).\n")
+    print(f"{'variant':>14} {'side':>10} {'periods':>7} {'annRet':>8} {'annSR':>7} "
+          f"{'maxDD':>7} {'DSR':>6} {'obj':>4} {'surv':>5}")
+    results = {}
+    for name, fn in variants:
+        for side_name, cfg in ([("long_only", cfg_lo), ("long_short", cfg_ls)] if ls
+                               else [("long_only", cfg_lo)]):
+            bt = equity.run_equity_backtest(prices, fn, cfg)
+            if bt.empty:
+                print(f"{name:>14} {side_name:>10}  (no periods)"); continue
+            ev = equity.evaluate(bt, n_trials)
+            results[(name, side_name)] = (bt, ev)
+            print(f"{name:>14} {side_name:>10} {ev['n_periods']:7d} {ev['ann_return']*100:7.1f}% "
+                  f"{ev['sharpe_annual']:7.2f} {ev['max_drawdown']*100:6.1f}% {ev['dsr']:6.2f} "
+                  f"{'Y' if ev['objective_pass'] else 'n':>4} {'YES' if ev['survives'] else 'no':>5}")
+
+    if results:
+        best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
+        bt, _ = results[best]
+        sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
+        print(f"\nWhich window 'works' + holdout — best by validation SR was {best}, opened once:")
+        for label, seg in [("train", bt[sp["train"].mask(bt["date"])]),
+                           ("HOLDOUT", bt[sp["holdout"].mask(bt["date"])])]:
+            if seg.empty:
+                continue
+            ev = equity.evaluate(seg, n_trials)
+            print(f"  {label:>8}: periods={ev['n_periods']} annRet={ev['ann_return']*100:.1f}% "
+                  f"annSR={ev['sharpe_annual']:.2f} maxDD={ev['max_drawdown']*100:.1f}%")
+    n_surv = sum(1 for _, (_, ev) in results.items() if ev["survives"])
+    print(f"\n{'='*68}")
+    if n_surv == 0:
+        print("No CI variant survives DSR. 'Which window works' is the wrong question —")
+        print("the best window is the best-of-N fluke, and deflating by all N deletes it.")
+    else:
+        print(f"{n_surv} variant(s) survive DSR (provisional; universe survivorship-biased).")
+    print('='*68)
+
+
 def cmd_scan_run(args, store):
     """Run the call-option hypotheses across a ticker-list universe; show the
     in-sample winners, the DSR deflation, and the holdout on the apparent best."""
@@ -932,6 +1006,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
+
+    sp = sub.add_parser("equity-ci", help="backtest the screener's CI mean-reversion signal (window sweep + MA combo)")
+    sp.add_argument("--file", default=None, help="ticker-list file (default: 30 large caps)")
+    sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
+    sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
+    sp.add_argument("--windows", type=int, nargs="+", default=[60, 90, 120, 252],
+                    help="CI lookback windows in days to sweep (each = a DSR trial)")
+    sp.add_argument("--ma", type=int, default=200, help="MA window (days) for the CI+MA combo")
+    sp.add_argument("--quantile", type=float, default=0.2)
+    sp.add_argument("--long-short", action="store_true", dest="long_short",
+                    help="also test top-minus-bottom (isolates factor from market beta)")
+    sp.set_defaults(func=cmd_equity_ci)
 
     sp = sub.add_parser("scan-run", help="run CALL hypotheses across a ticker universe; DSR-deflate + holdout")
     sp.add_argument("--file", default=None, help="ticker-list file (default: all stored)")

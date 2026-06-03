@@ -537,6 +537,66 @@ Adding the failed names would only lower the result further, reinforcing the
 verdict. The framework did its job: it took an attractive-looking screen, showed
 the apparent return was beta not alpha, and refused to bless it.
 
+## The screener's own CI signal, backtested (2026-06-03)
+
+The live screener (`backend/analysis.py`) buys names trading **below their
+`mean − 2·std` price band** over a ~90-day window (mean reversion). `equity.py`
+(`ci_factor_fn`, `ci_ma_factor_fn`) backtests it as a cross-sectional strategy,
+point-in-time on daily SIP data, sweeping three things the user asked about —
+each counted as a DSR trial:
+
+```bash
+python -m research equity-ci --file backend/storage/ticker_lists/smp500.txt \
+    --start 2016-01-01 --windows 60 90 120 252 --ma 200 --long-short
+```
+
+**Result (S&P 500 names, 125 monthly periods, 2016-2026, 16 trials):**
+
+| variant | long-only annSR | long-short annSR | DSR |
+|---|---|---|---|
+| CI 60d | 0.82 | −0.14 | 0.00 |
+| CI 90d (the screener's default) | 0.74 | −0.34 | 0.00 |
+| CI 120d | 0.77 | −0.29 | 0.00 |
+| CI 252d | 0.64 | −0.30 | 0.00 |
+| **CI 60d + MA200** | **1.04** | −0.01 | 0.00 |
+| CI 90d + MA200 | 0.98 | 0.00 | 0.00 |
+| CI 120d + MA200 | 0.94 | −0.04 | 0.00 |
+| CI 252d + MA200 | 0.86 | −0.37 | 0.00 |
+
+Three findings, mapping to the three avenues:
+
+1. **"Which lookback window works?" is the wrong question.** Long-only Sharpes
+   cluster at 0.64–1.04 with no special window; the spread is noise. The best
+   (CI60+MA200, SR 1.04) is the **max of 16 trials**, and **DSR = 0.00 on every
+   one** — deflating by the trial count deletes the apparent winner. Picking the
+   best window *is* the overfit, and the apparatus shows it. (Holdout on the
+   best: train SR 1.14 → holdout 0.81 — the usual in-sample flattery fade.)
+2. **The CI + moving-average combo genuinely improved the raw signal** — every
+   `CI+MA200` variant beat its raw twin (e.g. 60d: 0.82 → 1.04; drawdowns ~27%
+   → ~23%). "Buy the dip only in an uptrend" was a sound intuition. But...
+3. **...the long-short reveals it's beta, not alpha.** Stripping market beta
+   (top minus bottom), every CI variant is ≈ 0%/yr (−0.37 to 0.00 Sharpe). So
+   the long-only's ~15%/yr was **market beta** — being long equities in a
+   2016-2026 bull market — and the MA filter helped by *timing that beta*
+   (staying in uptrends), not by adding selection edge. Same verdict as the FF
+   screen: **no alpha beyond beta.**
+
+### Could the CI idea apply to volume? (idea, not tested — per request)
+
+Plausibly, but with a sharper caveat. A CI band on **price** assumes a roughly
+stationary mean to revert to; **volume** is different — it's non-stationary
+(secular drift, persistent regime shifts around index adds/earnings), heavily
+right-skewed, and spikes are clustered. A symmetric `mean ± 2σ` band fits it
+badly: "too low" volume isn't obviously a tradeable signal, and "too high"
+volume (a 2σ spike) is the more-studied event — usually a *capitulation* or
+*breakout* marker, not a mean-reversion one. If pursued, the honest framing
+would be **relative volume** (today vs a trailing median, log-scaled) as a
+*filter/conditioner* on the price signal — e.g. "a CI dip on elevated volume =
+real selling vs. a CI dip on thin volume = noise" — rather than a standalone CI
+band on raw volume. That's a conditioning hypothesis worth one registered trial,
+not a new factor; and it would face the same beta-vs-alpha test the long-short
+applied above.
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /
