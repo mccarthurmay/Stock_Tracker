@@ -134,59 +134,63 @@ def ci_ma_factor_fn(daily: pd.DataFrame, ci_lookback=90, ma_window=200):
     return factor_fn
 
 
+def rsi_frame(px: pd.DataFrame, window=14) -> pd.DataFrame:
+    """RSI matching backend/analysis.py exactly: 14-period SIMPLE rolling mean
+    of up/down moves (not Wilder's EMA): 100*mean_up/(mean_up+mean_down)."""
+    change = px.diff()
+    up = change.clip(lower=0)
+    down = (-change.clip(upper=0))
+    mean_up = up.rolling(window).mean()
+    mean_down = down.rolling(window).mean()
+    denom = (mean_up + mean_down).replace(0, np.nan)
+    return 100 * mean_up / denom
+
+
 def ci_timing_backtest(daily: pd.DataFrame, ci_lookback=90, buy_sigma=2.0,
-                       sell_sigma=1.0, ma_window=100, cost_bps=5.0):
-    """Daily event-driven CI timing with a SELL/take-profit rule (point-in-time).
+                       sell_sigma=1.0, ma_window=100, rsi_sell=70.0, rsi_window=14,
+                       sell_triggers=("sigma", "ma"), cost_bps=5.0):
+    """Daily event-driven CI timing with COMPOSABLE sell triggers (point-in-time).
 
-    Per name, holding state evolves on daily closes:
-      ENTER (go long) when price < mean - buy_sigma*std   (the screener's buy)
-      EXIT  (take profit / de-risk) when EITHER
-              price > mean + sell_sigma*std                (overextended)
-           OR the moving average is FALLING (today's MA < prior day's MA)
-    mean/std/MA use only data up to and including day t (rolling, causal).
-    A signal on day t's close takes effect on day t+1 (shift(1)) -> no lookahead.
-
-    Returns a daily portfolio-return series = equal-weight mean of the next-day
-    returns of names HELD that day, minus turnover cost when the held set changes.
-    Compared by the caller against buy-and-hold (always-in) on the same names.
+    ENTER (long) when price < mean - buy_sigma*std (the screener's CI buy).
+    EXIT when ANY enabled trigger fires (`sell_triggers` is a subset of):
+      'sigma' : price > mean + sell_sigma*std        (overextended / take profit)
+      'ma'    : the moving average is FALLING          (today's MA < prior MA)
+      'rsi'   : RSI >= rsi_sell                         (analysis.py 14d RSI)
+    All inputs are rolling/causal; a close-t signal acts on t+1 (shift) -> no
+    lookahead. Returns daily strat return (equal-weight over names held) + a
+    buy-and-hold benchmark on the same names.
     """
     px = daily.sort_index()
-    rets = px.pct_change(fill_method=None)               # next-day return per name
+    rets = px.pct_change(fill_method=None)
     mean = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).mean()
     std = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).std()
-    ma = px.rolling(ma_window, min_periods=int(ma_window*0.6)).mean()
-    ma_falling = ma < ma.shift(1)
 
-    lower = mean - buy_sigma * std
-    upper = mean + sell_sigma * std
-    buy = px < lower
-    sell = (px > upper) | ma_falling
+    buy = px < (mean - buy_sigma * std)
 
-    # Build a held-state matrix by carrying state forward per name:
-    #   held=1 after a buy, ->0 after a sell. Vectorized via forward-fill of a
-    #   signal that is +1 on buy days, 0 on sell days, NaN otherwise.
+    sell = pd.DataFrame(False, index=px.index, columns=px.columns)
+    if "sigma" in sell_triggers:
+        sell = sell | (px > (mean + sell_sigma * std))
+    if "ma" in sell_triggers:
+        ma = px.rolling(ma_window, min_periods=int(ma_window*0.6)).mean()
+        sell = sell | (ma < ma.shift(1))
+    if "rsi" in sell_triggers:
+        sell = sell | (rsi_frame(px, rsi_window) >= rsi_sell)
+
+    # held-state: +1 on buy, 0 on sell, ffill; act on t+1
     sig = pd.DataFrame(np.nan, index=px.index, columns=px.columns)
     sig = sig.mask(buy, 1.0).mask(sell, 0.0)
-    held = sig.ffill().fillna(0.0)
-    # act on t+1: a decision seen at close t affects holding for t+1's return
-    held_eff = held.shift(1).fillna(0.0)
+    held_eff = sig.ffill().fillna(0.0).shift(1).fillna(0.0)
 
-    # portfolio daily return = mean over names held that day of that day's return
     held_mask = held_eff > 0
     n_held = held_mask.sum(axis=1)
     strat_ret = (rets.where(held_mask)).mean(axis=1).fillna(0.0)
-    # turnover cost: fraction of names whose held-state flipped, times cost
     flips = held_eff.diff().abs().sum(axis=1)
-    denom = n_held.replace(0, np.nan)
-    cost = (cost_bps / 1e4) * (flips / denom).fillna(0.0)
+    cost = (cost_bps / 1e4) * (flips / n_held.replace(0, np.nan)).fillna(0.0)
     strat_ret = strat_ret - cost
-
-    # buy-and-hold benchmark: equal-weight always-in (mean of all names' returns)
     bh_ret = rets.mean(axis=1).fillna(0.0)
 
     out = pd.DataFrame({"date": px.index, "ret": strat_ret.values,
                         "bh_ret": bh_ret.values, "n_held": n_held.values})
-    # drop the warmup region where bands aren't defined yet
     valid_from = mean.dropna(how="all").index.min()
     return out[out["date"] >= valid_from].reset_index(drop=True)
 
@@ -308,6 +312,7 @@ def evaluate(period_returns: pd.DataFrame, n_trials: int,
     peak = np.maximum.accumulate(eq)
     max_dd = float(np.max((peak - eq) / peak)) if n else 0.0
     ann_ret = float((1.0 + r).prod() ** (periods_per_year / n) - 1.0) if n else 0.0
+    calmar = float(ann_ret / max_dd) if max_dd > 0 else 0.0   # return per unit drawdown
 
     reasons, passed = [], True
     if n >= min_periods:
@@ -329,6 +334,7 @@ def evaluate(period_returns: pd.DataFrame, n_trials: int,
     return {"n_periods": n, "sharpe_monthly": round(sr_p, 3),
             "sharpe_annual": round(sr_p * np.sqrt(periods_per_year), 3),
             "ann_return": round(ann_ret, 4), "max_drawdown": round(max_dd, 4),
+            "calmar": round(calmar, 3),
             "skew": round(skew, 3), "dsr": round(dsr_val, 4),
             "dsr_benchmark_sr": round(dsr["benchmark_sr"], 4), "n_trials": n_trials,
             "objective_pass": passed, "reasons": reasons, "survives": survives}

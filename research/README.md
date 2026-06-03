@@ -636,6 +636,53 @@ The exit rule **does not add value** — **0/9 beat buy-and-hold, DSR = 0.00 on 
   timing on this signal subtracts, it doesn't add. A real take-profit edge would
   have to *beat* the vs-B&H column — none did.
 
+### Composable sell triggers + RSI≥70 + the MA-as-drawdown-reducer test (2026-06-03)
+
+`ci_timing_backtest` was generalized to **composable sell triggers** — `sigma`
+(price > mean+σ), `ma` (200d MA falling), and a new **`rsi`** (14d RSI ≥ 70,
+matching `backend/analysis.py` *exactly* — verified 0.0 diff) — swept across all
+7 unions (each a DSR trial). `evaluate` now also reports **Calmar** and the run
+prints **drawdown saved vs buy-and-hold**, to judge the MA exit as risk control
+rather than alpha.
+
+```bash
+python -m research equity-timing --file backend/storage/ticker_lists/smp500.txt \
+    --start 2016-01-01 --sell-sigma 1.0 --ma 200 --rsi-sell 70
+```
+
+**Result (S&P 500, daily 2016-2026, 7 combos; buy-and-hold annSR 0.95, Calmar 0.45, maxDD 38.5%):**
+
+| sell triggers | annSR | Calmar | maxDD | DSR | annSR − B&H | ddSaved |
+|---|---|---|---|---|---|---|
+| sigma | 0.79 | 0.36 | 42.0% | 0.00 | −0.16 | −3.6% |
+| **ma** | **0.92** | **0.47** | **33.7%** | 0.00 | −0.03 | **+4.7%** |
+| rsi | 0.76 | 0.35 | 42.9% | 0.00 | −0.19 | −4.4% |
+| sigma+ma | 0.67 | 0.38 | 33.6% | 0.00 | −0.27 | +4.9% |
+| sigma+rsi | 0.74 | 0.34 | 43.1% | 0.00 | −0.20 | −4.6% |
+| ma+rsi | 0.72 | 0.41 | 33.7% | 0.00 | −0.22 | +4.8% |
+| sigma+ma+rsi | 0.69 | 0.39 | 33.5% | 0.00 | −0.26 | +4.9% |
+
+Three answers:
+
+1. **No combination gets a good DSR or beats buy-and-hold. 0/7 on both.** Every
+   `annSR − B&H` is negative; **combining triggers makes it worse** (sigma+ma+rsi
+   0.69 < any single trigger) — more exits = more whipsaw, more cost, more missed
+   recovery. No mix of CI/σ/MA/RSI conjures alpha that isn't there.
+2. **MA-only is a mild, genuine drawdown-reducer** — the one positive. It cuts
+   max drawdown 38.5% → 33.7% (**~4.7 pts saved**), nudges Calmar above B&H (0.47
+   vs 0.45), and gives up only ~1%/yr (16.0% vs 17.1%). A reasonable risk-control
+   choice if you value smoother equity — but **not alpha** (DSR 0.00, doesn't beat
+   B&H on Sharpe), and the holdout is unstable (train 0.74 *under* B&H 0.86;
+   holdout 1.48 *over* 1.25). That instability is exactly why DSR won't bless it.
+3. **RSI≥70 is the weakest exit** — lowest single-trigger Sharpe (0.76) and it
+   *raises* drawdown (42.9%, ddSaved −4.4%): selling at RSI 70 exits too early in
+   strong uptrends, hurting both return and risk. It dragged down every combo it
+   joined.
+
+**Verdict:** across buy, buy-in-uptrend, and now every sell-trigger combination,
+nothing clears DSR or beats buy-and-hold. The only defensible use is **MA-only as
+a drawdown trimmer** (≈5 pts less drawdown for ≈1%/yr) — risk management, not edge.
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /

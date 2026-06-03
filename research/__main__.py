@@ -510,53 +510,73 @@ def cmd_equity_timing(args, store):
         print("Not enough daily history."); return
     print(f"Daily panel: {daily.shape[1]} names x {daily.shape[0]} days.\n")
 
-    sells = args.sell_sigmas
-    mas = args.ma_windows
-    n_trials = len(sells) * len(mas)
-    print(f"Sweeping {len(sells)} sell-sigma x {len(mas)} MA = {n_trials} trials (deflate DSR).\n")
-    print(f"{'sellSig':>7} {'MA':>5} {'days':>6} {'annRet':>8} {'annSR':>7} {'maxDD':>7} "
-          f"{'DSR':>6} {'vs B&H SR':>10} {'surv':>5}")
-    results = {}
-    bh_ev = None
-    for ss in sells:
-        for maw in mas:
-            bt = equity.ci_timing_backtest(daily, ci_lookback=args.ci_lookback,
-                                           buy_sigma=args.buy_sigma, sell_sigma=ss, ma_window=maw)
-            if bt.empty:
-                print(f"{ss:7.1f} {maw:5d}  (no data)"); continue
-            ev = equity.evaluate(bt, n_trials, periods_per_year=252, min_periods=252)
-            if bh_ev is None:
-                bh_ev = equity.evaluate(bt.rename(columns={"ret": "_s", "bh_ret": "ret"}),
-                                        1, periods_per_year=252, min_periods=252)
-            results[(ss, maw)] = (bt, ev)
-            print(f"{ss:7.1f} {maw:5d} {ev['n_periods']:6d} {ev['ann_return']*100:7.1f}% "
-                  f"{ev['sharpe_annual']:7.2f} {ev['max_drawdown']*100:6.1f}% {ev['dsr']:6.2f} "
-                  f"{ev['sharpe_annual']-bh_ev['sharpe_annual']:+10.2f} "
-                  f"{'YES' if ev['survives'] else 'no':>5}")
+    # Sweep COMBINATIONS of sell triggers (the user's question: can ANY mix get a
+    # good DSR?). sigma / ma / rsi, alone and unioned. Each combo = one DSR trial.
+    combos = [("sigma",), ("ma",), ("rsi",), ("sigma", "ma"),
+              ("sigma", "rsi"), ("ma", "rsi"), ("sigma", "ma", "rsi")]
+    n_trials = len(combos)
 
-    if bh_ev:
-        print(f"\nBuy-and-hold benchmark (always-in): annRet {bh_ev['ann_return']*100:.1f}%  "
-              f"annSR {bh_ev['sharpe_annual']:.2f}  maxDD {bh_ev['max_drawdown']*100:.1f}%")
+    # buy-and-hold baseline once (any combo's bh_ret is identical)
+    base = equity.ci_timing_backtest(daily, ci_lookback=args.ci_lookback,
+                                     buy_sigma=args.buy_sigma, sell_sigma=args.sell_sigma,
+                                     ma_window=args.ma, rsi_sell=args.rsi_sell,
+                                     sell_triggers=("sigma",))
+    bh_ev = equity.evaluate(base.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                            1, periods_per_year=252, min_periods=252)
+    print(f"Buy-and-hold (always-in): annRet {bh_ev['ann_return']*100:.1f}%  "
+          f"annSR {bh_ev['sharpe_annual']:.2f}  Calmar {bh_ev['calmar']:.2f}  "
+          f"maxDD {bh_ev['max_drawdown']*100:.1f}%\n")
+    print(f"sell_sigma={args.sell_sigma}, ma={args.ma}d, rsi_sell={args.rsi_sell}. "
+          f"Sweeping {n_trials} trigger combos (each a DSR trial).\n")
+    print(f"{'sell triggers':>20} {'annRet':>8} {'annSR':>7} {'Calmar':>7} {'maxDD':>7} "
+          f"{'DSR':>6} {'dSR vsBH':>9} {'ddSaved':>8} {'surv':>5}")
+    results = {}
+    for combo in combos:
+        bt = equity.ci_timing_backtest(daily, ci_lookback=args.ci_lookback,
+                                       buy_sigma=args.buy_sigma, sell_sigma=args.sell_sigma,
+                                       ma_window=args.ma, rsi_sell=args.rsi_sell,
+                                       sell_triggers=combo)
+        if bt.empty:
+            print(f"{'+'.join(combo):>20}  (no data)"); continue
+        ev = equity.evaluate(bt, n_trials, periods_per_year=252, min_periods=252)
+        results[combo] = (bt, ev)
+        dd_saved = bh_ev["max_drawdown"] - ev["max_drawdown"]   # +ve = less drawdown than B&H
+        print(f"{'+'.join(combo):>20} {ev['ann_return']*100:7.1f}% {ev['sharpe_annual']:7.2f} "
+              f"{ev['calmar']:7.2f} {ev['max_drawdown']*100:6.1f}% {ev['dsr']:6.2f} "
+              f"{ev['sharpe_annual']-bh_ev['sharpe_annual']:+9.2f} {dd_saved*100:+7.1f}% "
+              f"{'YES' if ev['survives'] else 'no':>5}")
+
+    # Drawdown-reducer lens: among combos, which gives the best Calmar / cuts the
+    # most drawdown while giving up the least return vs buy-and-hold?
     if results:
+        by_calmar = max(results, key=lambda k: results[k][1]["calmar"])
+        ev = results[by_calmar][1]
+        print(f"\nDrawdown-reducer view (the MA-as-risk-control question):")
+        print(f"  best Calmar combo = {'+'.join(by_calmar)}: Calmar {ev['calmar']:.2f} "
+              f"(B&H {bh_ev['calmar']:.2f}), maxDD {ev['max_drawdown']*100:.1f}% "
+              f"(B&H {bh_ev['max_drawdown']*100:.1f}%), annRet {ev['ann_return']*100:.1f}% "
+              f"(B&H {bh_ev['ann_return']*100:.1f}%)")
+        # holdout on the best Sharpe combo
         best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
-        bt, _ = results[best]
+        bt = results[best][0]
         sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
-        print(f"\nHoldout on best (sell_sigma={best[0]}, MA={best[1]}), opened once:")
+        print(f"\nHoldout on best-Sharpe combo ({'+'.join(best)}), opened once:")
         for label, seg in [("train", bt[sp["train"].mask(bt["date"])]),
                            ("HOLDOUT", bt[sp["holdout"].mask(bt["date"])])]:
             if seg.empty:
                 continue
-            ev = equity.evaluate(seg, n_trials, periods_per_year=252, min_periods=60)
-            evb = equity.evaluate(seg.rename(columns={"ret": "_s", "bh_ret": "ret"}),
-                                  1, periods_per_year=252, min_periods=60)
-            print(f"  {label:>8}: strat annSR {ev['sharpe_annual']:.2f} vs B&H {evb['sharpe_annual']:.2f} "
-                  f"| strat annRet {ev['ann_return']*100:.1f}% vs B&H {evb['ann_return']*100:.1f}%")
+            e = equity.evaluate(seg, n_trials, periods_per_year=252, min_periods=60)
+            eb = equity.evaluate(seg.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                                 1, periods_per_year=252, min_periods=60)
+            print(f"  {label:>8}: strat annSR {e['sharpe_annual']:.2f} vs B&H {eb['sharpe_annual']:.2f} "
+                  f"| strat Calmar {e['calmar']:.2f} vs B&H {eb['calmar']:.2f}")
     n_surv = sum(1 for _, (_, ev) in results.items() if ev["survives"])
-    print(f"\n{'='*70}")
-    print(f"Sell-rule survivors (DSR>0.95 AND positive): {n_surv}/{len(results)}.")
-    print("Key question is not 'does it make money' (beta does that) but 'does the")
-    print("sell rule BEAT buy-and-hold on risk-adjusted return' -- see the vs-B&H column.")
-    print('='*70)
+    n_beat = sum(1 for _, (_, ev) in results.items() if ev["sharpe_annual"] > bh_ev["sharpe_annual"])
+    print(f"\n{'='*72}")
+    print(f"DSR survivors: {n_surv}/{len(results)}.  Combos beating B&H on Sharpe: {n_beat}/{len(results)}.")
+    print("dSR vsBH = strat annSR - buy&hold annSR (the alpha test). ddSaved = drawdown")
+    print("reduction vs B&H (the risk-control use). A real edge needs dSR>0 AND DSR>0.95.")
+    print('='*72)
 
 
 def cmd_scan_run(args, store):
@@ -1078,14 +1098,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
 
-    sp = sub.add_parser("equity-timing", help="daily CI buy + SELL rule (exit on +1sig OR MA falling) vs buy-and-hold")
+    sp = sub.add_parser("equity-timing", help="daily CI buy + composable SELL triggers (sigma/ma/rsi) vs buy-and-hold")
     sp.add_argument("--file", default=None)
     sp.add_argument("--start", default=None)
     sp.add_argument("--end", default=None)
     sp.add_argument("--ci-lookback", type=int, default=90, dest="ci_lookback")
     sp.add_argument("--buy-sigma", type=float, default=2.0, dest="buy_sigma")
-    sp.add_argument("--sell-sigmas", type=float, nargs="+", default=[1.0, 1.5, 2.0], dest="sell_sigmas")
-    sp.add_argument("--ma-windows", type=int, nargs="+", default=[50, 100, 200], dest="ma_windows")
+    sp.add_argument("--sell-sigma", type=float, default=1.0, dest="sell_sigma",
+                    help="take-profit band: sell when price > mean + this*std")
+    sp.add_argument("--ma", type=int, default=200, dest="ma",
+                    help="MA window (days); 'ma' trigger sells when this MA is falling")
+    sp.add_argument("--rsi-sell", type=float, default=70.0, dest="rsi_sell",
+                    help="'rsi' trigger sells when 14d RSI (analysis.py) >= this")
     sp.set_defaults(func=cmd_equity_timing)
 
     sp = sub.add_parser("equity-ci", help="backtest the screener's CI mean-reversion signal (window sweep + MA combo)")
