@@ -71,6 +71,16 @@ def run_backtest(frame: pd.DataFrame, signal: pd.Series,
     n = len(df)
     open_col = cfg.open_col if cfg.open_col in df.columns else cfg.price_col
 
+    # The cost model needs dte_days. It normally arrives via the greeks merge,
+    # but it is purely a function of (expiry, ts) — derive it here so the engine
+    # works even when greeks haven't been computed (e.g. the multi-ticker scan).
+    if "dte_days" not in df.columns and "expiry" in df.columns:
+        exp = pd.to_datetime(df["expiry"]).dt.tz_localize(None).dt.normalize()
+        bar_day = pd.to_datetime(df["ts"]).dt.tz_convert("UTC").dt.tz_localize(None).dt.normalize()
+        df["dte_days"] = (exp - bar_day).dt.days.clip(lower=0)
+    elif "dte_days" not in df.columns:
+        df["dte_days"] = 1  # last-resort default (front-week assumption)
+
     trades = []
     equity = 0.0
     equity_rows = []

@@ -21,7 +21,7 @@ from .client import AlpacaResearch
 from .storage import ResearchStore
 from . import (ingest, universe, integrity, greeks, hypotheses, features, registry,
                signals, metrics as metrics_mod, backtester, validation, stats, run,
-               historical)
+               historical, scan)
 from .costs import CostModel
 # Importing indicators registers them as a side effect.
 from . import indicators  # noqa: F401
@@ -253,6 +253,77 @@ def cmd_deep_ingest(args, store):
           f"option_bars={r['option_bars']} underlying_bars={r['underlying_bars']} "
           f"skipped_weeks={r['skipped_weeks']}")
     print("Now run: greeks-all, then run-all.")
+
+
+def cmd_scan_ingest(args, store):
+    """Deep-ingest a whole ticker-list file (front-week ATM call+put, recent window)."""
+    client = AlpacaResearch()
+    tickers = historical.read_ticker_list(args.file)
+    end = _date(args.end) if args.end else None
+    if args.start:
+        start = _date(args.start)
+    else:
+        # recent window: default ~3 months back from end (or today)
+        ref = end or date.today()
+        start = ref - timedelta(days=args.lookback_days)
+    print(f"Scan-ingesting {len(tickers)} tickers from {start} at {args.timeframe} "
+          f"(PIT front-week ATM call+put)...")
+    out = historical.scan_ingest(client, store, tickers, start, end, args.timeframe)
+    print(f"\nDone: {out['with_data']}/{out['tickers']} tickers returned option data.")
+    print("Now run: greeks-all per ticker (or scan-greeks), then scan-run.")
+
+
+def cmd_scan_run(args, store):
+    """Run the call-option hypotheses across a ticker-list universe; show the
+    in-sample winners, the DSR deflation, and the holdout on the apparent best."""
+    tickers = historical.read_ticker_list(args.file) if args.file else \
+        sorted({s[:-15] for s in store.option_symbols() if len(s) > 15})
+    bt_cfg = backtester.BacktestConfig(max_hold_bars=args.max_hold,
+                                       take_profit_frac=(None if args.take_profit < 0 else args.take_profit),
+                                       stop_loss_frac=args.stop)
+    print(f"Scan: CALL-option hypotheses across {len(tickers)} tickers, spread x{args.spread} ...\n")
+    out = scan.run_scan(store, tickers, timeframe=args.timeframe, spread_mult=args.spread,
+                        bt_cfg=bt_cfg, dsr_threshold=args.dsr_threshold)
+    rep = out["report"]
+    if rep.empty:
+        print("No trials produced (no call-option data for these tickers/timeframe).")
+        return
+
+    n_trials = out["n_trials"]
+    winners = out["in_sample_winners"]
+    print(f"Trials evaluated (ticker x config): {n_trials} across "
+          f"{out['n_tickers']} tickers with data.")
+    print(f"In-sample 'winners' (positive validation expectancy): {len(winners)} "
+          f"({len(winners)/n_trials*100:.1f}% of trials)\n")
+
+    if not winners.empty:
+        print("Top 10 in-sample winners (what a naive scan would trade), with DSR:")
+        print(f"{'ticker':>8} {'hypothesis':>26} {'trades':>7} {'expect':>9} {'SR/t':>6} {'DSR':>6} {'surv':>5}")
+        for _, r in winners.head(10).iterrows():
+            print(f"{r['ticker']:>8} {r['hypothesis']:>26} {int(r['n_trades']):7d} "
+                  f"{r['expectancy']:9.3f} {r['sharpe_per_trade']:6.2f} {r['dsr']:6.2f} "
+                  f"{'YES' if r['survives_dsr'] else 'no':>5}")
+
+    print(f"\nSurvivors after DSR deflation (N_trials={n_trials}): {len(out['survivors'])}")
+
+    ho = out["holdout"]
+    if ho:
+        print(f"\nHoldout opened ONCE on the best validation result "
+              f"({ho['ticker']} / {ho['hypothesis']}):")
+        print(f"  validation: expectancy={ho['val_expectancy']:.3f} SR/t={ho['val_sharpe']:.2f} DSR={ho['val_dsr']:.3f}")
+        print(f"  HOLDOUT:    trades={ho['holdout_trades']} expectancy={ho['holdout_expectancy']:.3f} "
+              f"sharpe={ho['holdout_sharpe']:.2f} -> {'PASSES' if ho['holdout_passes'] else 'FAILS'}")
+
+    print(f"\n{'='*68}")
+    if len(out["survivors"]) == 0:
+        print("VERDICT: scanning produced in-sample 'winners' (max of noisy trials),")
+        print("but NONE survive the data-mining-adjusted bar. This is the answer to")
+        print("'scan until one works': the winners are the multiple-testing artifact,")
+        print("and the correction (DSR, deflated by every trial) deletes them.")
+    else:
+        print(f"VERDICT: {len(out['survivors'])} config(s) cleared DSR. Check the holdout")
+        print("above and then forward-paper-test before believing it (ROADMAP §6.6, §7).")
+    print('='*68)
 
 
 def cmd_run_all(args, store):
@@ -699,6 +770,24 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default yesterday)")
     sp.add_argument("--timeframe", default="5Min")
     sp.set_defaults(func=cmd_deep_ingest)
+
+    sp = sub.add_parser("scan-ingest", help="deep-ingest a ticker-list file (front-week ATM)")
+    sp.add_argument("--file", required=True, help="path to a ticker-list file (one symbol/line)")
+    sp.add_argument("--start", default=None, help="YYYY-MM-DD (default: end - lookback)")
+    sp.add_argument("--end", default=None, help="YYYY-MM-DD (default: today)")
+    sp.add_argument("--lookback-days", type=int, default=95, dest="lookback_days")
+    sp.add_argument("--timeframe", default="5Min")
+    sp.set_defaults(func=cmd_scan_ingest)
+
+    sp = sub.add_parser("scan-run", help="run CALL hypotheses across a ticker universe; DSR-deflate + holdout")
+    sp.add_argument("--file", default=None, help="ticker-list file (default: all stored)")
+    sp.add_argument("--timeframe", default="5Min")
+    sp.add_argument("--spread", type=float, default=1.0)
+    sp.add_argument("--stop", type=float, default=0.5)
+    sp.add_argument("--take-profit", type=float, default=-1.0, dest="take_profit")
+    sp.add_argument("--max-hold", type=int, default=30, dest="max_hold")
+    sp.add_argument("--dsr-threshold", type=float, default=0.95, dest="dsr_threshold")
+    sp.set_defaults(func=cmd_scan_run)
 
     sp = sub.add_parser("run-all", help="M6: run the reasoned hypothesis set, report survivors")
     sp.add_argument("--underlying", default=None, help="run over all stored options of this underlying")

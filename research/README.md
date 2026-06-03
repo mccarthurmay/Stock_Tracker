@@ -378,6 +378,40 @@ signals — 11 hypotheses, 18 configs, effective-N up to ~1,080 — **no robust
 intraday-options edge survives realistic costs and multiple-testing
 correction**. That is the project's honest verdict on free data.
 
+### Multi-ticker scan (2026-06-03): "scan until one works" — answered with data
+
+[scan.py](scan.py) + `scan-ingest`/`scan-run` run the **CALL** hypotheses
+across a whole ticker universe, counting **every (ticker × config) as a
+trial**, then deflating the Deflated Sharpe by the *total* trial count and
+opening the holdout once on the apparent best. Ingested the **S&P 500 list**
+(`backend/storage/ticker_lists/smp500.txt`) front-week ATM, recent ~3 months,
+5-min: **279/507 tickers had liquid weekly options** (2,423 call contracts).
+
+```bash
+python -m research scan-ingest --file backend/storage/ticker_lists/smp500.txt --lookback-days 95 --timeframe 5Min
+python -m research scan-run    --file backend/storage/ticker_lists/smp500.txt --timeframe 5Min
+```
+
+Result over **3,614 trials across 278 tickers**:
+
+- **In-sample "winners" (positive validation expectancy): 1** — `AMZN`
+  volatility-squeeze, +21.3 expectancy, SR/trade 0.06. The single thing a naive
+  ticker-scan would have found and traded.
+- **DSR deflated by 3,614 trials → 0.00.** The lone winner's tiny Sharpe is
+  statistically nothing once you account for how many trials produced it.
+- **Holdout (opened once on that best result) → −34.4 expectancy, Sharpe
+  −5.47, FAILS.** It looked good on the data it was selected on and **lost money
+  on data it had never seen** — the textbook overfit signature.
+
+This is the direct, data answer to *"why can't I scan tickers until one
+works — even if overfit, maybe it isn't?"* You *can* scan; the framework found
+your candidate; and tested honestly it was overfit, caught on **two independent
+grounds** (holdout reversal + DSR). The protocol is exactly what separates
+"overfit" from "real," and the only way to know is the out-of-sample test —
+which here was decisive. (Telling, too: only **1 of 3,614** trials cleared even
+positive in-sample expectancy — for retail intraday calls, costs dominate so
+thoroughly that the search space barely produces *apparent* winners.)
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /

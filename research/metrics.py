@@ -180,7 +180,8 @@ def _max_drawdown_fraction(equity: pd.Series) -> float:
     base = max(1.0, float(np.abs(eq).max()))
     value = base + eq
     running_max = np.maximum.accumulate(value)
-    dd = (running_max - value) / running_max
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dd = np.where(running_max > 0, (running_max - value) / running_max, 0.0)
     return float(np.max(dd)) if dd.size else 0.0
 
 
