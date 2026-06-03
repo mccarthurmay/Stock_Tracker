@@ -597,6 +597,45 @@ band on raw volume. That's a conditioning hypothesis worth one registered trial,
 not a new factor; and it would face the same beta-vs-alpha test the long-short
 applied above.
 
+### Adding a SELL / take-profit rule (2026-06-03)
+
+`equity.ci_timing_backtest` (`equity-timing`) makes the CI signal a **daily,
+event-driven** strategy with an explicit exit: **buy when price < mean−2σ; sell
+(take profit / de-risk) when price > mean+`S`σ OR the moving average is
+falling.** Point-in-time (signal at close t → act t+1), costs on, benchmarked
+against **buy-and-hold** (always-in, equal-weight). Sweeps sell-σ × MA window,
+each a DSR trial.
+
+```bash
+python -m research equity-timing --file backend/storage/ticker_lists/smp500.txt \
+    --start 2016-01-01 --sell-sigmas 1.0 1.5 2.0 --ma-windows 50 100 200
+```
+
+**Result (S&P 500, daily 2016-2026, 9 trials; buy-and-hold annSR = 0.95):**
+
+| sell σ | MA | annRet | annSR | maxDD | annSR − B&H |
+|---|---|---|---|---|---|
+| 2.0 | 50 | −1.5% | −0.39 | 19% | **−1.34** |
+| 2.0 | 100 | +2.4% | 0.22 | 42% | −0.73 |
+| 2.0 | **200** | +16.5% | **0.87** | 33.5% | **−0.08** |
+
+(1.0σ/1.5σ rows track closely; the **MA window dominates**, sell-σ barely moves it.)
+
+The exit rule **does not add value** — **0/9 beat buy-and-hold, DSR = 0.00 on all:**
+
+- **The "MA falling" trigger is the problem, and it's MA-speed-dependent.** A 50-
+  or 100-day MA flips negative constantly, so the rule whipsaws you out on every
+  wiggle — paying costs, missing recoveries, badly underperforming (SR −0.39 to
+  0.22). Only the **slow 200-day MA** flips rarely enough to stay mostly invested,
+  and *then* it nearly matches buy-and-hold (0.87 vs 0.95) — but never beats it.
+- **At its best it trades a little return for a little less risk** (SR 0.87 vs
+  0.95, maxDD 33.5% vs 38.5%) — i.e. "sit in cash sometimes," not edge. The
+  holdout agrees (strat 1.21 vs B&H 1.25).
+- **Same lesson as the buy side:** selling because price rose (+σ) or a short MA
+  ticked down throws away the market beta that was the only thing earning. Exit
+  timing on this signal subtracts, it doesn't add. A real take-profit edge would
+  have to *beat* the vs-B&H column — none did.
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /

@@ -134,6 +134,63 @@ def ci_ma_factor_fn(daily: pd.DataFrame, ci_lookback=90, ma_window=200):
     return factor_fn
 
 
+def ci_timing_backtest(daily: pd.DataFrame, ci_lookback=90, buy_sigma=2.0,
+                       sell_sigma=1.0, ma_window=100, cost_bps=5.0):
+    """Daily event-driven CI timing with a SELL/take-profit rule (point-in-time).
+
+    Per name, holding state evolves on daily closes:
+      ENTER (go long) when price < mean - buy_sigma*std   (the screener's buy)
+      EXIT  (take profit / de-risk) when EITHER
+              price > mean + sell_sigma*std                (overextended)
+           OR the moving average is FALLING (today's MA < prior day's MA)
+    mean/std/MA use only data up to and including day t (rolling, causal).
+    A signal on day t's close takes effect on day t+1 (shift(1)) -> no lookahead.
+
+    Returns a daily portfolio-return series = equal-weight mean of the next-day
+    returns of names HELD that day, minus turnover cost when the held set changes.
+    Compared by the caller against buy-and-hold (always-in) on the same names.
+    """
+    px = daily.sort_index()
+    rets = px.pct_change(fill_method=None)               # next-day return per name
+    mean = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).mean()
+    std = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).std()
+    ma = px.rolling(ma_window, min_periods=int(ma_window*0.6)).mean()
+    ma_falling = ma < ma.shift(1)
+
+    lower = mean - buy_sigma * std
+    upper = mean + sell_sigma * std
+    buy = px < lower
+    sell = (px > upper) | ma_falling
+
+    # Build a held-state matrix by carrying state forward per name:
+    #   held=1 after a buy, ->0 after a sell. Vectorized via forward-fill of a
+    #   signal that is +1 on buy days, 0 on sell days, NaN otherwise.
+    sig = pd.DataFrame(np.nan, index=px.index, columns=px.columns)
+    sig = sig.mask(buy, 1.0).mask(sell, 0.0)
+    held = sig.ffill().fillna(0.0)
+    # act on t+1: a decision seen at close t affects holding for t+1's return
+    held_eff = held.shift(1).fillna(0.0)
+
+    # portfolio daily return = mean over names held that day of that day's return
+    held_mask = held_eff > 0
+    n_held = held_mask.sum(axis=1)
+    strat_ret = (rets.where(held_mask)).mean(axis=1).fillna(0.0)
+    # turnover cost: fraction of names whose held-state flipped, times cost
+    flips = held_eff.diff().abs().sum(axis=1)
+    denom = n_held.replace(0, np.nan)
+    cost = (cost_bps / 1e4) * (flips / denom).fillna(0.0)
+    strat_ret = strat_ret - cost
+
+    # buy-and-hold benchmark: equal-weight always-in (mean of all names' returns)
+    bh_ret = rets.mean(axis=1).fillna(0.0)
+
+    out = pd.DataFrame({"date": px.index, "ret": strat_ret.values,
+                        "bh_ret": bh_ret.values, "n_held": n_held.values})
+    # drop the warmup region where bands aren't defined yet
+    valid_from = mean.dropna(how="all").index.min()
+    return out[out["date"] >= valid_from].reset_index(drop=True)
+
+
 # ----------------------------------------------------------------- factor sources
 def momentum_factor(prices: pd.DataFrame, date, lookback=12, skip=1) -> pd.Series:
     """12-1 momentum: total return from t-lookback to t-skip (skip the most
@@ -234,32 +291,34 @@ MONTHLY_MAX_DRAWDOWN = 0.35      # equity drawdowns run deeper than option books
 PERIODS_PER_YEAR = 12
 
 
-def evaluate(period_returns: pd.DataFrame, n_trials: int) -> dict:
+def evaluate(period_returns: pd.DataFrame, n_trials: int,
+             periods_per_year: int = PERIODS_PER_YEAR, min_periods: int = MONTHLY_MIN_PERIODS) -> dict:
     """Judge a period-return series with the SAME apparatus as the options work:
     Sharpe + Deflated Sharpe (deflated by n_trials distinct configs), plus the
-    monthly-re-frozen objective. Annualizes Sharpe only for display."""
+    re-frozen objective. `periods_per_year` lets the same code judge monthly
+    (12) or daily (252) return series; Sharpe is annualized for display only."""
     from . import stats
     r = period_returns["ret"].to_numpy(float)
     r = r[np.isfinite(r)]
     n = r.size
-    sr_m, skew, exk = stats.sharpe_stats(r)          # per-month Sharpe
-    dsr = stats.deflated_sharpe_ratio(sr_m, r, n_trials) if n >= 2 else {"dsr": 0.0, "benchmark_sr": 0.0}
+    sr_p, skew, exk = stats.sharpe_stats(r)          # per-period Sharpe
+    dsr = stats.deflated_sharpe_ratio(sr_p, r, n_trials) if n >= 2 else {"dsr": 0.0, "benchmark_sr": 0.0}
 
     eq = (1.0 + r).cumprod()
     peak = np.maximum.accumulate(eq)
     max_dd = float(np.max((peak - eq) / peak)) if n else 0.0
-    ann_ret = float((1.0 + r).prod() ** (PERIODS_PER_YEAR / n) - 1.0) if n else 0.0
+    ann_ret = float((1.0 + r).prod() ** (periods_per_year / n) - 1.0) if n else 0.0
 
     reasons, passed = [], True
-    if n >= MONTHLY_MIN_PERIODS:
-        reasons.append(f"PASS n_periods {n} >= {MONTHLY_MIN_PERIODS}")
+    if n >= min_periods:
+        reasons.append(f"PASS n_periods {n} >= {min_periods}")
     else:
-        passed = False; reasons.append(f"FAIL n_periods {n} < {MONTHLY_MIN_PERIODS}")
+        passed = False; reasons.append(f"FAIL n_periods {n} < {min_periods}")
     mean = float(r.mean()) if n else 0.0
     if mean > 0:
-        reasons.append(f"PASS mean monthly return {mean:.4f} > 0")
+        reasons.append(f"PASS mean period return {mean:.5f} > 0")
     else:
-        passed = False; reasons.append(f"FAIL mean monthly return {mean:.4f} <= 0")
+        passed = False; reasons.append(f"FAIL mean period return {mean:.5f} <= 0")
     if max_dd <= MONTHLY_MAX_DRAWDOWN:
         reasons.append(f"PASS max_drawdown {max_dd:.1%} <= {MONTHLY_MAX_DRAWDOWN:.0%}")
     else:
@@ -267,8 +326,8 @@ def evaluate(period_returns: pd.DataFrame, n_trials: int) -> dict:
     dsr_val = dsr["dsr"] if dsr["dsr"] is not None and np.isfinite(dsr["dsr"]) else 0.0
     survives = bool(passed and dsr_val > 0.95)
 
-    return {"n_periods": n, "sharpe_monthly": round(sr_m, 3),
-            "sharpe_annual": round(sr_m * np.sqrt(PERIODS_PER_YEAR), 3),
+    return {"n_periods": n, "sharpe_monthly": round(sr_p, 3),
+            "sharpe_annual": round(sr_p * np.sqrt(periods_per_year), 3),
             "ann_return": round(ann_ret, 4), "max_drawdown": round(max_dd, 4),
             "skew": round(skew, 3), "dsr": round(dsr_val, 4),
             "dsr_benchmark_sr": round(dsr["benchmark_sr"], 4), "n_trials": n_trials,

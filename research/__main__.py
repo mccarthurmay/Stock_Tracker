@@ -488,6 +488,77 @@ def cmd_equity_ci(args, store):
     print('='*68)
 
 
+def cmd_equity_timing(args, store):
+    """Daily event-driven CI timing with a SELL/take-profit rule:
+    buy < mean-2sig; EXIT when price > mean+1sig OR the MA is falling. Tests
+    whether the sell rule beats buy-and-hold, sweeping sell-sigma + MA window
+    (each a DSR trial). Daily series -> 252 periods/yr."""
+    client = AlpacaResearch()
+    tickers = historical.read_ticker_list(args.file) if args.file else \
+        ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "XOM", "JNJ",
+         "PG", "HD", "BAC", "KO", "PFE", "CVX", "WMT", "DIS", "CSCO", "INTC", "T",
+         "VZ", "MRK", "ABBV", "PEP", "ORCL", "COST", "MCD", "NKE", "TXN", "UNH"]
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    print(f"CI timing + SELL rule, {len(tickers)} names, {start}..{end}, DAILY event-driven.")
+    print("Buy: price < mean-2sig.  Sell/take-profit: price > mean+{0}sig OR MA falling."
+          .format("S"))
+    print("vs buy-and-hold (always-in, equal-weight). Costs on. PIT (signal t -> act t+1).\n")
+
+    daily = equity.daily_price_panel(client, tickers, start, end)
+    if daily.empty or daily.shape[0] < 300:
+        print("Not enough daily history."); return
+    print(f"Daily panel: {daily.shape[1]} names x {daily.shape[0]} days.\n")
+
+    sells = args.sell_sigmas
+    mas = args.ma_windows
+    n_trials = len(sells) * len(mas)
+    print(f"Sweeping {len(sells)} sell-sigma x {len(mas)} MA = {n_trials} trials (deflate DSR).\n")
+    print(f"{'sellSig':>7} {'MA':>5} {'days':>6} {'annRet':>8} {'annSR':>7} {'maxDD':>7} "
+          f"{'DSR':>6} {'vs B&H SR':>10} {'surv':>5}")
+    results = {}
+    bh_ev = None
+    for ss in sells:
+        for maw in mas:
+            bt = equity.ci_timing_backtest(daily, ci_lookback=args.ci_lookback,
+                                           buy_sigma=args.buy_sigma, sell_sigma=ss, ma_window=maw)
+            if bt.empty:
+                print(f"{ss:7.1f} {maw:5d}  (no data)"); continue
+            ev = equity.evaluate(bt, n_trials, periods_per_year=252, min_periods=252)
+            if bh_ev is None:
+                bh_ev = equity.evaluate(bt.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                                        1, periods_per_year=252, min_periods=252)
+            results[(ss, maw)] = (bt, ev)
+            print(f"{ss:7.1f} {maw:5d} {ev['n_periods']:6d} {ev['ann_return']*100:7.1f}% "
+                  f"{ev['sharpe_annual']:7.2f} {ev['max_drawdown']*100:6.1f}% {ev['dsr']:6.2f} "
+                  f"{ev['sharpe_annual']-bh_ev['sharpe_annual']:+10.2f} "
+                  f"{'YES' if ev['survives'] else 'no':>5}")
+
+    if bh_ev:
+        print(f"\nBuy-and-hold benchmark (always-in): annRet {bh_ev['ann_return']*100:.1f}%  "
+              f"annSR {bh_ev['sharpe_annual']:.2f}  maxDD {bh_ev['max_drawdown']*100:.1f}%")
+    if results:
+        best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
+        bt, _ = results[best]
+        sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
+        print(f"\nHoldout on best (sell_sigma={best[0]}, MA={best[1]}), opened once:")
+        for label, seg in [("train", bt[sp["train"].mask(bt["date"])]),
+                           ("HOLDOUT", bt[sp["holdout"].mask(bt["date"])])]:
+            if seg.empty:
+                continue
+            ev = equity.evaluate(seg, n_trials, periods_per_year=252, min_periods=60)
+            evb = equity.evaluate(seg.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                                  1, periods_per_year=252, min_periods=60)
+            print(f"  {label:>8}: strat annSR {ev['sharpe_annual']:.2f} vs B&H {evb['sharpe_annual']:.2f} "
+                  f"| strat annRet {ev['ann_return']*100:.1f}% vs B&H {evb['ann_return']*100:.1f}%")
+    n_surv = sum(1 for _, (_, ev) in results.items() if ev["survives"])
+    print(f"\n{'='*70}")
+    print(f"Sell-rule survivors (DSR>0.95 AND positive): {n_surv}/{len(results)}.")
+    print("Key question is not 'does it make money' (beta does that) but 'does the")
+    print("sell rule BEAT buy-and-hold on risk-adjusted return' -- see the vs-B&H column.")
+    print('='*70)
+
+
 def cmd_scan_run(args, store):
     """Run the call-option hypotheses across a ticker-list universe; show the
     in-sample winners, the DSR deflation, and the holdout on the apparent best."""
@@ -1006,6 +1077,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
+
+    sp = sub.add_parser("equity-timing", help="daily CI buy + SELL rule (exit on +1sig OR MA falling) vs buy-and-hold")
+    sp.add_argument("--file", default=None)
+    sp.add_argument("--start", default=None)
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--ci-lookback", type=int, default=90, dest="ci_lookback")
+    sp.add_argument("--buy-sigma", type=float, default=2.0, dest="buy_sigma")
+    sp.add_argument("--sell-sigmas", type=float, nargs="+", default=[1.0, 1.5, 2.0], dest="sell_sigmas")
+    sp.add_argument("--ma-windows", type=int, nargs="+", default=[50, 100, 200], dest="ma_windows")
+    sp.set_defaults(func=cmd_equity_timing)
 
     sp = sub.add_parser("equity-ci", help="backtest the screener's CI mean-reversion signal (window sweep + MA combo)")
     sp.add_argument("--file", default=None, help="ticker-list file (default: 30 large caps)")
