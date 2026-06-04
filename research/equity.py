@@ -226,6 +226,67 @@ def ci_value_timing_backtest(daily: pd.DataFrame, undervalued: pd.DataFrame,
     return out[out["date"] >= valid_from].reset_index(drop=True)
 
 
+def spy_crash_overlay_backtest(spy: pd.Series, ci_lookback=90, crash_sigma=2.0,
+                               n_increments=5, cost_bps=5.0):
+    """Single-asset market-timing overlay on SPY (the user's crash-dodge idea).
+
+    A state machine, all decided on close t -> acted on t+1 (no lookahead):
+      * NORMAL: fully invested (exposure 1.0). If SPY drops below its CI band
+        (price < mean - crash_sigma*std over `ci_lookback`) -> a "black swan"
+        signal -> SELL EVERYTHING (exposure 0), enter CRASH mode.
+      * CRASH: average back IN incrementally as it keeps falling -- each NEW
+        closing low adds 1/n_increments of exposure ("buy as it decreases").
+        Stop adding once price stops making new lows (the turn). When price
+        recovers back ABOVE the CI mid (mean) -> RESET to fully invested, NORMAL.
+    Daily exposure (0..1) multiplies SPY's next-day return; changes in exposure
+    pay turnover cost. Benchmarked vs buy-and-hold SPY (always exposure 1)."""
+    px = spy.sort_index()
+    ret = px.pct_change(fill_method=None).fillna(0.0)
+    mean = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).mean()
+    std = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).std()
+    lower = mean - crash_sigma * std
+
+    idx = px.index
+    exposure = np.zeros(len(px))
+    state = "normal"            # 'normal' | 'crash'
+    exp = 1.0                   # current exposure
+    crash_low = np.inf         # lowest close seen since entering crash
+    step = 1.0 / max(1, n_increments)
+
+    for i in range(len(px)):
+        p = px.iloc[i]
+        m = mean.iloc[i]
+        lo = lower.iloc[i]
+        exposure[i] = exp       # exposure effective for THIS day's return was set yesterday
+        if not np.isfinite(m):
+            continue
+        if state == "normal":
+            if np.isfinite(lo) and p < lo:          # black-swan trigger
+                exp = 0.0                            # sell everything (effective next day)
+                state = "crash"
+                crash_low = p
+        else:  # crash: average in on new lows; reset on recovery above the mean
+            if p < crash_low:                        # new low -> add an increment
+                crash_low = p
+                exp = min(1.0, exp + step)
+            if p > m:                                # recovered above CI mid -> reset
+                exp = 1.0
+                state = "normal"
+                crash_low = np.inf
+
+    # exposure was recorded as "in effect today"; shift so a decision at close t
+    # affects t+1 (no lookahead): today's return uses YESTERDAY's chosen exposure
+    exp_eff = pd.Series(exposure, index=idx).shift(1).fillna(1.0)
+    strat = exp_eff * ret
+    turnover = exp_eff.diff().abs().fillna(0.0)
+    strat = strat - (cost_bps / 1e4) * turnover
+
+    out = pd.DataFrame({"date": idx, "ret": strat.values, "bh_ret": ret.values,
+                        "n_held": exp_eff.values})
+    valid_from = mean.dropna().index.min()
+    return out[out["date"] >= valid_from].reset_index(drop=True)
+
+
 def ci_timing_backtest(daily: pd.DataFrame, ci_lookback=90, buy_sigma=2.0,
                        sell_sigma=1.0, ma_window=100, rsi_sell=70.0, rsi_window=14,
                        sell_triggers=("sigma", "ma"), cost_bps=5.0):

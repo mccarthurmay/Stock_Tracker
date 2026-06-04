@@ -488,6 +488,77 @@ def cmd_equity_ci(args, store):
     print('='*68)
 
 
+def cmd_equity_crash(args, store):
+    """Single-asset crash-dodge overlay on SPY (the user's idea): sell all when
+    SPY breaks below its CI band (black-swan), average back in incrementally as
+    it keeps falling, stop on the turn, reset on recovery. vs buy-and-hold SPY."""
+    client = AlpacaResearch()
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    print(f"SPY crash-dodge overlay, {start}..{end}, daily.")
+    print("Sell all when SPY < mean-Nsig (black swan); average in as it falls;")
+    print("reset to fully invested when it recovers above the CI mid. vs buy&hold SPY.\n")
+    df = client.stock_bars("SPY", datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+                           datetime(end.year, end.month, end.day, tzinfo=timezone.utc),
+                           "1Day", adjustment="all", feed="sip")
+    if df.empty or len(df) < 300:
+        print("Not enough SPY history."); return
+    spy = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
+    print(f"SPY: {len(spy)} daily bars {spy.index[0].date()}..{spy.index[-1].date()}\n")
+
+    combos = [(s, n) for s in args.crash_sigmas for n in args.increments]
+    n_trials = len(combos)
+    # buy-and-hold baseline
+    base = equity.spy_crash_overlay_backtest(spy, ci_lookback=args.ci_lookback,
+                                             crash_sigma=args.crash_sigmas[0], n_increments=args.increments[0])
+    bh = equity.evaluate(base.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                         1, periods_per_year=252, min_periods=252)
+    print(f"Buy-and-hold SPY: annRet {bh['ann_return']*100:.1f}%  annSR {bh['sharpe_annual']:.2f}  "
+          f"Calmar {bh['calmar']:.2f}  maxDD {bh['max_drawdown']*100:.1f}%\n")
+    print(f"Sweeping {len(args.crash_sigmas)} crash-sigma x {len(args.increments)} increments "
+          f"= {n_trials} trials.\n")
+    print(f"{'crashSig':>8} {'incr':>5} {'%invested':>9} {'annRet':>8} {'annSR':>7} {'Calmar':>7} "
+          f"{'maxDD':>7} {'DSR':>6} {'dSR vsBH':>9} {'ddSaved':>8} {'surv':>5}")
+    results = {}
+    for s, n in combos:
+        bt = equity.spy_crash_overlay_backtest(spy, ci_lookback=args.ci_lookback,
+                                               crash_sigma=s, n_increments=n)
+        if bt.empty:
+            print(f"{s:8.1f} {n:5d}  (no data)"); continue
+        ev = equity.evaluate(bt, n_trials, periods_per_year=252, min_periods=252)
+        results[(s, n)] = (bt, ev)
+        pct_inv = bt["n_held"].mean() * 100   # avg exposure
+        dd_saved = bh["max_drawdown"] - ev["max_drawdown"]
+        print(f"{s:8.1f} {n:5d} {pct_inv:8.1f}% {ev['ann_return']*100:7.1f}% {ev['sharpe_annual']:7.2f} "
+              f"{ev['calmar']:7.2f} {ev['max_drawdown']*100:6.1f}% {ev['dsr']:6.2f} "
+              f"{ev['sharpe_annual']-bh['sharpe_annual']:+9.2f} {dd_saved*100:+7.1f}% "
+              f"{'YES' if ev['survives'] else 'no':>5}")
+
+    if results:
+        best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
+        bt = results[best][0]
+        sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
+        print(f"\nHoldout on best combo (crashSig={best[0]}, incr={best[1]}), opened once:")
+        for label, seg in [("train", bt[sp["train"].mask(bt["date"])]),
+                           ("HOLDOUT", bt[sp["holdout"].mask(bt["date"])])]:
+            if seg.empty:
+                continue
+            e = equity.evaluate(seg, n_trials, periods_per_year=252, min_periods=60)
+            eb = equity.evaluate(seg.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                                 1, periods_per_year=252, min_periods=60)
+            print(f"  {label:>8}: strat annSR {e['sharpe_annual']:.2f} vs B&H {eb['sharpe_annual']:.2f} "
+                  f"| strat maxDD {e['max_drawdown']*100:.0f}% vs B&H {eb['max_drawdown']*100:.0f}%")
+    n_beat = sum(1 for _, (_, ev) in results.items() if ev["sharpe_annual"] > bh["sharpe_annual"])
+    print(f"\n{'='*72}")
+    print(f"Combos beating B&H on Sharpe: {n_beat}/{len(results)}.  DSR survivors: "
+          f"{sum(1 for _,(_,ev) in results.items() if ev['survives'])}/{len(results)}.")
+    print("HONEST CAVEAT: market timing -> P&L comes from a HANDFUL of crash events")
+    print("(~3-5 in 2016-2026: 2018x2, COVID 2020, 2022, maybe 2024). Even a 'win' is")
+    print("near-unfalsifiable on so few events -- the 'I dodged COVID once' trap. DSR")
+    print("and the holdout are the honest read; ddSaved shows the risk-control angle.")
+    print('='*72)
+
+
 def cmd_equity_civalue(args, store):
     """The user's combined strategy: BUY when price < mean-2sig AND fundamentally
     undervalued (filing-lagged FF value screen); SELL when price recovers to
@@ -1188,6 +1259,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
 
+    sp = sub.add_parser("equity-crash", help="SPY crash-dodge overlay: sell on CI black-swan, average in as it falls, vs buy&hold")
+    sp.add_argument("--start", default=None)
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--ci-lookback", type=int, default=90, dest="ci_lookback")
+    sp.add_argument("--crash-sigmas", type=float, nargs="+", default=[1.5, 2.0, 2.5], dest="crash_sigmas",
+                    help="black-swan trigger: sell when SPY < mean - this*std")
+    sp.add_argument("--increments", type=int, nargs="+", default=[3, 5, 10], dest="increments",
+                    help="number of buy-in steps as it keeps falling")
+    sp.set_defaults(func=cmd_equity_crash, no_store=True)
+
     sp = sub.add_parser("equity-civalue", help="combined: buy CI dip AND undervalued; sell at -1sig (filing-lagged value filter)")
     sp.add_argument("--file", default=None)
     sp.add_argument("--start", default=None)
@@ -1261,8 +1342,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    with ResearchStore() as store:
-        args.func(args, store)
+    # Commands that only hit external APIs (no DuckDB) skip opening the store, so
+    # they can run alongside a backgrounded job holding the write lock.
+    if getattr(args, "no_store", False):
+        args.func(args, None)
+    else:
+        with ResearchStore() as store:
+            args.func(args, store)
     return 0
 
 

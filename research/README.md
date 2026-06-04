@@ -751,6 +751,51 @@ This is the **most diagnostic result in the project**. Removing the sell:
   selection skill. The honest optimum is the plain index — exactly what every other
   test pointed at.
 
+### SPY crash-dodge overlay — the standout, and why DSR still kills it (2026-06-03)
+
+A different idea entirely: not stock selection but a **single-asset market-timing
+overlay on SPY** — sell everything when SPY breaks below its CI band (a "black
+swan"), **average back in incrementally as it keeps falling** ("buy as it
+decreases"), stop on the turn, reset to fully invested on recovery.
+`equity.spy_crash_overlay_backtest` + `equity-crash`, daily, PIT, costs on, vs
+buy-and-hold SPY; sweeps crash-σ × number of buy-in increments.
+
+```bash
+python -m research equity-crash --start 2016-01-01 --crash-sigmas 1.5 2.0 2.5 --increments 3 5 10
+```
+
+**Result (SPY, daily 2016-2026, 9 trials; buy-and-hold SPY annSR 0.91, maxDD 33.8%):**
+
+| crash σ | incr | annRet | annSR | maxDD | DSR | annSR − B&H | ddSaved |
+|---|---|---|---|---|---|---|---|
+| 1.5 | 5 | +17.7% | 1.09 | 28.4% | 0.00 | +0.18 | +5.4% |
+| 1.5 | 10 | +17.4% | 1.21 | **21.2%** | 0.00 | +0.30 | **+12.6%** |
+| 2.0 | 5 | +18.2% | 1.14 | 22.9% | 0.00 | +0.23 | +10.8% |
+
+**This is the FIRST and only thing in the project to beat buy-and-hold — all 9/9
+combos did**, with higher return *and* much lower drawdown (best cut maxDD nearly
+in half: 21% vs 34%). The holdout beat B&H too (Sharpe 1.88 vs 1.48). And **DSR is
+still 0.00 on every one** — correctly. Why:
+
+- **The entire P&L comes from ~3-5 crash events** (mainly dodging COVID-2020 and
+  the 2022 bear). That's a handful of independent bets, not the hundreds the daily
+  Sharpe pretends. DSR 0.00 means: even beating B&H this clearly is statistically
+  indistinguishable from getting lucky on a couple of crashes — the **"I dodged
+  COVID once" trap.** Any sample containing COVID makes a crash-dodger look brilliant.
+- **The sweep pattern is the tell:** Calmar rises monotonically with more increments
+  (incr=10 best) — the signature of *fitting the shape of the crashes you happened
+  to see*, not a robust mechanism. A fast V-shaped crash (sell the bottom, miss the
+  snap-back) could flip the result; COVID's slow decline + sharp recovery flattered it.
+- **What it genuinely is:** a **drawdown-reduction / vol-target overlay** (a real,
+  documented risk-management technique). The "extra return" is mostly *avoided
+  losses*, i.e. risk control, not alpha. Useful if your goal is a smoother ride and
+  you accept it may fail the next crash that doesn't look like the last ones — but
+  **not a DSR-significant edge**, and honestly can't be on ~5 events.
+
+So even the project's best result reinforces the thesis: it beat the index *only*
+by timing rare crashes, which is unfalsifiable on this little data — exactly what
+DSR is built to flag.
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |
@@ -762,12 +807,18 @@ This is the **most diagnostic result in the project**. Removing the sell:
 | FF quality-value, broad ~4,100 names | 0.00 | no (long-short ≈ 0) |
 | CI mean-reversion (window sweep + MA) | 0.00 | no |
 | CI sell rule / composable triggers / RSI | 0.00 | no |
-| **CI dip + value filter (this)** | **0.00** | **no** |
+| CI dip + value filter | 0.00 | no |
+| CI dip + value, no-sell (entry only) | 0.00 | no (≈ B&H) |
+| **SPY crash-dodge overlay** | **0.00** | **YES (9/9) — but on ~5 crash events** |
 
-Closest ever: DSR ≈ 0.06. Consistent finding: **apparent returns are market beta
-or best-of-N noise; no robust retail edge survives honest costs + multiple-testing
-correction on free data.** The framework did exactly its job — including rejecting
-the author's own best ideas, which is the point.
+Closest ever: DSR ≈ 0.06. The **only** thing to beat buy-and-hold was the SPY
+crash-dodge overlay — and DSR still rejects it because its edge rests on ~3-5
+crash events (the "dodged COVID once" trap), exactly the few-bets illusion the
+deflation is built to catch. Consistent finding: **apparent returns are market
+beta, best-of-N noise, or a handful of lucky macro calls; no robust retail edge
+survives honest costs + multiple-testing correction on free data.** The framework
+did exactly its job — including rejecting the author's own best ideas, and
+refusing to bless even the one strategy that *looked* like a winner.
 
 ## Next: M7–M9 (not core engineering)
 
