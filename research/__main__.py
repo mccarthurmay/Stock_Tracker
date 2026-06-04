@@ -506,39 +506,59 @@ def cmd_equity_crash(args, store):
     spy = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
     print(f"SPY: {len(spy)} daily bars {spy.index[0].date()}..{spy.index[-1].date()}\n")
 
-    combos = [(s, n) for s in args.crash_sigmas for n in args.increments]
+    # The 2x2 the user asked for: decline phase {cliff_sell, ramp_sell} x
+    # re-entry phase {avg_down, ramp_up, cliff_up}. Each (mode-pair x sigma x incr)
+    # is one DSR trial. cliff_sell+avg_down == the original crash overlay.
+    declines = args.decline_modes
+    reentries = args.reentry_modes
+    combos = [(dm, rm, s, n) for dm in declines for rm in reentries
+              for s in args.crash_sigmas for n in args.increments]
     n_trials = len(combos)
-    # buy-and-hold baseline
     base = equity.spy_crash_overlay_backtest(spy, ci_lookback=args.ci_lookback,
                                              crash_sigma=args.crash_sigmas[0], n_increments=args.increments[0])
     bh = equity.evaluate(base.rename(columns={"ret": "_s", "bh_ret": "ret"}),
                          1, periods_per_year=252, min_periods=252)
     print(f"Buy-and-hold SPY: annRet {bh['ann_return']*100:.1f}%  annSR {bh['sharpe_annual']:.2f}  "
           f"Calmar {bh['calmar']:.2f}  maxDD {bh['max_drawdown']*100:.1f}%\n")
-    print(f"Sweeping {len(args.crash_sigmas)} crash-sigma x {len(args.increments)} increments "
-          f"= {n_trials} trials.\n")
-    print(f"{'crashSig':>8} {'incr':>5} {'%invested':>9} {'annRet':>8} {'annSR':>7} {'Calmar':>7} "
-          f"{'maxDD':>7} {'DSR':>6} {'dSR vsBH':>9} {'ddSaved':>8} {'surv':>5}")
+    print(f"decline=cliff_sell(dump)|ramp_sell(trend: cut into weakness)  "
+          f"reentry=avg_down(mean-rev)|ramp_up(trend: add into strength)|cliff_up(snap back)")
+    print(f"Sweeping {len(declines)}x{len(reentries)} modes x {len(args.crash_sigmas)} sig "
+          f"x {len(args.increments)} incr = {n_trials} trials.\n")
+    print(f"{'decline':>11} {'reentry':>9} {'sig':>4} {'inc':>4} {'%inv':>5} {'annRet':>7} "
+          f"{'annSR':>6} {'Calmar':>7} {'maxDD':>6} {'DSR':>5} {'vsBH':>6} {'ddSav':>6}")
     results = {}
-    for s, n in combos:
+    # aggregate best per mode-pair for the summary
+    for dm, rm, s, n in combos:
         bt = equity.spy_crash_overlay_backtest(spy, ci_lookback=args.ci_lookback,
-                                               crash_sigma=s, n_increments=n)
+                                               crash_sigma=s, n_increments=n,
+                                               decline_mode=dm, reentry_mode=rm)
         if bt.empty:
-            print(f"{s:8.1f} {n:5d}  (no data)"); continue
+            continue
         ev = equity.evaluate(bt, n_trials, periods_per_year=252, min_periods=252)
-        results[(s, n)] = (bt, ev)
-        pct_inv = bt["n_held"].mean() * 100   # avg exposure
+        results[(dm, rm, s, n)] = (bt, ev)
         dd_saved = bh["max_drawdown"] - ev["max_drawdown"]
-        print(f"{s:8.1f} {n:5d} {pct_inv:8.1f}% {ev['ann_return']*100:7.1f}% {ev['sharpe_annual']:7.2f} "
-              f"{ev['calmar']:7.2f} {ev['max_drawdown']*100:6.1f}% {ev['dsr']:6.2f} "
-              f"{ev['sharpe_annual']-bh['sharpe_annual']:+9.2f} {dd_saved*100:+7.1f}% "
-              f"{'YES' if ev['survives'] else 'no':>5}")
+        print(f"{dm:>11} {rm:>9} {s:4.1f} {n:4d} {bt['n_held'].mean()*100:4.0f}% "
+              f"{ev['ann_return']*100:6.1f}% {ev['sharpe_annual']:6.2f} {ev['calmar']:7.2f} "
+              f"{ev['max_drawdown']*100:5.0f}% {ev['dsr']:5.2f} "
+              f"{ev['sharpe_annual']-bh['sharpe_annual']:+6.2f} {dd_saved*100:+6.1f}%")
+
+    # per-mode-pair summary: avg Sharpe across its sigma/incr variants
+    print(f"\nPer-mode-pair avg annSR (across sigma/incr) -- which PHILOSOPHY wins:")
+    pairs = {}
+    for (dm, rm, s, n), (_, ev) in results.items():
+        pairs.setdefault((dm, rm), []).append(ev["sharpe_annual"])
+    avg = lambda xs: sum(xs) / len(xs)
+    for (dm, rm), srs in sorted(pairs.items(), key=lambda kv: -avg(kv[1])):
+        tag = ("trend/trend" if (dm == "ramp_sell" and rm == "ramp_up") else
+               "dump/mean-rev (orig)" if (dm == "cliff_sell" and rm == "avg_down") else
+               f"{dm.split('_')[0]}/{rm.split('_')[0]}")
+        print(f"  {dm:>11} + {rm:>9}  avgSR {avg(srs):.2f}  ({tag})")
 
     if results:
         best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
         bt = results[best][0]
         sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
-        print(f"\nHoldout on best combo (crashSig={best[0]}, incr={best[1]}), opened once:")
+        print(f"\nHoldout on best ({best[0]}+{best[1]}, sig={best[2]}, inc={best[3]}), opened once:")
         for label, seg in [("train", bt[sp["train"].mask(bt["date"])]),
                            ("HOLDOUT", bt[sp["holdout"].mask(bt["date"])])]:
             if seg.empty:
@@ -1266,7 +1286,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--crash-sigmas", type=float, nargs="+", default=[1.5, 2.0, 2.5], dest="crash_sigmas",
                     help="black-swan trigger: sell when SPY < mean - this*std")
     sp.add_argument("--increments", type=int, nargs="+", default=[3, 5, 10], dest="increments",
-                    help="number of buy-in steps as it keeps falling")
+                    help="number of incremental steps for ramping exposure")
+    sp.add_argument("--decline-modes", nargs="+", default=["cliff_sell", "ramp_sell"],
+                    dest="decline_modes", choices=["cliff_sell", "ramp_sell"],
+                    help="decline phase: cliff_sell (dump) or ramp_sell (trend: cut into weakness)")
+    sp.add_argument("--reentry-modes", nargs="+", default=["avg_down", "ramp_up", "cliff_up"],
+                    dest="reentry_modes", choices=["avg_down", "ramp_up", "cliff_up"],
+                    help="re-entry: avg_down (mean-rev), ramp_up (trend: add into strength), cliff_up (snap back)")
     sp.set_defaults(func=cmd_equity_crash, no_store=True)
 
     sp = sub.add_parser("equity-civalue", help="combined: buy CI dip AND undervalued; sell at -1sig (filing-lagged value filter)")

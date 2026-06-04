@@ -227,19 +227,28 @@ def ci_value_timing_backtest(daily: pd.DataFrame, undervalued: pd.DataFrame,
 
 
 def spy_crash_overlay_backtest(spy: pd.Series, ci_lookback=90, crash_sigma=2.0,
-                               n_increments=5, cost_bps=5.0):
-    """Single-asset market-timing overlay on SPY (the user's crash-dodge idea).
+                               n_increments=5, cost_bps=5.0,
+                               decline_mode="cliff_sell", reentry_mode="avg_down"):
+    """Single-asset market-timing overlay on SPY, generalized over BOTH phases.
 
-    A state machine, all decided on close t -> acted on t+1 (no lookahead):
-      * NORMAL: fully invested (exposure 1.0). If SPY drops below its CI band
-        (price < mean - crash_sigma*std over `ci_lookback`) -> a "black swan"
-        signal -> SELL EVERYTHING (exposure 0), enter CRASH mode.
-      * CRASH: average back IN incrementally as it keeps falling -- each NEW
-        closing low adds 1/n_increments of exposure ("buy as it decreases").
-        Stop adding once price stops making new lows (the turn). When price
-        recovers back ABOVE the CI mid (mean) -> RESET to fully invested, NORMAL.
-    Daily exposure (0..1) multiplies SPY's next-day return; changes in exposure
-    pay turnover cost. Benchmarked vs buy-and-hold SPY (always exposure 1)."""
+    Decided on close t -> acted on t+1 (no lookahead). NORMAL = fully invested;
+    a CI black-swan (price < mean - crash_sigma*std) arms the CRASH state. The
+    two phases are independently configurable -- this is the 2x2 the user asked
+    for, and the direction of each choice IS a trading philosophy:
+
+      decline_mode -- what to do WHILE price keeps making new lows:
+        'cliff_sell' : dump to 0 exposure at once on the trigger (original).
+        'ramp_sell'  : sell ONE increment per new low (TREND-FOLLOWING: cut risk
+                       into weakness; exposure ratchets 1 -> 0 as it falls).
+      reentry_mode -- how to get back to fully invested:
+        'avg_down'   : add one increment per NEW LOW (MEAN-REVERSION: buy the
+                       dip lower; the original's re-entry).
+        'ramp_up'    : add one increment each day price rises off the running low
+                       (TREND-FOLLOWING re-entry: add into strength).
+        'cliff_up'   : do nothing until price recovers above the CI mid, then
+                       snap back to fully invested at once.
+    Recovery above the CI mid (mean) always resets to NORMAL / exposure 1.
+    Exposure (0..1) multiplies SPY's next-day return; changes pay turnover cost."""
     px = spy.sort_index()
     ret = px.pct_change(fill_method=None).fillna(0.0)
     mean = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).mean()
@@ -248,31 +257,40 @@ def spy_crash_overlay_backtest(spy: pd.Series, ci_lookback=90, crash_sigma=2.0,
 
     idx = px.index
     exposure = np.zeros(len(px))
-    state = "normal"            # 'normal' | 'crash'
-    exp = 1.0                   # current exposure
-    crash_low = np.inf         # lowest close seen since entering crash
+    state = "normal"
+    exp = 1.0
+    crash_low = np.inf         # running low since entering crash
+    prev_p = np.inf            # prior close, for "rising off the low" detection
     step = 1.0 / max(1, n_increments)
 
     for i in range(len(px)):
         p = px.iloc[i]
         m = mean.iloc[i]
         lo = lower.iloc[i]
-        exposure[i] = exp       # exposure effective for THIS day's return was set yesterday
+        exposure[i] = exp       # effective for THIS day's return; was set yesterday
         if not np.isfinite(m):
+            prev_p = p
             continue
         if state == "normal":
-            if np.isfinite(lo) and p < lo:          # black-swan trigger
-                exp = 0.0                            # sell everything (effective next day)
+            if np.isfinite(lo) and p < lo:          # black-swan trigger -> arm crash
                 state = "crash"
                 crash_low = p
-        else:  # crash: average in on new lows; reset on recovery above the mean
-            if p < crash_low:                        # new low -> add an increment
+                exp = 0.0 if decline_mode == "cliff_sell" else max(0.0, exp - step)
+        else:  # crash state
+            new_low = p < crash_low
+            if new_low:
                 crash_low = p
+                if decline_mode == "ramp_sell":      # cut risk into the decline
+                    exp = max(0.0, exp - step)
+                if reentry_mode == "avg_down":        # buy the dip lower
+                    exp = min(1.0, exp + step)
+            elif p > prev_p and reentry_mode == "ramp_up":   # rising off the low
                 exp = min(1.0, exp + step)
-            if p > m:                                # recovered above CI mid -> reset
+            if p > m:                                # full recovery -> reset
                 exp = 1.0
                 state = "normal"
                 crash_low = np.inf
+        prev_p = p
 
     # exposure was recorded as "in effect today"; shift so a decision at close t
     # affects t+1 (no lookahead): today's return uses YESTERDAY's chosen exposure

@@ -796,6 +796,45 @@ So even the project's best result reinforces the thesis: it beat the index *only
 by timing rare crashes, which is unfalsifiable on this little data — exactly what
 DSR is built to flag.
 
+#### Splitting the overlay into its two phases (the 2×2 matrix)
+
+The overlay has two independent phases, and the *direction* of each is a trading
+philosophy. Both were made configurable and swept (54 variants):
+**decline** = `cliff_sell` (dump all on the trigger) vs `ramp_sell` (sell a step
+per new low — *trend-following: cut risk into weakness*); **re-entry** =
+`avg_down` (buy a step per new low — *mean-reversion*), `ramp_up` (buy a step as
+it rises off the low — *trend-following: add into strength*), or `cliff_up` (snap
+back only once recovered). Per-mode-pair average annualized Sharpe:
+
+| decline | re-entry | avgSR | philosophy |
+|---|---|---|---|
+| cliff_sell | avg_down | **1.08** | dump + average down (the original) |
+| cliff_sell | ramp_up | 1.01 | dump + trend re-entry |
+| ramp_sell | avg_down | 0.95 | gradual sell + average down |
+| cliff_sell | cliff_up | 0.93 | dump + wait |
+| ramp_sell | ramp_up | 0.92 | **pure trend-following** |
+| ramp_sell | cliff_up | 0.83 | gradual sell + wait |
+
+Clear, mechanism-consistent ranking:
+
+1. **The decline phase dominates, and decisive beats gradual.** Every `cliff_sell`
+   variant outranks its `ramp_sell` twin. A black swan is *fast* — by the time a
+   gradual sell has shed a few increments, the crash already happened. **Selling
+   incrementally into a drop is too slow to dodge a crash.** (Smoke check: in COVID
+   `ramp_sell` only reached ~40% cash while `cliff_sell` hit 0%.)
+2. **The re-entry phase barely matters; averaging down slightly beats trend.**
+   `avg_down` buys cheaper shares before the snap-back; `ramp_up` waits for the
+   uptrend to confirm and re-enters higher. So **buying into the recovery is a hair
+   worse than buying into the decline** — you pay up for confirmation.
+3. **Pure trend-following (ramp_sell + ramp_up) ranked 5th of 6** — slowest to
+   de-risk *and* slowest to re-risk, so it captures the least crash protection.
+
+**But all 54 variants still have DSR = 0.00** (40/54 beat B&H on Sharpe). Slicing
+the phases changes *which flavor* of crash-timing is best (decisive exit + average
+down) but not the verdict: every variant lives off the same ~3-5 crashes, so none
+is statistically real. The matrix tells you the best *shape* of a risk-control
+overlay, not that any of them is an edge.
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |
