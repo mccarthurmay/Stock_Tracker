@@ -946,6 +946,42 @@ literature says). But each method has dozens of published parameter variants (wh
 data-mining; DSR would reject the specific winner. The trustworthy statement is
 the *direction* (vol-targeting helps, more so on leverage), not the exact champion.
 
+#### What active buy/sell timing does to PROFIT (`equity-buysell`)
+
+The overlays above are exposure dials; this is an explicit **active strategy** —
+a binary buy rule paired with the new sell indicators — to answer "what does it
+do to *profit*, not just drawdown?" Key control: **`ci_dip` entry** (buy only on
+a −2σ dip) vs **`always`-in** entry (enter whenever flat), to isolate the entry's
+cost. Annual-return gap vs buy-and-hold:
+
+| symbol | buy&hold | ci_dip → CI-recover | always-in → MA cross | **always-in → vol spike** |
+|---|---|---|---|---|
+| SPY (15.6%) | — | 2.8% (−12.8) | 8.3% (−7.4) | **13.7% (−1.9), DD 34→17%** |
+| QQQ (22.2%) | — | 5.2% (−17.1) | 14.1% (−8.1) | **19.9% (−2.3), DD 35→22%** |
+| UPRO (30.8%) | — | 5.2% (−25.6) | 21.5% (−9.3) | **33.5% (+2.7), DD 77→45%** |
+
+Three findings, and they finally answer the profit question cleanly:
+
+1. **The CI-dip ENTRY is the profit-killer.** It sits 7–32% invested waiting for
+   −2σ dips that rarely come, missing the bull market — return drag of −13% to
+   **−31%/yr**. (And `ci_dip → MA-cross` literally **never trades**: when price is
+   below its −2σ band it's also below its MA, so the sell fires instantly.) On an
+   index, dip-buying-with-cash-in-between is a large, reliable *loss* of profit.
+2. **Most sell rules cost ~7–9%/yr** even with always-on entry — MA-cross and RSI
+   whipsaw you out and re-enter late, paying the gap.
+3. **The one winner: `always-in → vol-spike sell`.** Nearly free on SPY/QQQ
+   (−2%/yr) for *half* the drawdown, and on **UPRO it made MORE money (+2.7%/yr)
+   while cutting drawdown 77%→45%** — because exiting on volatility spikes dodges
+   the vol-decay that punishes leverage, worth more than the time out of market.
+   This is the binary form of the vol-targeting result, and the *only* active
+   timing in the whole project that didn't sacrifice profit.
+
+**Bottom line on profit:** active timing **trades profit for lower drawdown** — it
+does not add profit — *except* exiting on volatility spikes (entry always-on),
+which is roughly free on indices and net-positive on leverage. The buy timing is
+what costs you; a vol-based sell is the only exit worth using, and even it is
+"better risk-adjusted," not "more money," on unleveraged indices.
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |

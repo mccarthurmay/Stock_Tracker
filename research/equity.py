@@ -271,6 +271,56 @@ def overlay_backtest(px: pd.Series, exposure: pd.Series, cost_bps=5.0):
     return out.iloc[252:].reset_index(drop=True)
 
 
+def index_buysell_backtest(px: pd.Series, buy_rule="ci_dip", sell_rules=("ci_recover",),
+                           ci_lookback=90, buy_sigma=2.0, sell_sigma=1.0,
+                           ma_window=50, rsi_sell=70.0, rsi_window=14, cost_bps=5.0):
+    """Single-asset ACTIVE buy/sell timing (binary held/flat) on one index.
+
+    BUY (enter when flat):
+      'ci_dip'  : price < mean - buy_sigma*std  (the screener's CI dip)
+      'always'  : enter the moment you're flat (so the only timing is the SELL --
+                  this isolates how much the CI-dip ENTRY costs in missed upside)
+    SELL (exit when held) -- fires if ANY listed rule triggers:
+      'ci_recover' : price > mean - sell_sigma*std  (partial reversion exit)
+      'ci_upper'   : price > mean + sell_sigma*std  (overextended)
+      'ma_cross'   : price < its `ma_window`-day MA (trend break)
+      'vol_spike'  : realized vol (20d, annualized) jumps above its 1y median*1.5
+      'rsi'        : 14d RSI >= rsi_sell
+    Causal (rolling), decision at close t acts on t+1. vs buy-and-hold of itself."""
+    px = px.sort_index()
+    ret = px.pct_change(fill_method=None).fillna(0.0)
+    mean = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).mean()
+    std = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).std()
+    ma = px.rolling(ma_window, min_periods=int(ma_window*0.6)).mean()
+    rsi = rsi_frame(px.to_frame("p"), rsi_window)["p"]
+    logr = np.log(px / px.shift(1))
+    rv = logr.rolling(20, min_periods=12).std() * np.sqrt(252)
+    rv_med = rv.rolling(252, min_periods=120).median()
+
+    buy = (px < mean - buy_sigma*std) if buy_rule == "ci_dip" else pd.Series(True, index=px.index)
+    sell = pd.Series(False, index=px.index)
+    if "ci_recover" in sell_rules:
+        sell = sell | (px > mean - sell_sigma*std)
+    if "ci_upper" in sell_rules:
+        sell = sell | (px > mean + sell_sigma*std)
+    if "ma_cross" in sell_rules:
+        sell = sell | (px < ma)
+    if "vol_spike" in sell_rules:
+        sell = sell | (rv > rv_med * 1.5)
+    if "rsi" in sell_rules:
+        sell = sell | (rsi >= rsi_sell)
+
+    # binary held-state: 1 on buy, 0 on sell, ffill; act next bar
+    sig = pd.Series(np.nan, index=px.index)
+    sig = sig.mask(buy.fillna(False), 1.0).mask(sell.fillna(False), 0.0)
+    held = sig.ffill().fillna(0.0).shift(1).fillna(0.0)
+
+    strat = held * ret - (cost_bps/1e4) * held.diff().abs().fillna(0.0)
+    out = pd.DataFrame({"date": px.index, "ret": strat.values, "bh_ret": ret.values,
+                        "n_held": held.values})
+    return out.iloc[ci_lookback:].reset_index(drop=True)
+
+
 def crash_exposure_series(px: pd.Series, ci_lookback=90, crash_sigma=2.0,
                           n_increments=5, decline_mode="cliff_sell",
                           reentry_mode="avg_down") -> pd.Series:

@@ -488,6 +488,62 @@ def cmd_equity_ci(args, store):
     print('='*68)
 
 
+def cmd_equity_buysell(args, store):
+    """ACTIVE buy/sell timing on indices: pair a BUY rule with the new SELL
+    indicators (MA cross, vol spike, RSI, CI bands) and see what it does to
+    PROFIT vs buy-and-hold. Tests 'ci_dip' vs 'always' entry to isolate how much
+    the CI-dip entry costs in missed upside."""
+    client = AlpacaResearch()
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    syms = [s.upper() for s in args.symbols]
+    # (buy_rule, sell_rules-tuple, label)
+    strategies = [
+        ("ci_dip", ("ci_recover",), "ci_dip -> ci_recover(-1sig)"),
+        ("ci_dip", ("ci_upper",), "ci_dip -> ci_upper(+1sig)"),
+        ("ci_dip", ("ma_cross",), "ci_dip -> MA cross"),
+        ("ci_dip", ("vol_spike",), "ci_dip -> vol spike"),
+        ("ci_dip", ("rsi",), "ci_dip -> RSI>=70"),
+        ("ci_dip", ("ma_cross", "vol_spike"), "ci_dip -> MA or vol"),
+        ("always", ("ma_cross",), "ALWAYS-in -> MA cross"),
+        ("always", ("vol_spike",), "ALWAYS-in -> vol spike"),
+        ("always", ("ma_cross", "vol_spike"), "ALWAYS-in -> MA or vol"),
+    ]
+    print(f"Active buy/sell timing on {syms}, {start}..{end}. vs buy-and-hold of each.")
+    print("'ci_dip' enters only on a -2sig dip; 'always' enters whenever flat (isolates")
+    print("the entry cost). Question: what does active timing do to PROFIT?\n")
+    for sym in syms:
+        try:
+            df = client.stock_bars(sym, datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+                                   datetime(end.year, end.month, end.day, tzinfo=timezone.utc),
+                                   "1Day", adjustment="all", feed="sip")
+        except Exception as e:
+            print(f"{sym}: ERROR {type(e).__name__}"); continue
+        if df.empty or len(df) < 400:
+            print(f"{sym}: insufficient history"); continue
+        px = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
+        bh_bt = equity.index_buysell_backtest(px, buy_rule="always", sell_rules=())
+        bh = equity.evaluate(bh_bt.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                             1, periods_per_year=252, min_periods=120)
+        print(f"=== {sym} ({px.index[0].date()}..{px.index[-1].date()}) ===")
+        print(f"  BUY & HOLD: annRet {bh['ann_return']*100:5.1f}%  SR {bh['sharpe_annual']:.2f}  maxDD {bh['max_drawdown']*100:.0f}%")
+        print(f"  {'strategy':>28} {'%inv':>5} {'annRet':>7} {'SR':>5} {'maxDD':>6} {'vs B&H ret':>11}")
+        for buy, sells, label in strategies:
+            bt = equity.index_buysell_backtest(px, buy_rule=buy, sell_rules=sells,
+                                               ci_lookback=args.ci_lookback, buy_sigma=args.buy_sigma,
+                                               sell_sigma=args.sell_sigma, ma_window=args.ma)
+            ev = equity.evaluate(bt, 1, periods_per_year=252, min_periods=120)
+            dret = (ev['ann_return'] - bh['ann_return']) * 100
+            print(f"  {label:>28} {bt['n_held'].mean()*100:4.0f}% {ev['ann_return']*100:6.1f}% "
+                  f"{ev['sharpe_annual']:5.2f} {ev['max_drawdown']*100:5.0f}% {dret:+10.1f}%")
+        print()
+    print('='*86)
+    print("vs B&H ret = annual return gap vs just holding. The CI-dip ENTRY sits in cash")
+    print("waiting for -2sig dips that rarely come -> low %inv -> usually big return drag.")
+    print("Active timing here trades PROFIT for lower drawdown; it doesn't add profit.")
+    print('='*86)
+
+
 def cmd_equity_overlays(args, store):
     """Compare drawdown-reduction overlays + combinations on each symbol.
 
@@ -1484,6 +1540,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
+
+    sp = sub.add_parser("equity-buysell", help="active buy/sell timing on indices (CI dip entry x MA/vol/RSI sell) -- what it does to profit")
+    sp.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "UPRO"])
+    sp.add_argument("--start", default=None)
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--ci-lookback", type=int, default=90, dest="ci_lookback")
+    sp.add_argument("--buy-sigma", type=float, default=2.0, dest="buy_sigma")
+    sp.add_argument("--sell-sigma", type=float, default=1.0, dest="sell_sigma")
+    sp.add_argument("--ma", type=int, default=50, dest="ma")
+    sp.set_defaults(func=cmd_equity_buysell, no_store=True)
 
     sp = sub.add_parser("equity-overlays", help="compare drawdown-reduction overlays (crash/MA200/vol-target/TS-mom) + combos per symbol")
     sp.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "UPRO"])
