@@ -579,6 +579,88 @@ def cmd_equity_crash(args, store):
     print('='*72)
 
 
+def cmd_equity_crash_stocks(args, store):
+    """PER-STOCK crash timing: EACH name runs its own crash-dodge on its own CI
+    band (sell that name when it crashes, re-buy on its own recovery). Pool
+    equal-weight across held names. vs equal-weight buy-and-hold of the universe.
+    Sweeps decline x reentry modes x sigma x increments (each a DSR trial)."""
+    client = AlpacaResearch()
+    tickers = historical.read_ticker_list(args.file) if args.file else \
+        ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "XOM", "JNJ",
+         "PG", "HD", "BAC", "KO", "PFE", "CVX", "WMT", "DIS", "CSCO", "INTC", "T"]
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    print(f"PER-STOCK crash timing, {len(tickers)} names, {start}..{end}, daily.")
+    print("Each stock runs its OWN crash-dodge on its OWN CI band; pool equal-weight")
+    print("over held names. vs equal-weight buy-and-hold of the universe. PIT, costs on.\n")
+    daily = equity.daily_price_panel(client, tickers, start, end)
+    if daily.empty or daily.shape[0] < 300:
+        print("Not enough daily history."); return
+    print(f"Daily panel: {daily.shape[1]} names x {daily.shape[0]} days.\n")
+
+    declines, reentries = args.decline_modes, args.reentry_modes
+    combos = [(dm, rm, s, n) for dm in declines for rm in reentries
+              for s in args.crash_sigmas for n in args.increments]
+    n_trials = len(combos)
+    base = equity.per_stock_crash_backtest(daily, ci_lookback=args.ci_lookback,
+                                           crash_sigma=args.crash_sigmas[0], n_increments=args.increments[0])
+    bh = equity.evaluate(base.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                         1, periods_per_year=252, min_periods=252)
+    print(f"Equal-weight buy-and-hold: annRet {bh['ann_return']*100:.1f}%  annSR {bh['sharpe_annual']:.2f}  "
+          f"Calmar {bh['calmar']:.2f}  maxDD {bh['max_drawdown']*100:.1f}%\n")
+    print(f"Sweeping {len(declines)}x{len(reentries)} modes x {len(args.crash_sigmas)} sig "
+          f"x {len(args.increments)} incr = {n_trials} trials.\n")
+    print(f"{'decline':>11} {'reentry':>9} {'sig':>4} {'inc':>4} {'%inv':>5} {'annRet':>7} "
+          f"{'annSR':>6} {'Calmar':>7} {'maxDD':>6} {'DSR':>5} {'vsBH':>6} {'ddSav':>6}")
+    results = {}
+    n_names = daily.shape[1]
+    for dm, rm, s, n in combos:
+        bt = equity.per_stock_crash_backtest(daily, ci_lookback=args.ci_lookback,
+                                             crash_sigma=s, n_increments=n,
+                                             decline_mode=dm, reentry_mode=rm)
+        if bt.empty:
+            continue
+        ev = equity.evaluate(bt, n_trials, periods_per_year=252, min_periods=252)
+        results[(dm, rm, s, n)] = (bt, ev)
+        dd_saved = bh["max_drawdown"] - ev["max_drawdown"]
+        # avg fraction of universe held (n_held is a count here)
+        pct_inv = bt["n_held"].mean() / max(1, n_names) * 100
+        print(f"{dm:>11} {rm:>9} {s:4.1f} {n:4d} {pct_inv:4.0f}% "
+              f"{ev['ann_return']*100:6.1f}% {ev['sharpe_annual']:6.2f} {ev['calmar']:7.2f} "
+              f"{ev['max_drawdown']*100:5.0f}% {ev['dsr']:5.2f} "
+              f"{ev['sharpe_annual']-bh['sharpe_annual']:+6.2f} {dd_saved*100:+6.1f}%")
+
+    print(f"\nPer-mode-pair avg annSR (which PHILOSOPHY wins per-stock):")
+    pairs = {}
+    for (dm, rm, s, n), (_, ev) in results.items():
+        pairs.setdefault((dm, rm), []).append(ev["sharpe_annual"])
+    avg = lambda xs: sum(xs) / len(xs)
+    for (dm, rm), srs in sorted(pairs.items(), key=lambda kv: -avg(kv[1])):
+        print(f"  {dm:>11} + {rm:>9}  avgSR {avg(srs):.2f}")
+    if results:
+        best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
+        bt = results[best][0]
+        sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
+        print(f"\nHoldout on best ({best[0]}+{best[1]}, sig={best[2]}, inc={best[3]}), opened once:")
+        for label, seg in [("train", bt[sp["train"].mask(bt["date"])]),
+                           ("HOLDOUT", bt[sp["holdout"].mask(bt["date"])])]:
+            if seg.empty:
+                continue
+            e = equity.evaluate(seg, n_trials, periods_per_year=252, min_periods=60)
+            eb = equity.evaluate(seg.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                                 1, periods_per_year=252, min_periods=60)
+            print(f"  {label:>8}: strat annSR {e['sharpe_annual']:.2f} vs B&H {eb['sharpe_annual']:.2f} "
+                  f"| strat maxDD {e['max_drawdown']*100:.0f}% vs B&H {eb['max_drawdown']*100:.0f}%")
+    n_beat = sum(1 for _, (_, ev) in results.items() if ev["sharpe_annual"] > bh["sharpe_annual"])
+    print(f"\n{'='*72}")
+    print(f"Combos beating B&H on Sharpe: {n_beat}/{len(results)}.  DSR survivors: "
+          f"{sum(1 for _,(_,ev) in results.items() if ev['survives'])}/{len(results)}.")
+    print("Per-stock means each name times its OWN crashes -- but most 'crashes' in a")
+    print("single stock are idiosyncratic dips, not the ~5 market-wide events. Watch")
+    print("whether per-stock timing helps or just churns vs holding the basket.")
+    print('='*72)
+
+
 def cmd_equity_civalue(args, store):
     """The user's combined strategy: BUY when price < mean-2sig AND fundamentally
     undervalued (filing-lagged FF value screen); SELL when price recovers to
@@ -1294,6 +1376,19 @@ def build_parser() -> argparse.ArgumentParser:
                     dest="reentry_modes", choices=["avg_down", "ramp_up", "cliff_up"],
                     help="re-entry: avg_down (mean-rev), ramp_up (trend: add into strength), cliff_up (snap back)")
     sp.set_defaults(func=cmd_equity_crash, no_store=True)
+
+    sp = sub.add_parser("equity-crash-stocks", help="PER-STOCK crash timing: each name dodges its own crashes; vs equal-weight buy&hold")
+    sp.add_argument("--file", default=None)
+    sp.add_argument("--start", default=None)
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--ci-lookback", type=int, default=90, dest="ci_lookback")
+    sp.add_argument("--crash-sigmas", type=float, nargs="+", default=[1.5, 2.0, 2.5], dest="crash_sigmas")
+    sp.add_argument("--increments", type=int, nargs="+", default=[3, 5, 10], dest="increments")
+    sp.add_argument("--decline-modes", nargs="+", default=["cliff_sell", "ramp_sell"],
+                    dest="decline_modes", choices=["cliff_sell", "ramp_sell"])
+    sp.add_argument("--reentry-modes", nargs="+", default=["avg_down", "ramp_up", "cliff_up"],
+                    dest="reentry_modes", choices=["avg_down", "ramp_up", "cliff_up"])
+    sp.set_defaults(func=cmd_equity_crash_stocks, no_store=True)
 
     sp = sub.add_parser("equity-civalue", help="combined: buy CI dip AND undervalued; sell at -1sig (filing-lagged value filter)")
     sp.add_argument("--file", default=None)

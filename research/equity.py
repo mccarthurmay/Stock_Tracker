@@ -226,74 +226,65 @@ def ci_value_timing_backtest(daily: pd.DataFrame, undervalued: pd.DataFrame,
     return out[out["date"] >= valid_from].reset_index(drop=True)
 
 
-def spy_crash_overlay_backtest(spy: pd.Series, ci_lookback=90, crash_sigma=2.0,
-                               n_increments=5, cost_bps=5.0,
-                               decline_mode="cliff_sell", reentry_mode="avg_down"):
-    """Single-asset market-timing overlay on SPY, generalized over BOTH phases.
+def _crash_exposure_path(px: pd.Series, ci_lookback, crash_sigma, n_increments,
+                         decline_mode, reentry_mode) -> np.ndarray:
+    """Daily exposure (0..1) for ONE price series under the crash state machine.
 
-    Decided on close t -> acted on t+1 (no lookahead). NORMAL = fully invested;
-    a CI black-swan (price < mean - crash_sigma*std) arms the CRASH state. The
-    two phases are independently configurable -- this is the 2x2 the user asked
-    for, and the direction of each choice IS a trading philosophy:
-
-      decline_mode -- what to do WHILE price keeps making new lows:
-        'cliff_sell' : dump to 0 exposure at once on the trigger (original).
-        'ramp_sell'  : sell ONE increment per new low (TREND-FOLLOWING: cut risk
-                       into weakness; exposure ratchets 1 -> 0 as it falls).
-      reentry_mode -- how to get back to fully invested:
-        'avg_down'   : add one increment per NEW LOW (MEAN-REVERSION: buy the
-                       dip lower; the original's re-entry).
-        'ramp_up'    : add one increment each day price rises off the running low
-                       (TREND-FOLLOWING re-entry: add into strength).
-        'cliff_up'   : do nothing until price recovers above the CI mid, then
-                       snap back to fully invested at once.
-    Recovery above the CI mid (mean) always resets to NORMAL / exposure 1.
-    Exposure (0..1) multiplies SPY's next-day return; changes pay turnover cost."""
-    px = spy.sort_index()
-    ret = px.pct_change(fill_method=None).fillna(0.0)
+      decline_mode: 'cliff_sell' (dump to 0 on trigger) | 'ramp_sell' (sell a
+                    step per new low -- trend: cut into weakness).
+      reentry_mode: 'avg_down' (add a step per new low -- mean-reversion) |
+                    'ramp_up' (add a step as it rises off the low -- trend) |
+                    'cliff_up' (snap back only once recovered above the CI mid).
+    Recovery above the CI mid (mean) resets to fully invested. Causal: the value
+    at position i is the exposure that was chosen by the prior bar (the caller
+    shifts for the t->t+1 fill)."""
     mean = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).mean()
     std = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).std()
     lower = mean - crash_sigma * std
-
-    idx = px.index
-    exposure = np.zeros(len(px))
-    state = "normal"
-    exp = 1.0
-    crash_low = np.inf         # running low since entering crash
-    prev_p = np.inf            # prior close, for "rising off the low" detection
+    exposure = np.ones(len(px))
+    state, exp = "normal", 1.0
+    crash_low, prev_p = np.inf, np.inf
     step = 1.0 / max(1, n_increments)
+    pv, mv, lv = px.to_numpy(), mean.to_numpy(), lower.to_numpy()
 
     for i in range(len(px)):
-        p = px.iloc[i]
-        m = mean.iloc[i]
-        lo = lower.iloc[i]
-        exposure[i] = exp       # effective for THIS day's return; was set yesterday
+        p, m, lo = pv[i], mv[i], lv[i]
+        exposure[i] = exp
         if not np.isfinite(m):
             prev_p = p
             continue
         if state == "normal":
-            if np.isfinite(lo) and p < lo:          # black-swan trigger -> arm crash
-                state = "crash"
-                crash_low = p
+            if np.isfinite(lo) and p < lo:
+                state, crash_low = "crash", p
                 exp = 0.0 if decline_mode == "cliff_sell" else max(0.0, exp - step)
-        else:  # crash state
-            new_low = p < crash_low
-            if new_low:
+        else:
+            if p < crash_low:
                 crash_low = p
-                if decline_mode == "ramp_sell":      # cut risk into the decline
+                if decline_mode == "ramp_sell":
                     exp = max(0.0, exp - step)
-                if reentry_mode == "avg_down":        # buy the dip lower
+                if reentry_mode == "avg_down":
                     exp = min(1.0, exp + step)
-            elif p > prev_p and reentry_mode == "ramp_up":   # rising off the low
+            elif p > prev_p and reentry_mode == "ramp_up":
                 exp = min(1.0, exp + step)
-            if p > m:                                # full recovery -> reset
-                exp = 1.0
-                state = "normal"
-                crash_low = np.inf
+            if p > m:
+                exp, state, crash_low = 1.0, "normal", np.inf
         prev_p = p
+    return exposure
 
-    # exposure was recorded as "in effect today"; shift so a decision at close t
-    # affects t+1 (no lookahead): today's return uses YESTERDAY's chosen exposure
+
+def spy_crash_overlay_backtest(spy: pd.Series, ci_lookback=90, crash_sigma=2.0,
+                               n_increments=5, cost_bps=5.0,
+                               decline_mode="cliff_sell", reentry_mode="avg_down"):
+    """Single-asset market-timing overlay on SPY (one price series). See
+    _crash_exposure_path for the two-phase state machine. Exposure (0..1)
+    multiplies SPY's next-day return; changes pay turnover cost."""
+    px = spy.sort_index()
+    ret = px.pct_change(fill_method=None).fillna(0.0)
+    idx = px.index
+    exposure = _crash_exposure_path(px, ci_lookback, crash_sigma, n_increments,
+                                    decline_mode, reentry_mode)
+
+    # decision at close t affects t+1 (no lookahead)
     exp_eff = pd.Series(exposure, index=idx).shift(1).fillna(1.0)
     strat = exp_eff * ret
     turnover = exp_eff.diff().abs().fillna(0.0)
@@ -301,8 +292,48 @@ def spy_crash_overlay_backtest(spy: pd.Series, ci_lookback=90, crash_sigma=2.0,
 
     out = pd.DataFrame({"date": idx, "ret": strat.values, "bh_ret": ret.values,
                         "n_held": exp_eff.values})
-    valid_from = mean.dropna().index.min()
-    return out[out["date"] >= valid_from].reset_index(drop=True)
+    warmup = int(ci_lookback * 0.6)
+    return out.iloc[warmup:].reset_index(drop=True)
+
+
+def per_stock_crash_backtest(daily: pd.DataFrame, ci_lookback=90, crash_sigma=2.0,
+                             n_increments=5, cost_bps=5.0,
+                             decline_mode="cliff_sell", reentry_mode="avg_down"):
+    """Per-stock crash timing: EACH name runs its OWN crash-dodge on its OWN CI
+    band (sell that name when IT crashes, re-buy it on its own recovery). The
+    portfolio return each day is the equal-weight mean over names that are
+    currently HELD (exposure>0), weighted by each name's own 0..1 exposure.
+
+    Differs from spy_crash_overlay_backtest (one index-level dial) and from
+    ci_value (which also picks on value): here every stock is timed individually.
+    Benchmarked vs equal-weight buy-and-hold of the same names. PIT: each name's
+    exposure decision at close t acts on t+1 (shift)."""
+    px = daily.sort_index()
+    rets = px.pct_change(fill_method=None)
+    # per-name exposure path, then shift each column by 1 (t -> t+1, no lookahead)
+    exp = pd.DataFrame(
+        {c: _crash_exposure_path(px[c], ci_lookback, crash_sigma, n_increments,
+                                 decline_mode, reentry_mode) for c in px.columns},
+        index=px.index)
+    exp_eff = exp.shift(1)
+    # a name only contributes once it has price history (avoid warmup garbage)
+    have = px.notna()
+    exp_eff = exp_eff.where(have, np.nan)
+
+    held = exp_eff > 0
+    n_held = held.sum(axis=1)
+    # exposure-weighted equal-weight return across held names
+    contrib = (exp_eff * rets).where(held)
+    strat_ret = contrib.mean(axis=1).fillna(0.0)
+    # turnover cost: avg absolute exposure change across names currently in play
+    turnover = exp_eff.diff().abs().mean(axis=1).fillna(0.0)
+    strat_ret = strat_ret - (cost_bps / 1e4) * turnover
+    bh_ret = rets.mean(axis=1).fillna(0.0)   # equal-weight buy-and-hold of the same names
+
+    out = pd.DataFrame({"date": px.index, "ret": strat_ret.values,
+                        "bh_ret": bh_ret.values, "n_held": n_held.values})
+    warmup = int(ci_lookback * 0.6)
+    return out.iloc[warmup:].reset_index(drop=True)
 
 
 def ci_timing_backtest(daily: pd.DataFrame, ci_lookback=90, buy_sigma=2.0,

@@ -835,6 +835,40 @@ down) but not the verdict: every variant lives off the same ~3-5 crashes, so non
 is statistically real. The matrix tells you the best *shape* of a risk-control
 overlay, not that any of them is an edge.
 
+#### Per-stock version: each name times its OWN crashes (`equity-crash-stocks`)
+
+The index overlay is one dial on the whole portfolio. The per-stock version runs
+the *same* 2×2 state machine **independently on each of the 507 names** (sell a
+name when *it* breaks its own CI band; re-buy *it* on its own recovery), pooling
+equal-weight over held names vs equal-weight buy-and-hold. 54 variants.
+
+Two findings, both instructive:
+
+1. **It can't meaningfully step aside — avg ~97% invested.** 507 stocks crash at
+   *different* times, so one name dipping is diluted across 506 others; the basket
+   stays nearly fully invested. This is the "you just buy them all back" dynamic at
+   the stock level — per-stock timing structurally *cannot* go to cash the way the
+   single-index overlay can.
+2. **The winning philosophy FLIPS vs the index version.** Per-stock, the best
+   re-entry is **`ramp_up` (buy into recovery)**, not `avg_down`:
+
+   | per-mode-pair | avgSR | (index version was) |
+   |---|---|---|
+   | cliff_sell + ramp_up | **1.02** | 1.01 |
+   | ramp_sell + ramp_up | 1.00 | 0.92 |
+   | cliff_sell + avg_down | 0.98 | **1.08** ← won at index level |
+
+   Economically sensible: averaging down on a *single stock* making new lows means
+   **catching falling knives** — some individual names keep falling or go to zero,
+   so adding into them is punished. At the *index* level avg-down won (the index
+   always recovers); at the *stock* level it loses (individual stocks don't). So
+   "buy the dip lower" is an index instinct that **inverts** when applied name-by-name.
+
+**Verdict unchanged: 40/54 beat B&H, DSR = 0.00 on all 54, holdout a dead heat
+(1.26 vs 1.25).** The "beats" are tiny (+0.01..+0.06 Sharpe). Per-stock timing is,
+again, a **drawdown-reduction overlay** (best variants cut maxDD up to ~14 pts,
+38%→24%, for ~matched return) — risk control, not alpha, and not DSR-significant.
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |
