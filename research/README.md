@@ -1020,6 +1020,46 @@ version**, and still the same ~5-crash, DSR-0.00 profile. The most honest
 single takeaway across all of this remains: *vol-based de-risking on leverage
 reduces drawdown; nothing reliably adds profit.*
 
+#### 7 drawdown-DETECTION triggers, identical staggered buy (`equity-selltriggers`)
+
+Controlled test: hold the buy-back fixed (staggered avg-down — the prior best) and
+vary *only* the de-risk trigger. The 3 already tried (CI-band, vol-spike, MA-cross)
++ 4 new — **trailing drawdown** (down 10% from peak — the literal one), **breadth**
+(<40% of S&P 500 above their 50d MA — market internals, the only *leading* signal),
+**cross-asset** (bonds outperforming stocks — flight to safety), **Donchian** (new
+60-day low). Best per asset (vs B&H Sharpe / maxDD):
+
+| trigger | new? | SPY (B&H 0.90/34%) | QQQ (B&H 1.00/35%) | UPRO (B&H 0.76/77%) |
+|---|---|---|---|---|
+| ci_band | — | 0.96 / 33% | 0.99 / 43% | **0.81 / 74%** |
+| vol_spike | — | 0.96 / 31% | 1.09 / 32% | 0.77 / 72% |
+| ma_cross | — | 0.75 / 31% | 0.98 / 32% | 0.69 / 72% |
+| **trail_dd10** | new | **1.00 / 26%** | 0.98 / 32% | 0.75 / 72% |
+| **breadth<40** | new | 0.85 / 28% | **1.05 / 26%** | 0.73 / 71% |
+| donchian60 | new | 0.93 / 36% | 1.04 / 49% | 0.72 / 78% |
+| bonds>stocks | new | 0.61 / 31% | 0.67 / 40% | 0.53 / 74% |
+
+Two new triggers won, each on its natural asset:
+
+- **Trailing drawdown ("am I down 10% from my peak?") — best on SPY.** The most
+  *literal* detector: SR 1.00 vs 0.90, maxDD **26% vs 34%**, and the only SPY trigger
+  that *also* beat B&H on return (+0.6%), at 98% invested. Simplest = best.
+- **Breadth (<40% above 50d MA) — best on QQQ.** The only *leading* signal (internals
+  weaken before price): Calmar 0.77 vs 0.64, maxDD **26% vs 35%** (−9 pts, the biggest
+  drawdown cut anywhere), SR 1.05. Watching the market's internals beat watching QQQ's
+  own price.
+- **Cross-asset (bonds>stocks) was the worst everywhere** (−7% to −15%/yr): it keys on
+  *relative* performance, so it bails during normal bond rallies and misses stock upside
+  (only ~79% invested). Donchian/MA-cross whipsaw (mediocre).
+
+Pattern: **drawdown reduction is real and near-universal** (almost every trigger cut
+maxDD), but **only trailing-DD (SPY) and breadth (QQQ) beat B&H on Sharpe**, and even
+they barely add or slightly cost return. On **UPRO nothing new beat the old `ci_band`**
+(+1.9%) — leverage still prefers the price-drawdown trigger. So: better detectors exist
+(trailing-DD and breadth are genuinely the two best), but it's the same verdict — better
+*risk-adjusted*, not reliably more *profit*, and the per-asset winner is data-mined
+(DSR would reject it).
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |

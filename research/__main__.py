@@ -488,6 +488,88 @@ def cmd_equity_ci(args, store):
     print('='*68)
 
 
+def cmd_equity_selltriggers(args, store):
+    """Compare 7 drawdown-DETECTION triggers on identical staggered-avg-down buy
+    mechanics: CI-band, vol-spike, MA-cross (the 3 already tried) + trailing
+    drawdown, market breadth, cross-asset (bonds>stocks), Donchian low (4 new).
+    Each arms the same crash-dodge; run on SPY/QQQ/UPRO vs buy-and-hold."""
+    import numpy as np
+    client = AlpacaResearch()
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    s = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+    e = datetime(end.year, end.month, end.day, tzinfo=timezone.utc)
+    syms = [x.upper() for x in args.symbols]
+
+    def pull(sym):
+        df = client.stock_bars(sym, s, e, "1Day", adjustment="all", feed="sip")
+        return df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index() if not df.empty else None
+
+    # market-wide signals computed once (on SPY / TLT / the S&P breadth panel)
+    spx = pull("SPY")
+    tlt = pull("TLT")
+    print("Building market breadth (S&P 500 % above 50d MA)...", flush=True)
+    sp500 = historical.read_ticker_list("backend/storage/ticker_lists/smp500.txt")
+    panel = equity.daily_price_panel(client, sp500, start, end, progress_every=250)
+    breadth = equity.breadth_series(panel, 50)
+    # cross-asset risk-off: bonds outperform stocks over trailing 20d
+    xa = None
+    if tlt is not None and spx is not None:
+        common = spx.index.intersection(tlt.index)
+        bond_minus_stock = (tlt.reindex(common).pct_change(20) - spx.reindex(common).pct_change(20))
+        xa = (bond_minus_stock > 0)        # bonds winning -> risk-off
+
+    def arms_for(px):
+        """Return {name: boolean arm series} for one symbol's price."""
+        mean = px.rolling(90, min_periods=54).mean(); std = px.rolling(90, min_periods=54).std()
+        ma50 = px.rolling(50, min_periods=30).mean()
+        logr = np.log(px / px.shift(1)); rv = logr.rolling(20, min_periods=12).std()*np.sqrt(252)
+        rvmed = rv.rolling(252, min_periods=120).median()
+        peak = px.cummax(); ddown = px/peak - 1.0
+        donch = px.rolling(60, min_periods=30).min()
+        a = {
+            "ci_band":      px < mean - 2.0*std,                  # already tried
+            "vol_spike":    rv > rvmed*1.5,                       # already tried
+            "ma_cross":     px < ma50,                            # already tried
+            "trail_dd10":   ddown <= -0.10,                       # NEW: down >=10% from peak
+            "breadth<40":   breadth.reindex(px.index).ffill() < 0.40,   # NEW: internals
+            "donchian60":   px <= donch.shift(1),                 # NEW: new 60d low
+        }
+        if xa is not None:
+            a["bonds>stocks"] = xa.reindex(px.index).fillna(False)   # NEW: cross-asset
+        return a
+
+    order = ["ci_band", "vol_spike", "ma_cross", "trail_dd10", "breadth<40", "donchian60", "bonds>stocks"]
+    print(f"\n7 sell triggers x identical staggered avg-down buy, {syms}, {start}..{end}.\n")
+    for sym in syms:
+        px = pull(sym)
+        if px is None or len(px) < 400:
+            print(f"{sym}: insufficient history"); continue
+        bh_bt = equity.overlay_backtest(px, pd.Series(1.0, index=px.index))
+        bh = equity.evaluate(bh_bt.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                             1, periods_per_year=252, min_periods=120)
+        print(f"=== {sym} ===  BUY&HOLD annRet {bh['ann_return']*100:.1f}%  SR {bh['sharpe_annual']:.2f}  maxDD {bh['max_drawdown']*100:.0f}%")
+        print(f"  {'sell trigger':>14} {'new?':>4} {'%inv':>5} {'annRet':>7} {'SR':>5} {'Calmar':>7} {'maxDD':>6} {'vsB&H':>7} {'ddSav':>7}")
+        arms = arms_for(px)
+        for name in order:
+            if name not in arms:
+                continue
+            exp = pd.Series(equity.staggered_overlay_exposure(px, arms[name], n_increments=args.increments,
+                            decline_mode="cliff_sell", reentry_mode="avg_down"), index=px.index)
+            bt = equity.overlay_backtest(px, exp)
+            ev = equity.evaluate(bt, 1, periods_per_year=252, min_periods=120)
+            is_new = "new" if name in ("trail_dd10", "breadth<40", "donchian60", "bonds>stocks") else "-"
+            print(f"  {name:>14} {is_new:>4} {bt['n_held'].mean()*100:4.0f}% {ev['ann_return']*100:6.1f}% "
+                  f"{ev['sharpe_annual']:5.2f} {ev['calmar']:7.2f} {ev['max_drawdown']*100:5.0f}% "
+                  f"{(ev['ann_return']-bh['ann_return'])*100:+6.1f}% {(bh['max_drawdown']-ev['max_drawdown'])*100:+6.1f}%")
+        print()
+    print('='*96)
+    print("All share the staggered avg-down BUY; only the de-risk TRIGGER differs. breadth &")
+    print("bonds>stocks are market-wide (computed on S&P/TLT), the rest on each symbol's price.")
+    print("Risk control, not alpha: these are MANY-variant methods, the best is data-mined.")
+    print('='*96)
+
+
 def cmd_equity_volcrash(args, store):
     """The combined BEST strategy: SELL on a volatility spike (the winning exit),
     BUY back STAGGERED via average-down on new lows (the winning re-entry). Run on
@@ -1597,6 +1679,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
+
+    sp = sub.add_parser("equity-selltriggers", help="7 drawdown-detection triggers (CI/vol/MA + trailingDD/breadth/crossasset/Donchian) on identical staggered buy")
+    sp.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "UPRO"])
+    sp.add_argument("--start", default=None)
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--increments", type=int, default=5, dest="increments")
+    sp.set_defaults(func=cmd_equity_selltriggers, no_store=True)
 
     sp = sub.add_parser("equity-volcrash", help="combined best: vol-spike SELL + staggered avg-down BUY on indices")
     sp.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "UPRO"])

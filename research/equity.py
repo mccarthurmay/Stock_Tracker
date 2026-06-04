@@ -428,6 +428,57 @@ def volcrash_exposure_path(px: pd.Series, vol_window=20, vol_med_window=252,
     return exposure
 
 
+def staggered_overlay_exposure(px: pd.Series, arm: pd.Series, n_increments=5,
+                               decline_mode="cliff_sell", reentry_mode="avg_down") -> np.ndarray:
+    """Generic staggered crash-dodge driven by an explicit boolean ARM series.
+
+    This separates WHAT detects the drawdown (the `arm` series, True = risk-off)
+    from HOW it's traded (always the same staggered avg-down buy-back). Lets every
+    sell trigger -- CI band, vol spike, MA cross, trailing drawdown, breadth,
+    cross-asset, Donchian -- be compared on identical buy mechanics.
+
+      NORMAL (exp 1): when arm flips True -> de-risk (cliff_sell: dump to 0;
+        ramp_sell: shed a step per new low since arming).
+      RISK-OFF: average back IN a step per NEW LOW (avg_down) or as price rises off
+        the low (ramp_up). RESET to fully invested when arm flips back False.
+    Causal: value at i is set by the prior bar; caller shifts t->t+1."""
+    px = px.sort_index()
+    arm = arm.reindex(px.index).fillna(False).to_numpy().astype(bool)
+    pv = px.to_numpy()
+    exposure = np.ones(len(px))
+    state, exp = "normal", 1.0
+    low_since, prev_p = np.inf, np.inf
+    step = 1.0 / max(1, n_increments)
+    for i in range(len(px)):
+        p = pv[i]
+        exposure[i] = exp
+        if state == "normal":
+            if arm[i]:
+                state, low_since = "riskoff", p
+                exp = 0.0 if decline_mode == "cliff_sell" else max(0.0, exp - step)
+        else:
+            if p < low_since:
+                low_since = p
+                if decline_mode == "ramp_sell":
+                    exp = max(0.0, exp - step)
+                if reentry_mode == "avg_down":
+                    exp = min(1.0, exp + step)
+            elif p > prev_p and reentry_mode == "ramp_up":
+                exp = min(1.0, exp + step)
+            if not arm[i]:
+                exp, state, low_since = 1.0, "normal", np.inf
+        prev_p = p
+    return exposure
+
+
+def breadth_series(panel: pd.DataFrame, ma_window=50) -> pd.Series:
+    """Market breadth = fraction of names trading above their `ma_window`-day MA,
+    per day. A LEADING risk signal: internals weaken before the index does."""
+    ma = panel.rolling(ma_window, min_periods=int(ma_window*0.6)).mean()
+    above = (panel > ma)
+    return above.sum(axis=1) / panel.notna().sum(axis=1).replace(0, np.nan)
+
+
 def spy_crash_overlay_backtest(spy: pd.Series, ci_lookback=90, crash_sigma=2.0,
                                n_increments=5, cost_bps=5.0,
                                decline_mode="cliff_sell", reentry_mode="avg_down"):
