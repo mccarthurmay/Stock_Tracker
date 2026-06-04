@@ -488,6 +488,63 @@ def cmd_equity_ci(args, store):
     print('='*68)
 
 
+def cmd_equity_volcrash(args, store):
+    """The combined BEST strategy: SELL on a volatility spike (the winning exit),
+    BUY back STAGGERED via average-down on new lows (the winning re-entry). Run on
+    each symbol vs buy-and-hold AND vs the original CI-triggered staggered overlay,
+    so we see whether swapping the trigger to vol helps."""
+    client = AlpacaResearch()
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    syms = [s.upper() for s in args.symbols]
+    print(f"Vol-spike SELL + staggered avg-down BUY, {syms}, {start}..{end}.")
+    print("Sell when realized vol > rolling median x{:.1f}; average back in on new lows;".format(args.vol_mult))
+    print("reset when vol calms. vs buy-and-hold AND the CI-triggered version.\n")
+    for sym in syms:
+        try:
+            df = client.stock_bars(sym, datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+                                   datetime(end.year, end.month, end.day, tzinfo=timezone.utc),
+                                   "1Day", adjustment="all", feed="sip")
+        except Exception as e:
+            print(f"{sym}: ERROR {type(e).__name__}"); continue
+        if df.empty or len(df) < 400:
+            print(f"{sym}: insufficient history"); continue
+        px = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
+        bh_bt = equity.overlay_backtest(px, pd.Series(1.0, index=px.index))
+        bh = equity.evaluate(bh_bt.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                             1, periods_per_year=252, min_periods=120)
+        print(f"=== {sym} ({px.index[0].date()}..{px.index[-1].date()}) ===")
+        print(f"  BUY & HOLD:  annRet {bh['ann_return']*100:5.1f}%  SR {bh['sharpe_annual']:.2f}  "
+              f"Calmar {bh['calmar']:.2f}  maxDD {bh['max_drawdown']*100:.0f}%")
+        print(f"  {'strategy':>34} {'%inv':>5} {'annRet':>7} {'SR':>5} {'Calmar':>7} {'maxDD':>6} {'vsB&H':>7}")
+        # CI-triggered staggered (the prior best crash overlay) for reference
+        ci_exp = pd.Series(equity._crash_exposure_path(px, 90, 2.0, args.increments,
+                           "cliff_sell", "avg_down"), index=px.index)
+        ci_bt = equity.overlay_backtest(px, ci_exp)
+        ci = equity.evaluate(ci_bt, 1, periods_per_year=252, min_periods=120)
+        print(f"  {'CI-trigger + avg-down (prior best)':>34} {ci_bt['n_held'].mean()*100:4.0f}% "
+              f"{ci['ann_return']*100:6.1f}% {ci['sharpe_annual']:5.2f} {ci['calmar']:7.2f} "
+              f"{ci['max_drawdown']*100:5.0f}% {(ci['ann_return']-bh['ann_return'])*100:+6.1f}%")
+        # vol-triggered staggered, sweep increments and decline mode
+        for dm in ["cliff_sell", "ramp_sell"]:
+            for inc in args.increments_sweep:
+                exp = pd.Series(equity.volcrash_exposure_path(px, n_increments=inc,
+                                vol_mult=args.vol_mult, decline_mode=dm, reentry_mode="avg_down"),
+                                index=px.index)
+                bt = equity.overlay_backtest(px, exp)
+                ev = equity.evaluate(bt, 1, periods_per_year=252, min_periods=120)
+                lbl = f"VOL-trigger {dm.split('_')[0]} + avg-down (inc={inc})"
+                print(f"  {lbl:>34} {bt['n_held'].mean()*100:4.0f}% "
+                      f"{ev['ann_return']*100:6.1f}% {ev['sharpe_annual']:5.2f} {ev['calmar']:7.2f} "
+                      f"{ev['max_drawdown']*100:5.0f}% {(ev['ann_return']-bh['ann_return'])*100:+6.1f}%")
+        print()
+    print('='*94)
+    print("Combines the two winners: vol-spike SELL (best exit) + staggered avg-down BUY")
+    print("(best re-entry). vsB&H = annual return gap. Watch whether the vol trigger keeps")
+    print("you invested more (less return drag) than the CI-band trigger while still dodging DD.")
+    print('='*94)
+
+
 def cmd_equity_buysell(args, store):
     """ACTIVE buy/sell timing on indices: pair a BUY rule with the new SELL
     indicators (MA cross, vol spike, RSI, CI bands) and see what it does to
@@ -1540,6 +1597,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
+
+    sp = sub.add_parser("equity-volcrash", help="combined best: vol-spike SELL + staggered avg-down BUY on indices")
+    sp.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "UPRO"])
+    sp.add_argument("--start", default=None)
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--vol-mult", type=float, default=1.5, dest="vol_mult",
+                    help="sell when realized vol > rolling median x this")
+    sp.add_argument("--increments", type=int, default=5, dest="increments",
+                    help="increments for the CI-trigger reference")
+    sp.add_argument("--increments-sweep", type=int, nargs="+", default=[3, 5, 10], dest="increments_sweep",
+                    help="stagger increments to sweep for the vol-trigger version")
+    sp.set_defaults(func=cmd_equity_volcrash, no_store=True)
 
     sp = sub.add_parser("equity-buysell", help="active buy/sell timing on indices (CI dip entry x MA/vol/RSI sell) -- what it does to profit")
     sp.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "UPRO"])

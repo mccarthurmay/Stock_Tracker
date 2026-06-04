@@ -376,6 +376,58 @@ def _crash_exposure_path(px: pd.Series, ci_lookback, crash_sigma, n_increments,
     return exposure
 
 
+def volcrash_exposure_path(px: pd.Series, vol_window=20, vol_med_window=252,
+                           vol_mult=1.5, n_increments=5, decline_mode="cliff_sell",
+                           reentry_mode="avg_down") -> np.ndarray:
+    """Combined BEST pieces: SELL trigger = volatility spike (the winning exit),
+    BUY-back = STAGGERED average-down on new lows (the winning re-entry).
+
+    State machine (causal; caller shifts t->t+1):
+      NORMAL (exposure 1): when realized vol spikes above its rolling median *
+        vol_mult -> a 'risk-off' event -> de-risk (cliff_sell: dump to 0;
+        ramp_sell: shed a step per new low).
+      RISK-OFF: average back IN incrementally as price makes NEW LOWS (avg_down,
+        the staggered buy), OR add as it rises off the low (ramp_up). RESET to
+        fully invested once VOL CALMS back below the spike threshold (the
+        vol-trigger analog of 'recovered above the CI mid')."""
+    px = px.sort_index()
+    logr = np.log(px / px.shift(1))
+    rv = logr.rolling(vol_window, min_periods=int(vol_window*0.6)).std() * np.sqrt(252)
+    rv_med = rv.rolling(vol_med_window, min_periods=120).median()
+    thresh = rv_med * vol_mult
+
+    exposure = np.ones(len(px))
+    state, exp = "normal", 1.0
+    low_since, prev_p = np.inf, np.inf
+    step = 1.0 / max(1, n_increments)
+    pv, rvv, tv = px.to_numpy(), rv.to_numpy(), thresh.to_numpy()
+
+    for i in range(len(px)):
+        p, v, th = pv[i], rvv[i], tv[i]
+        exposure[i] = exp
+        if not np.isfinite(th):
+            prev_p = p
+            continue
+        spiking = np.isfinite(v) and v > th
+        if state == "normal":
+            if spiking:                                  # vol-spike SELL trigger
+                state, low_since = "riskoff", p
+                exp = 0.0 if decline_mode == "cliff_sell" else max(0.0, exp - step)
+        else:
+            if p < low_since:                            # new low -> stagger in
+                low_since = p
+                if decline_mode == "ramp_sell":
+                    exp = max(0.0, exp - step)
+                if reentry_mode == "avg_down":
+                    exp = min(1.0, exp + step)
+            elif p > prev_p and reentry_mode == "ramp_up":
+                exp = min(1.0, exp + step)
+            if not spiking:                              # vol calmed -> reset
+                exp, state, low_since = 1.0, "normal", np.inf
+        prev_p = p
+    return exposure
+
+
 def spy_crash_overlay_backtest(spy: pd.Series, ci_lookback=90, crash_sigma=2.0,
                                n_increments=5, cost_bps=5.0,
                                decline_mode="cliff_sell", reentry_mode="avg_down"):

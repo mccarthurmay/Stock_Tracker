@@ -982,6 +982,44 @@ which is roughly free on indices and net-positive on leverage. The buy timing is
 what costs you; a vol-based sell is the only exit worth using, and even it is
 "better risk-adjusted," not "more money," on unleveraged indices.
 
+#### Combining the two winners: vol-spike SELL + staggered avg-down BUY (`equity-volcrash`)
+
+The natural synthesis: take the best *exit* (vol-spike) and the best *re-entry*
+(staggered average-down on new lows), in one overlay. vs buy-and-hold AND the
+original **CI-band-triggered** staggered overlay (the prior best), best increment shown:
+
+| symbol | buy&hold | CI-trigger + avg-down (prior) | **vol-trigger + avg-down (inc=10)** |
+|---|---|---|---|
+| SPY | 15.6% / 0.91 / 34% | 19.0% / 1.16 / 23% | 16.6% / 1.11 / 24% (+1.0) |
+| QQQ | 22.4% / 1.00 / 35% | 23.2% / 1.11 / 31% | 21.2% / 1.14 / 29% (−1.2) |
+| UPRO | 29.7% / 0.76 / 77% | **44.3% / 0.99 / 60% (+14.6)** | 33.5% / 0.87 / 63% (+3.8) |
+
+It stays **~90-98% invested** (so it fixes the CI-*dip*-entry profit drag — that
+was an *entry* rule; this keeps you in and only de-risks on the vol event), and
+at inc=10 modestly beats B&H on SPY/UPRO with lower drawdown. **But the honest
+surprise: it did NOT beat the original CI-band trigger — on UPRO the CI version
+won by a mile (+14.6%/yr vs +3.8%).**
+
+Why the two "best pieces" don't compose into a better whole — a real lesson:
+
+- The earlier "vol-spike is the best sell" result was for an **always-invested
+  binary** strategy. Here, inside the **staggered avg-down** machine, the trigger
+  interacts differently. The **CI-band** trigger fires on a *price drawdown* (what
+  you actually want to dodge), whereas a **vol spike** fires on *volatility* — and
+  vol spikes on sharp moves in **both directions**, so the vol version sometimes
+  de-risks during violent *recoveries* and misses the bounce. On leverage that's
+  expensive, which is exactly why it trailed the CI trigger on UPRO.
+- **"Best sell rule" is not transferable across strategy structures.** The exit
+  that wins in a binary timer is not the exit that wins in a staggered crash-dodge.
+  Composing locally-optimal pieces gave a *worse* result than the original — a
+  clean reminder that backtest components interact, and you can't mix-and-match
+  the per-test winners and assume the combination is best.
+
+Net: a reasonable drawdown overlay, but **no improvement over the CI-triggered
+version**, and still the same ~5-crash, DSR-0.00 profile. The most honest
+single takeaway across all of this remains: *vol-based de-risking on leverage
+reduces drawdown; nothing reliably adds profit.*
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |
