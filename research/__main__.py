@@ -488,6 +488,59 @@ def cmd_equity_ci(args, store):
     print('='*68)
 
 
+def cmd_equity_crash_multi(args, store):
+    """Crash-dodge overlay across MANY indices/ETFs, esp. leveraged (UPRO/TQQQ).
+
+    Each symbol is timed on ITS OWN CI band and compared to buy-and-hold of
+    ITSELF. One fixed mode-pair (default the index winner: cliff_sell + avg_down)
+    and one sigma/increment, so each symbol = a clean head-to-head, not a sweep.
+
+    Why leveraged ETFs are the interesting case: a 3x DAILY-rebalanced fund has
+    volatility decay -- a deep drawdown compounds far worse than 3x and choppy
+    markets bleed it -- so DODGING drawdowns is worth much more here than on SPY.
+    Caveat: that also maximally amplifies the 'dodged COVID once' overfit, and
+    leveraged ETFs have short/varied histories (UPRO/TQQQ ~2010, AVUV ~2019)."""
+    client = AlpacaResearch()
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2010, 1, 1)
+    syms = [s.upper() for s in args.symbols]
+    dm, rm, sig, inc = args.decline_mode, args.reentry_mode, args.crash_sigma, args.increment
+    print(f"Crash-dodge across {len(syms)} symbols, {start}..{end}, daily.")
+    print(f"Mode: {dm}+{rm}, sigma={sig}, increments={inc}. Each vs buy-and-hold of itself.\n")
+    print(f"{'symbol':>7} {'span':>11} {'%inv':>5} | {'STRAT annRet':>12} {'SR':>5} {'maxDD':>6} "
+          f"| {'B&H annRet':>11} {'SR':>5} {'maxDD':>6} | {'dSR':>6} {'ddSaved':>8}")
+    for sym in syms:
+        try:
+            df = client.stock_bars(sym, datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+                                   datetime(end.year, end.month, end.day, tzinfo=timezone.utc),
+                                   "1Day", adjustment="all", feed="sip")
+        except Exception as e:
+            print(f"{sym:>7}  ERROR {type(e).__name__}"); continue
+        if df.empty or len(df) < 300:
+            print(f"{sym:>7}  (insufficient history: {len(df)} bars)"); continue
+        px = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
+        bt = equity.spy_crash_overlay_backtest(px, ci_lookback=args.ci_lookback,
+                                               crash_sigma=sig, n_increments=inc,
+                                               decline_mode=dm, reentry_mode=rm)
+        if bt.empty:
+            print(f"{sym:>7}  (no overlay data)"); continue
+        e = equity.evaluate(bt, 1, periods_per_year=252, min_periods=120)
+        eb = equity.evaluate(bt.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                             1, periods_per_year=252, min_periods=120)
+        span = f"{px.index[0].date():%y/%m}-{px.index[-1].date():%y/%m}"
+        print(f"{sym:>7} {span:>11} {bt['n_held'].mean()*100:4.0f}% | "
+              f"{e['ann_return']*100:11.1f}% {e['sharpe_annual']:5.2f} {e['max_drawdown']*100:5.0f}% | "
+              f"{eb['ann_return']*100:10.1f}% {eb['sharpe_annual']:5.2f} {eb['max_drawdown']*100:5.0f}% | "
+              f"{e['sharpe_annual']-eb['sharpe_annual']:+6.2f} {(eb['max_drawdown']-e['max_drawdown'])*100:+7.1f}%")
+    print(f"\n{'='*92}")
+    print("dSR = strat annSR - its own buy&hold annSR.  ddSaved = drawdown reduction.")
+    print("Leveraged ETFs: vol-decay makes dodging drawdowns worth more -- but the edge")
+    print("still rests on the SAME ~3-5 crashes (esp. COVID), so it's the SAME few-events")
+    print("illusion, just amplified. Different symbols are NOT independent confirmations:")
+    print("UPRO/SPXL are SPY, TQQQ/SOXL crash in the same events. Not DSR-significant.")
+    print('='*92)
+
+
 def cmd_equity_crash(args, store):
     """Single-asset crash-dodge overlay on SPY (the user's idea): sell all when
     SPY breaks below its CI band (black-swan), average back in incrementally as
@@ -1360,6 +1413,21 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
+
+    sp = sub.add_parser("equity-crash-multi", help="crash-dodge across many indices/leveraged ETFs (UPRO/TQQQ/...), each vs its own buy&hold")
+    sp.add_argument("--symbols", nargs="+",
+                    default=["SPY", "QQQ", "UPRO", "TQQQ", "SPXL", "SOXL", "AVUV", "TNA"],
+                    help="tickers to crash-dodge (each timed on its own CI band)")
+    sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2010-01-01)")
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--ci-lookback", type=int, default=90, dest="ci_lookback")
+    sp.add_argument("--crash-sigma", type=float, default=2.0, dest="crash_sigma")
+    sp.add_argument("--increment", type=int, default=5, dest="increment")
+    sp.add_argument("--decline-mode", default="cliff_sell", dest="decline_mode",
+                    choices=["cliff_sell", "ramp_sell"])
+    sp.add_argument("--reentry-mode", default="avg_down", dest="reentry_mode",
+                    choices=["avg_down", "ramp_up", "cliff_up"])
+    sp.set_defaults(func=cmd_equity_crash_multi, no_store=True)
 
     sp = sub.add_parser("equity-crash", help="SPY crash-dodge overlay: sell on CI black-swan, average in as it falls, vs buy&hold")
     sp.add_argument("--start", default=None)

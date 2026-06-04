@@ -869,6 +869,44 @@ Two findings, both instructive:
 again, a **drawdown-reduction overlay** (best variants cut maxDD up to ~14 pts,
 38%→24%, for ~matched return) — risk control, not alpha, and not DSR-significant.
 
+#### Crash-dodge on leveraged ETFs (`equity-crash-multi`)
+
+The crash overlay should matter *most* on **leveraged** ETFs: a 3x daily-rebalanced
+fund suffers **volatility decay** — a deep drawdown compounds far worse than 3x,
+and chop bleeds it — so avoiding drawdowns is worth more there. Ran the index
+winner (cliff_sell + avg_down, σ=2, 5 incr) on each symbol vs buy-and-hold of
+*itself* (free SIP caps all at 2016+, incl. COVID + 2022):
+
+| symbol | strat annRet / SR / maxDD | buy&hold annRet / SR / maxDD | ΔSR | ddSaved |
+|---|---|---|---|---|
+| SPY | 18.2% / 1.14 / 23% | 15.5% / 0.91 / 34% | +0.23 | +10.8% |
+| QQQ | 22.4% / 1.10 / 31% | 21.7% / 1.00 / 35% | +0.11 | +4.0% |
+| **UPRO (3x S&P)** | **42.5%** / 0.98 / **60%** | 30.6% / 0.78 / 77% | +0.20 | **+16.4%** |
+| **SPXL (3x S&P)** | 42.7% / 0.98 / 60% | 30.7% / 0.78 / 77% | +0.20 | +16.6% |
+| TQQQ (3x NDX) | 48.9% / 0.96 / 79% | 44.8% / 0.90 / 82% | +0.06 | +2.6% |
+| SOXL (3x semis) | 74.1% / 1.06 / 89% | 62.3% / 0.99 / 90% | +0.07 | +1.3% |
+| UDOW (3x Dow) | 29.1% / 0.79 / 71% | 23.5% / 0.68 / 80% | +0.11 | +8.8% |
+| TNA (3x small) | 12.9% / 0.51 / 83% | 9.8% / 0.48 / 88% | +0.03 | +4.7% |
+| AVUV (small-val) | 14.4% / 0.62 / 47% | 15.4% / 0.64 / 49% | **−0.02** | +2.6% |
+
+Findings, all consistent with the thesis:
+
+- **Vol-decay confirmed on 3x S&P:** UPRO/SPXL got the biggest *return* lift
+  (+30.6% → +42.5%/yr) and drawdown cut (77% → 60%, ~16 pts) — dodging 2020/2022
+  avoided the compounding wipeouts that punish leverage most.
+- **3x Nasdaq/semis (TQQQ/SOXL): big return gain, tiny Sharpe gain** — they're so
+  volatile that even timed they keep 79-89% drawdowns; you dodge the crash but the
+  daily vol still dominates the Sharpe.
+- **AVUV is the tell:** the *only* symbol it didn't help (ΔSR −0.02). It's a
+  small-cap *value* factor ETF, not a leveraged index — it doesn't crash on the
+  same macro triggers, so there's nothing for the overlay to dodge.
+- **These are NOT 9 independent confirmations.** UPRO ≡ SPXL (both 3x S&P — note
+  the near-identical rows); TQQQ/SOXL/UDOW/TNA all crash in the *same* ~3-5 events.
+  This is **one bet on COVID + 2022, levered up and shown 9 ways** — the same
+  few-events illusion, amplified. DSR is still 0.00, and leverage makes it
+  *riskier*, not safer: you're now 3x exposed when the timing eventually fails on a
+  crash that doesn't fit the pattern (e.g. a fast V where you sell the bottom).
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |
