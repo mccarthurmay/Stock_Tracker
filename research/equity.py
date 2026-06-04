@@ -226,6 +226,60 @@ def ci_value_timing_backtest(daily: pd.DataFrame, undervalued: pd.DataFrame,
     return out[out["date"] >= valid_from].reset_index(drop=True)
 
 
+# ---------------------------------------------------------------- drawdown overlays
+# Each returns a daily exposure series in [0,1] (1 = fully invested), causal:
+# the value at t uses only data <= t. The caller shifts t->t+1 for the fill.
+# Combine overlays by MULTIPLYING their exposures (stay fully in only if all agree).
+
+def ma_filter_exposure(px: pd.Series, window=200) -> pd.Series:
+    """Faber trend filter: exposure 1 when price > its `window`-day MA, else 0.
+    The single most-studied timing rule. Binary on/off."""
+    ma = px.rolling(window, min_periods=int(window * 0.6)).mean()
+    return (px > ma).astype(float)
+
+
+def vol_target_exposure(px: pd.Series, target_vol=0.15, window=20,
+                        cap=1.0) -> pd.Series:
+    """Volatility targeting: exposure = target_vol / realized_vol, capped at `cap`.
+    Realized vol = annualized rolling std of daily log returns. Vol spikes during
+    crashes -> exposure auto-shrinks. Continuous (not binary); the institutional
+    standard risk overlay. Uses YESTERDAY's vol (shifted) so it's causal."""
+    r = np.log(px / px.shift(1))
+    rv = r.rolling(window, min_periods=int(window * 0.6)).std() * np.sqrt(252)
+    rv = rv.shift(1)                       # only knowable at the prior close
+    exp = (target_vol / rv).clip(upper=cap)
+    return exp.fillna(cap).clip(0.0, cap)
+
+
+def ts_momentum_exposure(px: pd.Series, lookback=252) -> pd.Series:
+    """Time-series momentum (dual-momentum's defensive half): exposure 1 if the
+    trailing `lookback`-day total return is positive, else 0. Binary."""
+    trailing = px / px.shift(lookback) - 1.0
+    return (trailing > 0).astype(float)
+
+
+def overlay_backtest(px: pd.Series, exposure: pd.Series, cost_bps=5.0):
+    """Backtest a single price series under a given daily exposure path (0..1).
+    Decision at close t acts on t+1 (shift, no lookahead). Returns strat + B&H."""
+    px = px.sort_index()
+    ret = px.pct_change(fill_method=None).fillna(0.0)
+    exp_eff = exposure.reindex(px.index).shift(1).fillna(1.0).clip(0.0, 1.0)
+    strat = exp_eff * ret - (cost_bps / 1e4) * exp_eff.diff().abs().fillna(0.0)
+    out = pd.DataFrame({"date": px.index, "ret": strat.values, "bh_ret": ret.values,
+                        "n_held": exp_eff.values})
+    # drop the longest warmup so all overlays compare on the same window
+    return out.iloc[252:].reset_index(drop=True)
+
+
+def crash_exposure_series(px: pd.Series, ci_lookback=90, crash_sigma=2.0,
+                          n_increments=5, decline_mode="cliff_sell",
+                          reentry_mode="avg_down") -> pd.Series:
+    """The CI crash-dodge exposure path as a Series (wraps _crash_exposure_path)."""
+    arr = _crash_exposure_path(px.sort_index(), ci_lookback, crash_sigma,
+                               n_increments, decline_mode, reentry_mode)
+    return pd.Series(arr, index=px.sort_index().index)
+
+
 def _crash_exposure_path(px: pd.Series, ci_lookback, crash_sigma, n_increments,
                          decline_mode, reentry_mode) -> np.ndarray:
     """Daily exposure (0..1) for ONE price series under the crash state machine.

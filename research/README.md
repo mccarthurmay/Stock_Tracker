@@ -907,6 +907,45 @@ Findings, all consistent with the thesis:
   *riskier*, not safer: you're now 3x exposed when the timing eventually fails on a
   crash that doesn't fit the pattern (e.g. a fast V where you sell the bottom).
 
+#### Comparing drawdown-reduction overlays + combos (`equity-overlays`)
+
+Drawdown control is the one place timing showed merit, so the canonical methods
+were compared head-to-head on SPY/QQQ/UPRO (each as a daily exposure 0..1;
+combos MULTIPLY — fully invested only if all agree). Methods: **crash** (CI
+dodge), **ma200** (Faber trend filter, in when price > 200d MA), **voltgt**
+(volatility targeting, exposure = 15% / realized vol), **tsmom** (in when
+trailing 12m return > 0). Judged on **Calmar** (return ÷ max-drawdown) and
+drawdown saved vs buy-and-hold — risk control, **not** an alpha test.
+
+| symbol (B&H Calmar / maxDD) | best overlay | annRet | SR | maxDD | Calmar | ddSaved |
+|---|---|---|---|---|---|---|
+| SPY (0.46 / 34%) | crash | 19.0% | 1.16 | 23% | 0.83 | +11% |
+| QQQ (0.64 / 35%) | crash+ma200+voltgt | 15.8% | 1.19 | **14%** | **1.13** | +21% |
+| UPRO (0.39 / 77%) | voltgt-based (crash+voltgt) | 16.4% | 0.99 | **23%** | 0.70 | **+53%** |
+
+The clear, intuitive pattern — **the more volatile/leveraged the asset, the more
+*continuous volatility targeting* dominates:**
+
+- **UPRO (3x): voltgt is transformative** — alone it cut max drawdown **77% → 25%**
+  (−52 pts) because vol *spikes* in crashes, so scaling inversely to vol slashes
+  exposure pre-emptively, exactly when a 3x fund's compounding is most lethal. The
+  binary crash-dodge can't compete (it's late/all-or-nothing); `crash+voltgt` got
+  Sharpe 0.99 at 23% drawdown vs B&H's 0.76 at 77%.
+- **QQQ (high-vol unleveraged): stacking all three** gave the best Calmar (1.13 vs
+  0.64), maxDD 35% → 14%.
+- **SPY (low-vol): the simple crash dodge** was enough (Calmar 0.83); extra overlays
+  added little.
+- **tsmom was the worst everywhere** (negative ΔSR) — 12-month momentum re-enters
+  too slowly after V-shaped recoveries, sitting out the rebound.
+
+**Honest framing:** this is the robust, defensible takeaway of the whole timing
+arc — **continuous, volatility-based de-risking reliably reduces drawdown,
+increasingly so with leverage** (exactly what the risk-parity / vol-targeting
+literature says). But each method has dozens of published parameter variants (why
+200d? why 15%? why 90d CI?), so picking the single best *combo per symbol* is
+data-mining; DSR would reject the specific winner. The trustworthy statement is
+the *direction* (vol-targeting helps, more so on leverage), not the exact champion.
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |

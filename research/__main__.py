@@ -488,6 +488,77 @@ def cmd_equity_ci(args, store):
     print('='*68)
 
 
+def cmd_equity_overlays(args, store):
+    """Compare drawdown-reduction overlays + combinations on each symbol.
+
+    Methods (each -> daily exposure 0..1, combined by MULTIPLYING):
+      crash  : CI crash-dodge (cliff_sell+avg_down)
+      ma200  : Faber trend filter (in when price > 200d MA)
+      voltgt : volatility targeting (exposure = 15% / realized vol)
+      tsmom  : time-series momentum (in when trailing 12m return > 0)
+    Each symbol vs buy-and-hold of itself. The question: which overlay (or combo)
+    gives the best risk-adjusted / drawdown profile -- this is RISK CONTROL, the
+    one place timing showed merit, not an alpha hunt."""
+    client = AlpacaResearch()
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    syms = [s.upper() for s in args.symbols]
+
+    def methods(px):
+        return {
+            "crash": equity.crash_exposure_series(px),
+            "ma200": equity.ma_filter_exposure(px, 200),
+            "voltgt": equity.vol_target_exposure(px, args.target_vol, 20),
+            "tsmom": equity.ts_momentum_exposure(px, 252),
+        }
+    # singles + the intuitive combinations (multiply exposures)
+    combos = [("crash",), ("ma200",), ("voltgt",), ("tsmom",),
+              ("crash", "ma200"), ("ma200", "voltgt"), ("crash", "voltgt"),
+              ("ma200", "tsmom"), ("crash", "ma200", "voltgt")]
+
+    print(f"Drawdown overlays on {syms}, {start}..{end}, daily. vol target={args.target_vol:.0%}.")
+    print("Each overlay -> exposure 0..1; combos MULTIPLY (fully invested only if all agree).\n")
+    for sym in syms:
+        try:
+            df = client.stock_bars(sym, datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+                                   datetime(end.year, end.month, end.day, tzinfo=timezone.utc),
+                                   "1Day", adjustment="all", feed="sip")
+        except Exception as e:
+            print(f"{sym}: ERROR {type(e).__name__}"); continue
+        if df.empty or len(df) < 400:
+            print(f"{sym}: insufficient history"); continue
+        px = df.set_index(pd.to_datetime(df["ts"]))["close"].sort_index()
+        m = methods(px)
+        bh_bt = equity.overlay_backtest(px, pd.Series(1.0, index=px.index))
+        bh = equity.evaluate(bh_bt.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                             1, periods_per_year=252, min_periods=120)
+        print(f"=== {sym} ({px.index[0].date()}..{px.index[-1].date()}) ===")
+        print(f"  buy&hold: annRet {bh['ann_return']*100:5.1f}%  SR {bh['sharpe_annual']:.2f}  "
+              f"Calmar {bh['calmar']:.2f}  maxDD {bh['max_drawdown']*100:.0f}%")
+        print(f"  {'overlay':>22} {'%inv':>5} {'annRet':>7} {'SR':>5} {'Calmar':>7} {'maxDD':>6} "
+              f"{'dSR':>6} {'ddSaved':>8}")
+        rows = []
+        for combo in combos:
+            exp = m[combo[0]].copy()
+            for extra in combo[1:]:
+                exp = exp * m[extra]
+            bt = equity.overlay_backtest(px, exp)
+            ev = equity.evaluate(bt, 1, periods_per_year=252, min_periods=120)
+            rows.append((combo, ev))
+            print(f"  {'+'.join(combo):>22} {bt['n_held'].mean()*100:4.0f}% "
+                  f"{ev['ann_return']*100:6.1f}% {ev['sharpe_annual']:5.2f} {ev['calmar']:7.2f} "
+                  f"{ev['max_drawdown']*100:5.0f}% {ev['sharpe_annual']-bh['sharpe_annual']:+6.2f} "
+                  f"{(bh['max_drawdown']-ev['max_drawdown'])*100:+7.1f}%")
+        # best by Calmar (return per unit drawdown -- the risk-control objective)
+        best = max(rows, key=lambda r: r[1]["calmar"])
+        print(f"  -> best Calmar: {'+'.join(best[0])} ({best[1]['calmar']:.2f} vs B&H {bh['calmar']:.2f})\n")
+    print('='*88)
+    print("Risk-control view (Calmar/maxDD), NOT an alpha test. These overlays each have")
+    print("MANY published variants; treating the best as significant would be data-mining.")
+    print("voltgt+ma200 is the standard institutional risk overlay; crash adds little beyond it.")
+    print('='*88)
+
+
 def cmd_equity_crash_multi(args, store):
     """Crash-dodge overlay across MANY indices/ETFs, esp. leveraged (UPRO/TQQQ).
 
@@ -1413,6 +1484,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
+
+    sp = sub.add_parser("equity-overlays", help="compare drawdown-reduction overlays (crash/MA200/vol-target/TS-mom) + combos per symbol")
+    sp.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "UPRO"])
+    sp.add_argument("--start", default=None)
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--target-vol", type=float, default=0.15, dest="target_vol",
+                    help="annual vol target for the vol-targeting overlay")
+    sp.set_defaults(func=cmd_equity_overlays, no_store=True)
 
     sp = sub.add_parser("equity-crash-multi", help="crash-dodge across many indices/leveraged ETFs (UPRO/TQQQ/...), each vs its own buy&hold")
     sp.add_argument("--symbols", nargs="+",
