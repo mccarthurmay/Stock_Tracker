@@ -146,6 +146,78 @@ def rsi_frame(px: pd.DataFrame, window=14) -> pd.DataFrame:
     return 100 * mean_up / denom
 
 
+def undervalued_mask_from_panel(daily: pd.DataFrame, factor_panel: pd.DataFrame,
+                                quantile=0.3) -> pd.DataFrame:
+    """Daily boolean 'is this name fundamentally undervalued right now?' mask.
+
+    `factor_panel` is the filing-lagged MONTHLY FF panel (date,ticker,BM,OP,INV)
+    from factors_pit.build_factor_panel. At each panel date we cross-sectionally
+    score z(BM)+z(OP)-z(INV) and flag the top `quantile` as undervalued, then
+    FORWARD-FILL that monthly flag onto daily dates (point-in-time: a name's
+    undervalued status only changes when the monthly screen refreshes — using
+    only filings knowable then). Returns a daily bool frame aligned to `daily`."""
+    flags = {}
+    for d, g in factor_panel.groupby("date"):
+        if len(g) < 3:
+            continue
+        z = lambda c: (g[c] - g[c].mean()) / g[c].std(ddof=0)
+        score = (z("BM") + z("OP") - z("INV"))
+        n = max(1, int(len(score) * quantile))
+        top = set(g.iloc[score.values.argsort()[::-1][:n]]["ticker"])
+        flags[d] = {t: (t in top) for t in g["ticker"]}
+    if not flags:
+        return pd.DataFrame(False, index=daily.index, columns=daily.columns)
+    monthly = pd.DataFrame(flags).T.reindex(columns=daily.columns).astype("boolean")
+    monthly.index = pd.to_datetime(monthly.index)
+    # reindex onto daily dates, forward-fill the monthly flag (PIT carry), and
+    # treat pre-first-screen dates as not-undervalued. Nullable boolean avoids
+    # the object-dtype downcast warning.
+    daily_mask = monthly.reindex(daily.index, method="ffill")
+    return daily_mask.fillna(False).astype(bool)
+
+
+def ci_value_timing_backtest(daily: pd.DataFrame, undervalued: pd.DataFrame,
+                             ci_lookback=90, buy_sigma=2.0, sell_sigma=1.0,
+                             cost_bps=5.0):
+    """The user's combined strategy, daily event-driven, point-in-time.
+
+      BUY  when price < mean - buy_sigma*std  AND  fundamentally undervalued
+           (top-quantile FF value score; the `undervalued` daily mask).
+      SELL when price recovers to mean - sell_sigma*std (partial reversion;
+           e.g. exit at -1sigma after buying at -2sigma -> capture the bounce).
+      Re-buy is allowed whenever both buy conditions re-trigger.
+
+    The value mask is the value-trap FILTER the prior pure-CI tests lacked:
+    only buy dips in cheap names, not every falling knife. mean/std are rolling
+    (causal); a close-t decision acts on t+1 (shift) -> no lookahead. Returns the
+    daily strat return + buy-and-hold benchmark on the same names."""
+    px = daily.sort_index()
+    rets = px.pct_change(fill_method=None)
+    mean = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).mean()
+    std = px.rolling(ci_lookback, min_periods=int(ci_lookback*0.6)).std()
+    uv = undervalued.reindex_like(px).fillna(False)
+
+    buy = (px < (mean - buy_sigma * std)) & uv          # dip AND undervalued
+    sell = px > (mean - sell_sigma * std)                # recovered to -1sigma
+
+    sig = pd.DataFrame(np.nan, index=px.index, columns=px.columns)
+    sig = sig.mask(buy, 1.0).mask(sell, 0.0)
+    held_eff = sig.ffill().fillna(0.0).shift(1).fillna(0.0)
+
+    held_mask = held_eff > 0
+    n_held = held_mask.sum(axis=1)
+    strat_ret = (rets.where(held_mask)).mean(axis=1).fillna(0.0)
+    flips = held_eff.diff().abs().sum(axis=1)
+    cost = (cost_bps / 1e4) * (flips / n_held.replace(0, np.nan)).fillna(0.0)
+    strat_ret = strat_ret - cost
+    bh_ret = rets.mean(axis=1).fillna(0.0)
+
+    out = pd.DataFrame({"date": px.index, "ret": strat_ret.values,
+                        "bh_ret": bh_ret.values, "n_held": n_held.values})
+    valid_from = mean.dropna(how="all").index.min()
+    return out[out["date"] >= valid_from].reset_index(drop=True)
+
+
 def ci_timing_backtest(daily: pd.DataFrame, ci_lookback=90, buy_sigma=2.0,
                        sell_sigma=1.0, ma_window=100, rsi_sell=70.0, rsi_window=14,
                        sell_triggers=("sigma", "ma"), cost_bps=5.0):

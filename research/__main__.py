@@ -488,6 +488,90 @@ def cmd_equity_ci(args, store):
     print('='*68)
 
 
+def cmd_equity_civalue(args, store):
+    """The user's combined strategy: BUY when price < mean-2sig AND fundamentally
+    undervalued (filing-lagged FF value screen); SELL when price recovers to
+    mean-1sig. The value screen is the value-trap filter the pure-CI tests
+    lacked. Sweeps CI window x value quantile (each a DSR trial) vs buy-and-hold."""
+    from . import factors_pit
+    client = AlpacaResearch()
+    tickers = historical.read_ticker_list(args.file) if args.file else \
+        ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "JPM", "XOM", "JNJ",
+         "PG", "HD", "BAC", "KO", "PFE", "CVX", "WMT", "DIS", "CSCO", "INTC", "T",
+         "VZ", "MRK", "ABBV", "PEP", "ORCL", "COST", "MCD", "NKE", "TXN", "UNH"]
+    end = _date(args.end) if args.end else date.today()
+    start = _date(args.start) if args.start else date(2016, 1, 1)
+    print(f"CI + VALUE combined strategy, {len(tickers)} names, {start}..{end}, DAILY event-driven.")
+    print("BUY: price < mean-2sig AND fundamentally undervalued (filing-lagged FF screen).")
+    print("SELL: price recovers to mean-1sig. Re-buy when both conditions re-fire.")
+    print("vs buy-and-hold. Costs on. PIT (signal t -> act t+1). NOT survivorship-free.\n")
+
+    daily = equity.daily_price_panel(client, tickers, start, end)
+    if daily.empty or daily.shape[0] < 300:
+        print("Not enough daily history."); return
+    monthly = equity.month_end(daily)
+    print(f"Daily panel: {daily.shape[1]} names x {daily.shape[0]} days. "
+          f"Fetching filing-lagged EDGAR (streaming)...", flush=True)
+    pit = factors_pit.PITFundamentals(cache_facts=False)
+    panel = factors_pit.build_factor_panel(monthly, list(monthly.index), pit)
+    if panel.empty:
+        print("No PIT fundamentals assembled."); return
+    print(f"Factor panel: {len(panel)} (date,ticker) rows, {panel['ticker'].nunique()} names.\n")
+
+    # baseline buy-and-hold once
+    base = equity.ci_value_timing_backtest(
+        daily, equity.undervalued_mask_from_panel(daily, panel, 0.3),
+        ci_lookback=args.windows[0], buy_sigma=args.buy_sigma, sell_sigma=args.sell_sigma)
+    bh_ev = equity.evaluate(base.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                            1, periods_per_year=252, min_periods=252)
+    print(f"Buy-and-hold (always-in): annRet {bh_ev['ann_return']*100:.1f}%  "
+          f"annSR {bh_ev['sharpe_annual']:.2f}  Calmar {bh_ev['calmar']:.2f}  "
+          f"maxDD {bh_ev['max_drawdown']*100:.1f}%\n")
+
+    combos = [(w, q) for w in args.windows for q in args.quantiles]
+    n_trials = len(combos)
+    print(f"Sweeping {len(args.windows)} CI-window x {len(args.quantiles)} value-quantile "
+          f"= {n_trials} trials (each a DSR trial), buy@-{args.buy_sigma}sig sell@-{args.sell_sigma}sig.\n")
+    print(f"{'CIwin':>6} {'valQ':>5} {'avgHeld':>8} {'annRet':>8} {'annSR':>7} {'Calmar':>7} "
+          f"{'maxDD':>7} {'DSR':>6} {'dSR vsBH':>9} {'surv':>5}")
+    results = {}
+    for w, q in combos:
+        uv = equity.undervalued_mask_from_panel(daily, panel, q)
+        bt = equity.ci_value_timing_backtest(daily, uv, ci_lookback=w,
+                                             buy_sigma=args.buy_sigma, sell_sigma=args.sell_sigma)
+        if bt.empty:
+            print(f"{w:6d} {q:5.2f}  (no data)"); continue
+        ev = equity.evaluate(bt, n_trials, periods_per_year=252, min_periods=252)
+        results[(w, q)] = (bt, ev)
+        print(f"{w:6d} {q:5.2f} {bt['n_held'].mean():8.1f} {ev['ann_return']*100:7.1f}% "
+              f"{ev['sharpe_annual']:7.2f} {ev['calmar']:7.2f} {ev['max_drawdown']*100:6.1f}% "
+              f"{ev['dsr']:6.2f} {ev['sharpe_annual']-bh_ev['sharpe_annual']:+9.2f} "
+              f"{'YES' if ev['survives'] else 'no':>5}")
+
+    if results:
+        best = max(results, key=lambda k: results[k][1]["sharpe_annual"])
+        bt = results[best][0]
+        sp = validation.chronological_splits(bt["date"], train=0.7, val=0.0)
+        print(f"\nHoldout on best-Sharpe combo (CIwin={best[0]}, valQ={best[1]}), opened once:")
+        for label, seg in [("train", bt[sp["train"].mask(bt["date"])]),
+                           ("HOLDOUT", bt[sp["holdout"].mask(bt["date"])])]:
+            if seg.empty:
+                continue
+            e = equity.evaluate(seg, n_trials, periods_per_year=252, min_periods=60)
+            eb = equity.evaluate(seg.rename(columns={"ret": "_s", "bh_ret": "ret"}),
+                                 1, periods_per_year=252, min_periods=60)
+            print(f"  {label:>8}: strat annSR {e['sharpe_annual']:.2f} vs B&H {eb['sharpe_annual']:.2f} "
+                  f"| strat annRet {e['ann_return']*100:.1f}% vs B&H {eb['ann_return']*100:.1f}%")
+    n_surv = sum(1 for _, (_, ev) in results.items() if ev["survives"])
+    n_beat = sum(1 for _, (_, ev) in results.items() if ev["sharpe_annual"] > bh_ev["sharpe_annual"])
+    print(f"\n{'='*72}")
+    print(f"DSR survivors: {n_surv}/{len(results)}.  Beating B&H on Sharpe: {n_beat}/{len(results)}.")
+    print("This adds the VALUE filter the pure-CI tests lacked (buy dips only in cheap")
+    print("names). If the value screen has selection skill, THIS is where it shows -- a")
+    print("dSR vsBH > 0 with DSR>0.95 would be the first thing to clear the bar.")
+    print('='*72)
+
+
 def cmd_equity_timing(args, store):
     """Daily event-driven CI timing with a SELL/take-profit rule:
     buy < mean-2sig; EXIT when price > mean+1sig OR the MA is falling. Tests
@@ -1097,6 +1181,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--start", default=None, help="YYYY-MM-DD (default 2016-01-01)")
     sp.add_argument("--end", default=None, help="YYYY-MM-DD (default today)")
     sp.set_defaults(func=cmd_equity_ff)
+
+    sp = sub.add_parser("equity-civalue", help="combined: buy CI dip AND undervalued; sell at -1sig (filing-lagged value filter)")
+    sp.add_argument("--file", default=None)
+    sp.add_argument("--start", default=None)
+    sp.add_argument("--end", default=None)
+    sp.add_argument("--windows", type=int, nargs="+", default=[60, 90, 120], dest="windows",
+                    help="CI lookback windows (days) to sweep")
+    sp.add_argument("--quantiles", type=float, nargs="+", default=[0.3, 0.5], dest="quantiles",
+                    help="value-screen top-quantile thresholds to sweep")
+    sp.add_argument("--buy-sigma", type=float, default=2.0, dest="buy_sigma")
+    sp.add_argument("--sell-sigma", type=float, default=1.0, dest="sell_sigma")
+    sp.set_defaults(func=cmd_equity_civalue)
 
     sp = sub.add_parser("equity-timing", help="daily CI buy + composable SELL triggers (sigma/ma/rsi) vs buy-and-hold")
     sp.add_argument("--file", default=None)

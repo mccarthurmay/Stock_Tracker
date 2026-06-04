@@ -683,6 +683,65 @@ Three answers:
 nothing clears DSR or beats buy-and-hold. The only defensible use is **MA-only as
 a drawdown trimmer** (≈5 pts less drawdown for ≈1%/yr) — risk management, not edge.
 
+### CI dip + VALUE filter (the value-trap fix): buy cheap dips, sell at −1σ (2026-06-03)
+
+The strongest theoretical case the project tested. Every prior CI result was
+market beta because pure mean-reversion buys *every* dip — including falling
+knives. This combines the screener's two halves: **BUY when price < mean−2σ AND
+the name is fundamentally undervalued** (top-quantile filing-lagged `z(BM)+z(OP)
+−z(INV)`, no lookahead), **SELL when price recovers to mean−1σ.** The value
+screen is meant to filter value-traps from real bargains.
+`equity.ci_value_timing_backtest` + `equity-civalue`, daily, PIT, costs on, vs
+buy-and-hold; sweeps CI window × value quantile (each a DSR trial).
+
+```bash
+python -m research equity-civalue --file backend/storage/ticker_lists/smp500.txt \
+    --start 2016-01-01 --windows 60 90 120 --quantiles 0.3 0.5
+```
+
+**Result (466 names with EDGAR data, daily 2016-2026, 6 trials; B&H annSR 0.99):**
+
+| CI win | value Q | annSR | Calmar | maxDD | DSR | annSR − B&H |
+|---|---|---|---|---|---|---|
+| 60 | 0.30 | 0.57 | 0.24 | 44.6% | 0.00 | −0.42 |
+| 90 | 0.30 | 0.58 | 0.25 | 46.3% | 0.00 | −0.41 |
+| 120 | 0.50 | 0.59 | 0.24 | 47.6% | 0.00 | −0.40 |
+
+**The value filter didn't rescue it — it made things worse. 0/6 clear DSR, 0/6
+beat B&H, and the gap (−0.40 to −0.52) is *wider* than pure CI.** The holdout is
+decisive: strat annSR **0.60 vs buy-and-hold 1.29** on unseen data. Why this null
+is the *most* informative one:
+
+- **The filter worked mechanically but added no skill.** It correctly gated
+  holdings to undervalued names (15–26 held of 466) — the screen *is* selecting
+  cheap names. They just don't outperform, consistent with the broad-universe FF
+  finding that quality-value is **beta, not alpha** here.
+- **Waiting for the rare −2σ-dip-AND-undervalued double-trigger means sitting in
+  cash most of the time — sacrificing the bull-market beta that was the only
+  thing earning.** Every timing/filter variant rediscovers this: the market
+  premium is the edge; any rule that sits out the market gives it up.
+- This was the **best-motivated combination in the project** (the user's own
+  value-trap reasoning, built lookahead-free) and it still failed — that's
+  evidence about the market, not a flaw in the idea.
+
+## Final scoreboard (nothing cleared DSR > 0.95)
+
+| Strategy class | best DSR | beats B&H? |
+|---|---|---|
+| Options long premium (generic + structural) | 0.00 | — |
+| Options short premium (short-vol) | 0.00 | — |
+| Multi-ticker call scan (3,614 trials) | 0.00 | — |
+| FF quality-value, 30 names | 0.06 | no |
+| FF quality-value, broad ~4,100 names | 0.00 | no (long-short ≈ 0) |
+| CI mean-reversion (window sweep + MA) | 0.00 | no |
+| CI sell rule / composable triggers / RSI | 0.00 | no |
+| **CI dip + value filter (this)** | **0.00** | **no** |
+
+Closest ever: DSR ≈ 0.06. Consistent finding: **apparent returns are market beta
+or best-of-N noise; no robust retail edge survives honest costs + multiple-testing
+correction on free data.** The framework did exactly its job — including rejecting
+the author's own best ideas, which is the point.
+
 ## Next: M7–M9 (not core engineering)
 
 - **M7** — re-validate any survivor on **vendor** IV/Greeks/quotes (ORATS /
