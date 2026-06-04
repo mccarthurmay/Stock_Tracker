@@ -178,7 +178,7 @@ def undervalued_mask_from_panel(daily: pd.DataFrame, factor_panel: pd.DataFrame,
 
 def ci_value_timing_backtest(daily: pd.DataFrame, undervalued: pd.DataFrame,
                              ci_lookback=90, buy_sigma=2.0, sell_sigma=1.0,
-                             cost_bps=5.0):
+                             cost_bps=5.0, hold_forever=False):
     """The user's combined strategy, daily event-driven, point-in-time.
 
       BUY  when price < mean - buy_sigma*std  AND  fundamentally undervalued
@@ -186,6 +186,10 @@ def ci_value_timing_backtest(daily: pd.DataFrame, undervalued: pd.DataFrame,
       SELL when price recovers to mean - sell_sigma*std (partial reversion;
            e.g. exit at -1sigma after buying at -2sigma -> capture the bounce).
       Re-buy is allowed whenever both buy conditions re-trigger.
+
+      hold_forever=True -> NO SELL: once a name is bought on the signal it is
+      held to the end. This isolates the ENTRY signal's value (does buying cheap
+      dips and holding beat always-in?) without the sell rule sacrificing beta.
 
     The value mask is the value-trap FILTER the prior pure-CI tests lacked:
     only buy dips in cheap names, not every falling knife. mean/std are rolling
@@ -198,10 +202,14 @@ def ci_value_timing_backtest(daily: pd.DataFrame, undervalued: pd.DataFrame,
     uv = undervalued.reindex_like(px).fillna(False)
 
     buy = (px < (mean - buy_sigma * std)) & uv          # dip AND undervalued
-    sell = px > (mean - sell_sigma * std)                # recovered to -1sigma
 
     sig = pd.DataFrame(np.nan, index=px.index, columns=px.columns)
-    sig = sig.mask(buy, 1.0).mask(sell, 0.0)
+    if hold_forever:
+        # buy-and-hold-the-signal: latch to 1 on first buy, never reset to 0
+        sig = sig.mask(buy, 1.0)
+    else:
+        sell = px > (mean - sell_sigma * std)            # recovered to -1sigma
+        sig = sig.mask(buy, 1.0).mask(sell, 0.0)
     held_eff = sig.ffill().fillna(0.0).shift(1).fillna(0.0)
 
     held_mask = held_eff > 0

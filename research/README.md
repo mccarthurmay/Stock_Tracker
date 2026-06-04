@@ -724,6 +724,33 @@ is the *most* informative one:
   value-trap reasoning, built lookahead-free) and it still failed — that's
   evidence about the market, not a flaw in the idea.
 
+### Isolating the entry signal: same buy, NO sell (`--hold-forever`, 2026-06-03)
+
+To separate "is the buy good?" from "did the sell hurt?", the strategy was re-run
+with the **sell rule removed** — buy cheap CI dips, then **hold to the end**
+(`equity-civalue --hold-forever`). Same 466 names, 6 trials.
+
+| CI win | value Q | avgHeld | annSR | maxDD | DSR | annSR − B&H |
+|---|---|---|---|---|---|---|
+| 60 | 0.30 | 263 | 0.89 | 38.7% | 0.00 | −0.09 |
+| 120 | 0.50 | 300 | 0.90 | 39.4% | 0.00 | −0.09 |
+| — buy-and-hold — | | 466 | **0.99** | 38.5% | — | — |
+
+This is the **most diagnostic result in the project**. Removing the sell:
+
+- **Recovered the lost performance** — Sharpe jumped from ~0.58 (with the sell) to
+  ~0.88, and the gap to buy-and-hold collapsed from −0.40+ to **−0.09**. Confirmed:
+  **the sell rule was the damaging part, sacrificing market beta.**
+- **But the entry signal adds no alpha** — it still slightly *trails* buy-and-hold
+  (0.88 vs 0.99, DSR 0.00, holdout 1.19 vs 1.29). And the mechanism is visible in
+  `avgHeld`: buying dips and never selling **accumulates 220–337 of 466 names**, so
+  the strategy *converges to owning the market* — just later (it waits for dips) and
+  slightly incomplete, which is why it trails.
+- **Clean verdict:** the buy is **harmless but pointless** (it drifts toward the
+  index), the sell was **actively harmful** (it threw away beta). Neither half adds
+  selection skill. The honest optimum is the plain index — exactly what every other
+  test pointed at.
+
 ## Final scoreboard (nothing cleared DSR > 0.95)
 
 | Strategy class | best DSR | beats B&H? |

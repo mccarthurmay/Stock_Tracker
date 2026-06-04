@@ -518,10 +518,14 @@ def cmd_equity_civalue(args, store):
         print("No PIT fundamentals assembled."); return
     print(f"Factor panel: {len(panel)} (date,ticker) rows, {panel['ticker'].nunique()} names.\n")
 
+    hold = args.hold_forever
+    mode = ("BUY-AND-HOLD the signal (no sell; once bought, held to the end)"
+            if hold else f"buy@-{args.buy_sigma}sig, sell@-{args.sell_sigma}sig")
     # baseline buy-and-hold once
     base = equity.ci_value_timing_backtest(
         daily, equity.undervalued_mask_from_panel(daily, panel, 0.3),
-        ci_lookback=args.windows[0], buy_sigma=args.buy_sigma, sell_sigma=args.sell_sigma)
+        ci_lookback=args.windows[0], buy_sigma=args.buy_sigma, sell_sigma=args.sell_sigma,
+        hold_forever=hold)
     bh_ev = equity.evaluate(base.rename(columns={"ret": "_s", "bh_ret": "ret"}),
                             1, periods_per_year=252, min_periods=252)
     print(f"Buy-and-hold (always-in): annRet {bh_ev['ann_return']*100:.1f}%  "
@@ -530,15 +534,17 @@ def cmd_equity_civalue(args, store):
 
     combos = [(w, q) for w in args.windows for q in args.quantiles]
     n_trials = len(combos)
+    print(f"Mode: {mode}.")
     print(f"Sweeping {len(args.windows)} CI-window x {len(args.quantiles)} value-quantile "
-          f"= {n_trials} trials (each a DSR trial), buy@-{args.buy_sigma}sig sell@-{args.sell_sigma}sig.\n")
+          f"= {n_trials} trials (each a DSR trial).\n")
     print(f"{'CIwin':>6} {'valQ':>5} {'avgHeld':>8} {'annRet':>8} {'annSR':>7} {'Calmar':>7} "
           f"{'maxDD':>7} {'DSR':>6} {'dSR vsBH':>9} {'surv':>5}")
     results = {}
     for w, q in combos:
         uv = equity.undervalued_mask_from_panel(daily, panel, q)
         bt = equity.ci_value_timing_backtest(daily, uv, ci_lookback=w,
-                                             buy_sigma=args.buy_sigma, sell_sigma=args.sell_sigma)
+                                             buy_sigma=args.buy_sigma, sell_sigma=args.sell_sigma,
+                                             hold_forever=hold)
         if bt.empty:
             print(f"{w:6d} {q:5.2f}  (no data)"); continue
         ev = equity.evaluate(bt, n_trials, periods_per_year=252, min_periods=252)
@@ -1192,6 +1198,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="value-screen top-quantile thresholds to sweep")
     sp.add_argument("--buy-sigma", type=float, default=2.0, dest="buy_sigma")
     sp.add_argument("--sell-sigma", type=float, default=1.0, dest="sell_sigma")
+    sp.add_argument("--hold-forever", action="store_true", dest="hold_forever",
+                    help="no sell: buy cheap dips and HOLD to the end (isolate the entry signal)")
     sp.set_defaults(func=cmd_equity_civalue)
 
     sp = sub.add_parser("equity-timing", help="daily CI buy + composable SELL triggers (sigma/ma/rsi) vs buy-and-hold")
