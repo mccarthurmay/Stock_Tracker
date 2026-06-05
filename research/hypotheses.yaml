@@ -1,0 +1,166 @@
+# Hypothesis registry (ROADMAP §4) — the anti-data-mining core.
+#
+# RULES (enforced by hypotheses.py, fail-closed):
+#   * Every hypothesis needs a real economic rationale (>=15 chars, but write a
+#     sentence — "why should this work?"). No rationale -> rejected.
+#   * expected_direction in {long, short, long_or_short}.
+#   * indicators must exist in the registry. Any IV-derived (phase-B) indicator
+#     makes the whole hypothesis phase-B (not believable on Alpaca data).
+#   * Keep this set SMALL and reasoned (tens, not thousands). Brute-forcing the
+#     combinatorial space is the primary failure mode (ROADMAP §0, §4).
+#   * Every config actually backtested is counted (config_runs) and feeds the
+#     multiple-testing correction. Adding a sweep value multiplies the count.
+#
+# This seed set is intentionally tiny. Expand only with a written story.
+
+version: 1
+hypotheses:
+  - id: oversold_mean_reversion
+    rationale: >
+      Short-horizon intraday selloffs in liquid underlyings often overshoot and
+      partially revert as liquidity providers fade the move; a low RSI marks
+      that exhaustion. Long-premium expresses the bounce with defined risk.
+    expected_direction: long
+    indicators:
+      - name: rsi
+        sweep: {window: [7, 14]}
+    notes: >
+      Classic and heavily mined — expect it to die under costs/multiple-testing.
+      Included as a baseline the apparatus should be able to reject.
+
+  - id: trend_pullback_continuation
+    rationale: >
+      In an established intraday uptrend (price above its moving average),
+      shallow pullbacks tend to resume rather than reverse, because trend
+      followers re-enter. Combine trend filter with a momentum dip.
+    expected_direction: long
+    indicators:
+      - name: price_vs_sma
+        sweep: {window: [20, 50]}
+      - name: rsi
+        params: {window: 14}
+
+  - id: volatility_squeeze_breakout
+    rationale: >
+      A contraction in Bollinger bandwidth (a "squeeze") reflects coiling
+      realized vol that historically precedes range expansion; long premium
+      benefits from the subsequent move regardless of direction.
+    expected_direction: long_or_short
+    indicators:
+      - name: bollinger_bw
+        sweep: {window: [10, 20]}
+      - name: realized_vol
+        params: {window: 20}
+
+  - id: gamma_scalp_zone
+    rationale: >
+      Near-ATM short-dated options carry the highest gamma, so small underlying
+      moves produce outsized delta swings; entries are filtered to a high-gamma,
+      near-the-money, low-DTE regime where that convexity is largest.
+    expected_direction: long_or_short
+    indicators:
+      - name: gamma
+      - name: moneyness
+      - name: dte
+
+  - id: iv_overpriced_fade
+    rationale: >
+      When self-computed IV sits in the top of its recent range it may be rich
+      relative to realized, favoring short premium. PHASE-B: IV from indicative
+      trade prints is noisy and mean-reversion here is partly an artifact, so
+      this is only believable on vendor IV data.
+    expected_direction: short
+    indicators:
+      - name: iv_rank
+        sweep: {window: [30, 60]}
+      - name: realized_vol
+        params: {window: 20}
+
+  # --- Structural hypotheses (intraday-options-specific mechanisms, not
+  #     textbook oscillators). These are the productive direction after the M6
+  #     "no edge" result on generic indicators.
+
+  - id: opening_range_breakout
+    rationale: >
+      The first 30 minutes set an intraday range as overnight orders clear;
+      a decisive break of the opening-range high reflects genuine directional
+      order flow that often continues through midday, and long calls capture
+      that continuation with defined risk. Entry only after the OR window closes.
+    expected_direction: long
+    indicators:
+      - name: opening_range_pos
+        sweep: {or_minutes: [15, 30]}
+      - name: minutes_since_open
+
+  - id: power_hour_momentum
+    rationale: >
+      In the last trading hour, index funds and 0DTE hedgers rebalance into the
+      close, which tends to extend the prevailing intraday trend; entering with
+      that late-day drift (price above its short MA during power hour) rides
+      flow that is structural rather than informational.
+    expected_direction: long
+    indicators:
+      - name: time_of_day_bucket
+      - name: price_vs_sma
+        params: {window: 20}
+
+  - id: gap_fade_reversion
+    rationale: >
+      Large overnight gaps in a liquid index ETF frequently retrace intraday as
+      the gap over-reacts to overnight headlines and liquidity is thin at the
+      open; fading an up-gap with puts targets that mean reversion toward the
+      prior close. Defined-risk long premium caps the trend-day tail.
+    expected_direction: short
+    indicators:
+      - name: overnight_gap
+      - name: minutes_since_open
+
+  # --- SHORT-PREMIUM hypotheses (position: short_premium -> the engine SELLS
+  #     the option and collects the credit). This is where positive expectancy
+  #     usually lives -- you earn theta instead of paying it -- BUT it carries a
+  #     "win small, blow up" NEGATIVE-SKEW tail: many small gains, rare large
+  #     losses when the underlying moves against an unhedged short. The whole
+  #     point of running these is to watch the objective's skew/tail check
+  #     (ROADMAP §1) reject a strategy a naive win-rate optimizer would love.
+  #     Caveat: naked short premium has undefined max loss; per-trade returns
+  #     here use the credit collected as denominator, which FLATTERS risk-adjusted
+  #     metrics -- so DSR/Sharpe are NOT the right lens. Judge on skew, drawdown,
+  #     and worst-trade.
+
+  - id: short_high_iv
+    rationale: >
+      When self-computed IV sits high in its recent range, options are priced
+      for more movement than typically realizes, so selling that premium and
+      letting it decay has positive *gross* expected value. PHASE-B for belief:
+      IV from indicative trade prints is noisy. Expect the negative-skew tail to
+      show up as the underlying occasionally runs against the short.
+    expected_direction: short
+    position: short_premium
+    indicators:
+      - name: iv_rank
+        sweep: {window: [30, 60]}
+
+  - id: short_theta_midday
+    rationale: >
+      Theta decay on short-dated options is steepest as expiry approaches, and
+      the midday session is typically the calmest (lowest realized vol) part of
+      the day. Selling near-dated premium midday harvests decay during the
+      quietest window. The tail risk is an afternoon trend day.
+    expected_direction: short
+    position: short_premium
+    indicators:
+      - name: time_of_day_bucket
+      - name: dte
+
+  - id: short_low_rvol_calm
+    rationale: >
+      When recent realized volatility is in the bottom quartile of its range,
+      the market is calm and option premium tends to be rich relative to the
+      small moves that follow; selling into that calm collects theta. The
+      danger is precisely that calm precedes the occasional volatility spike --
+      the classic short-vol negative-skew profile the objective must catch.
+    expected_direction: short
+    position: short_premium
+    indicators:
+      - name: realized_vol
+        sweep: {window: [10, 20]}

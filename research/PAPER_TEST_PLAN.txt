@@ -1,0 +1,157 @@
+================================================================================
+PAPER-TEST PLAN — $100,000
+Leveraged core (UPRO, crash-dodged) + value anchors (BRK.B / IWN) + cash
+================================================================================
+
+PURPOSE
+  This is an EXPERIMENT with a control group, not a portfolio. Paper money's only
+  honest use: find out whether the backtested behavior holds up live, and practice
+  executing rules WITHOUT discretion. Success is NOT "made the most money" — it is
+  clean execution, measured slippage, and sleeves behaving as backtested.
+
+--------------------------------------------------------------------------------
+ALLOCATION  ($100,000)
+--------------------------------------------------------------------------------
+  Sleeve            Ticker    $          %     Managed how
+  ---------------   -------   --------   ---   -----------------------------
+  Leveraged core    UPRO      $50,000    50%   CRASH-DODGE (active, see rules)
+  Value anchor 1    BRK.B     $20,000    20%   Plain buy & hold (DO NOT dodge)
+  Value anchor 2    IWN       $20,000    20%   Plain buy & hold (DO NOT dodge)
+  Cash / T-bills    BIL       $10,000    10%   Dry powder + yield; rebal buffer
+
+  WHY THIS SHAPE (the rules learned from backtesting):
+   - Crash-dodge ONLY the leveraged sleeve. Dodging the calm anchors (SPY/BRK/IWN)
+     was tested and LOST in both bull and dot-com — they get whipsawed with no
+     crash to avoid. Anchors are ballast; let them sit.
+   - Anchors are VALUE / NON-TECH on purpose. The dot-com bear was a tech unwind;
+     value (BRK, small-cap value) was THE hedge. Anchoring with the tech-heavy
+     S&P is what leaves you underwater in that tail.
+   - 20/20 BRK+IWN instead of 40% of one = diversified against being WRONG about
+     any single anchor's crash behavior. Costs a hair of expected return for
+     robustness.
+   - NO VIXY / options insurance. Tested at 5% on every mix — it LOST money in
+     BOTH the bull and the dot-com (premium bleed > payoff at that size, and the
+     crash-dodge already provides the protection). The 10% cash is the hedge.
+
+--------------------------------------------------------------------------------
+UPRO SLEEVE — THE CI CRASH-DODGE   (check FRIDAY close, act MONDAY)
+--------------------------------------------------------------------------------
+  Parameters: 90-day lookback, 2.0-sigma band, 8 staggered steps.
+    (2.0-sigma = the "95% CI" analysis.py already computes: ci = std * 2.
+     The 8-step / 2.0-sigma region is the robust plateau from the sweep.
+     The 1.5-sigma / 10-step = higher backtest $ is an OVERFIT spike — do NOT use.)
+
+  Each Friday, from UPRO daily closes compute:
+     90-day mean
+     90-day std
+     lower band = mean - 2 * std
+
+  STATE = NORMAL (sleeve fully in UPRO):
+     - UPRO closes BELOW the lower band
+          -> SELL ALL UPRO to cash. Enter CRASH. Record the closing low.
+
+  STATE = CRASH:
+     - UPRO makes a NEW closing low
+          -> buy back 1/8 of the sleeve (8 steps = average-down on the way down).
+     - UPRO closes ABOVE its 90-day mean
+          -> buy back to FULL, return to NORMAL.
+
+  Step size: ~$50,000 / 8 = ~$6,250 per step.
+
+--------------------------------------------------------------------------------
+ANCHORS + CASH
+--------------------------------------------------------------------------------
+  BRK.B, IWN: buy once, hold. Do not touch except the quarterly rebalance.
+  BIL: source/sink for the UPRO crash-dodge and for quarterly rebalancing.
+  QUARTERLY: rebalance all four sleeves back to 50 / 20 / 20 / 10.
+
+--------------------------------------------------------------------------------
+BACKTEST CONTEXT  ($100,000, quarterly rebalanced)
+--------------------------------------------------------------------------------
+  BULL (real 2016-2026, ~10.4 yrs):
+     END ~$1,355,000   CAGR ~28.5%   maxDD ~40%
+
+  DOT-COM stress (CONSTRUCTED: actual 2016->Feb2020, then the 2000-02 dot-com
+  S&P path spliced in place of COVID; UPRO = decayed synthetic 3x; BRK & IWN
+  modeled as the value/defensive winners they were in 2000-02):
+     ends ~$299,000   trough ~$84,000   maxDD ~51%   — STAYS ABOVE the $100k start
+
+  For comparison (same 50% UPRO-cd core, different anchor):
+     40% BRK.B only ...... BULL ~$1,440,000  | DOT-COM ~$357,000
+     40% small-value only  BULL ~$1,253,000  | DOT-COM ~$300,000
+     40% SPY (tech-heavy)  BULL ~$1,441,000  | DOT-COM ~$88,000  (BELOW start!)
+
+  THE DOLLAR-PATH REFRAME (why the big maxDD % is less scary than it sounds):
+     The drawdown is measured from the PEAK after years of gains, NOT from $100k.
+     In the dot-com stress this mix peaks ~$272k, troughs ~$84k, ends ~$299k.
+     Worst dip below your STARTING $100k is only ~$16k — you give back GAINS, you
+     do not lose most of your principal. (This is true BECAUSE the crash-dodge +
+     value anchors hold up; a 50% UPRO buy-and-hold with an SPY anchor goes
+     UNDERWATER for the decade.)
+
+--------------------------------------------------------------------------------
+WEEKLY LOG  (one row)
+--------------------------------------------------------------------------------
+  Date | UPRO$ | BRK$ | IWN$ | BIL$ | TOTAL$ |
+  100%-SPY benchmark $ (the bar to beat) |
+  any trade: FILL PRICE vs PRIOR CLOSE (your live slippage) |
+  UPRO state (NORMAL / CRASH-step-n)
+
+--------------------------------------------------------------------------------
+PRE-REGISTERED EXPECTATIONS  (so you can't rationalize later)
+--------------------------------------------------------------------------------
+  - In a calm/up market the leverage carries you; expect BIG numbers and a
+    ~40% peak drawdown at some point. That 40% is NORMAL for this mix, not a
+    failure. Do not panic-sell it — the plan ASSUMES you ride it.
+  - The crash-dodge will mostly stay ~100% invested and only de-risk in genuinely
+    down/volatile stretches (in backtest: 2018, 2020, 2022). If it's trading a
+    lot in a calm market, something is mis-implemented.
+  - The value anchors will LAG in a tech-led bull (that's their job — they pay
+    off in the tech-unwind tail, not the melt-up). Lagging is expected.
+
+  SUCCESS = (1) executed every rule with zero discretion,
+            (2) measured real slippage vs the model,
+            (3) sleeves behaved as backtested.
+
+--------------------------------------------------------------------------------
+REVIEW + DECISION RULES
+--------------------------------------------------------------------------------
+  Monthly: update log, one-paragraph summary.
+  6-month review (must include some volatility to count): compare each sleeve and
+  the total to the 100%-SPY control on SHARPE, DRAWDOWN, and DOLLARS.
+     - Crash-dodge fills materially worse than prior-close
+          -> the cost model was optimistic (a REAL finding; size it down).
+     - Total doesn't clearly beat a simple 60/40 SPY/cash on a risk-adjusted basis
+       after a volatile stretch -> the complexity isn't earning its keep.
+
+--------------------------------------------------------------------------------
+THE CAVEATS THAT MATTER MOST  (read before trusting any number above)
+--------------------------------------------------------------------------------
+  1. REGIME LUCK. Every bull number ($1.3M+) is from ONE benign decade with no
+     dot-com/2008-style choppy bear. The data CANNOT prove this survives the tail.
+     The whole point of the value anchors + cash is to prepare for the tail the
+     backtest can't see.
+
+  2. THE DOT-COM NUMBERS ARE CONSTRUCTED, NOT REAL. Free data starts 2016, so
+     2000-02 and 2008 are absent. The ~$299k dot-com result leans on BRK.B and
+     small-cap value REPEATING their 2000-02 outperformance. That's true for a
+     TECH-UNWIND bear (real history) but NOT a 2008-style everything-crash, where
+     these anchors fall too. Treat the dot-com figures as "right direction,
+     plausible magnitude," not a guarantee.
+
+  3. WHIPSAW RISK. The crash-dodge HELPS one clean crash but BLEEDS through a
+     prolonged choppy bear (sell the break, buy the bounce, repeat). It is not a
+     magic shield; it is a tool that trades bull upside for one-crash protection.
+
+  4. NONE OF THIS IS DSR-SIGNIFICANT. Across the whole research project, no
+     strategy cleared the data-mining-adjusted significance bar. The drawdown
+     REDUCTION is the robust part; the exact dollar outcomes are not repeatable
+     on demand.
+
+  5. PAPER FILLS ARE IDEALIZED — better than real, no emotional pressure. So
+     underperformance on paper is damning; outperformance should be discounted.
+
+  This is a structured LEARNING plan on paper money, not advice to deploy real
+  capital. 50% in a 3x fund is aggressive; sizing leverage against tail risk is
+  worth a fee-only advisor before any of this touches real dollars.
+================================================================================
