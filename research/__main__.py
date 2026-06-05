@@ -807,6 +807,41 @@ def cmd_equity_crash_multi(args, store):
     print('='*92)
 
 
+def cmd_mc_crash(args, store):
+    """Monte-Carlo stress test the CI crash-dodge on THOUSANDS of synthetic crash
+    paths (5 heuristic archetypes), each mapped to a synthetic 3x daily-reset fund.
+    Answers: across crashes we've never seen, when does the dodge protect vs whipsaw?
+    No API/data needed -- pure simulation, so it runs anywhere."""
+    from . import montecarlo as mc
+    weights = dict(mc.DEFAULT_WEIGHTS)
+    if args.only:
+        weights = {a: (1.0 if a in args.only else 0.0) for a in mc.ARCHETYPES}
+    cfg = mc.MCConfig(
+        n_paths=args.paths, n_days=args.days, leverage=args.leverage,
+        lev_financing_annual=args.financing, cash_yield_annual=args.cash_yield,
+        ci_lookback=args.ci_lookback, crash_sigma=args.crash_sigma,
+        n_increments=args.increments, cost_bps=args.cost_bps,
+        weights=weights, seed=args.seed)
+    if args.ci_lookbacks:
+        print(f"Simulating {args.paths:,} crash paths x {len(args.ci_lookbacks)} lookbacks "
+              f"({', '.join(a for a, w in weights.items() if w > 0)})...", flush=True)
+        df = mc.run_mc_sweep(cfg, args.ci_lookbacks)
+        mc.summarize_sweep(df, cfg, args.ci_lookbacks)
+        print("\nREAD THIS AS: a CONDITIONAL stress test. The cross-archetype tables show")
+        print("whether one lookback is robust or whether (as in the real 2016-2026 vs dot-com")
+        print("sweep) different regimes want different lookbacks -- i.e. the choice is overfit.")
+        return
+    print(f"Simulating {args.paths:,} crash paths "
+          f"({', '.join(a for a, w in weights.items() if w > 0)})...", flush=True)
+    df = mc.run_mc(cfg)
+    mc.summarize(df, cfg)
+    print("\nREAD THIS AS: a CONDITIONAL stress test, not a prediction. The archetypes")
+    print("are heuristics and the leverage drag is a parameter. What's robust is the")
+    print("DIRECTION per archetype -- the dodge protects clean/deep crashes (vcrash/")
+    print("waterfall) and bleeds in choppy/grind regimes -- exactly the plan's caveat #3,")
+    print("now quantified over thousands of draws instead of one constructed dot-com path.")
+
+
 def cmd_equity_crash(args, store):
     """Single-asset crash-dodge overlay on SPY (the user's idea): sell all when
     SPY breaks below its CI band (black-swan), average back in incrementally as
@@ -1731,6 +1766,27 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--reentry-mode", default="avg_down", dest="reentry_mode",
                     choices=["avg_down", "ramp_up", "cliff_up"])
     sp.set_defaults(func=cmd_equity_crash_multi, no_store=True)
+
+    sp = sub.add_parser("mc-crash", help="MONTE-CARLO: stress the crash-dodge on thousands of synthetic 3x crash paths (5 archetypes)")
+    sp.add_argument("--paths", type=int, default=3000, help="number of synthetic crash paths")
+    sp.add_argument("--days", type=int, default=1260, help="trading days per path (~252/yr)")
+    sp.add_argument("--leverage", type=float, default=3.0, help="daily-reset leverage (UPRO=3)")
+    sp.add_argument("--financing", type=float, default=0.03, dest="financing",
+                    help="annual financing cost on the borrowed notional (drag)")
+    sp.add_argument("--cash-yield", type=float, default=0.0, dest="cash_yield",
+                    help="annual yield on the dodged-to-cash sleeve (0 = conservative)")
+    sp.add_argument("--ci-lookback", type=int, default=90, dest="ci_lookback")
+    sp.add_argument("--ci-lookbacks", type=int, nargs="+", default=None, dest="ci_lookbacks",
+                    help="SWEEP these CI lookbacks on the same paths (e.g. 60 90 120 150 180)")
+    sp.add_argument("--crash-sigma", type=float, default=2.0, dest="crash_sigma")
+    sp.add_argument("--increments", type=int, default=8, dest="increments",
+                    help="staggered avg-down steps (plan uses 8)")
+    sp.add_argument("--cost-bps", type=float, default=5.0, dest="cost_bps")
+    sp.add_argument("--only", nargs="+", default=None,
+                    choices=["vcrash", "flash", "waterfall", "choppy", "grind"],
+                    help="restrict to specific crash archetype(s)")
+    sp.add_argument("--seed", type=int, default=12345)
+    sp.set_defaults(func=cmd_mc_crash, no_store=True)
 
     sp = sub.add_parser("equity-crash", help="SPY crash-dodge overlay: sell on CI black-swan, average in as it falls, vs buy&hold")
     sp.add_argument("--start", default=None)
